@@ -1,7 +1,10 @@
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import pipeline
 from keybert import KeyBERT
+from .predict import router as predict_router
 
 app = FastAPI()
 
@@ -49,3 +52,5 @@ async def analyze(request: AnalyzeRequest):
 @app.get("/health")
 async def health():
     return {"status": "ok"}
+
+app.include_router(predict_router, prefix="/predict", tags=["predict"])

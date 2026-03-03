@@ -28,7 +28,16 @@ app.listen(PORT, () => {
 
 // Graceful shutdown
 process.on("SIGINT", () => {
+  stopWorker();
   redisClient.quit();
   mongoose.connection.close();
   process.exit(0);
 });
+
+app.use("/api/feedback", require("./src/routes/feedbackRoutes"));
+const { startWorker } = require("./src/workers/aiWorker");
+startWorker();
+
+app.use("/api/analytics", require("./src/routes/analyticsRoutes"));
+app.use("/api/sms", require("./src/routes/smsRoutes"));
+app.use("/api/admin", require("./src/routes/adminRoutes"));
