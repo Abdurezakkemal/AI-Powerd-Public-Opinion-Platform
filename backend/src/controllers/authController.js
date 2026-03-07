@@ -98,9 +98,14 @@ exports.verifyOtp = async (req, res) => {
     user.verified = true;
     await user.save();
 
-    // Include region in JWT payload
+    // ✅ Include verified field in JWT
     const token = jwt.sign(
-      { id: user._id, role: user.role, region: user.region },
+      {
+        id: user._id,
+        role: user.role,
+        region: user.region,
+        verified: user.verified, // <-- added
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" },
     );
@@ -124,9 +129,14 @@ exports.login = async (req, res) => {
     const valid = await comparePassword(password, user.passwordHash);
     if (!valid) return res.status(401).json({ message: "Invalid credentials" });
 
-    // Include region in JWT payload
+    // ✅ Include verified field in JWT
     const token = jwt.sign(
-      { id: user._id, role: user.role, region: user.region },
+      {
+        id: user._id,
+        role: user.role,
+        region: user.region,
+        verified: user.verified, // <-- added
+      },
       process.env.JWT_SECRET,
       { expiresIn: "7d" },
     );

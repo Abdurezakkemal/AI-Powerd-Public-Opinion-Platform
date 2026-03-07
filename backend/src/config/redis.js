@@ -5,9 +5,13 @@
 // client.on("error", (err) => console.error("Redis error:", err));
 // client.on("connect", () => console.log("Redis connected"));
 
-// client.connect(); // for redis v4+
+// // Connect immediately (redis v4+ uses async connect)
+// (async () => {
+//   await client.connect();
+// })();
 
 // module.exports = client;
+
 // In-memory store for development (replace with Redis later)
 const otpStore = new Map(); // key: phone number, value: { otp, expires }
 

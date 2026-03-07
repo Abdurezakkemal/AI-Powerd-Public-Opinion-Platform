@@ -2,6 +2,14 @@ const jwt = require("jsonwebtoken");
 
 const authMiddleware = (roles = []) => {
   return (req, res, next) => {
+    // Internal service call with API key
+    const internalKey = req.header("X-Internal-API-Key");
+    if (internalKey && internalKey === process.env.INTERNAL_API_KEY) {
+      // Grant admin privileges for internal calls
+      req.user = { role: "admin", id: "internal" };
+      return next();
+    }
+
     const token = req.header("Authorization")?.replace("Bearer ", "");
     if (!token) return res.status(401).json({ message: "Access denied" });
 
