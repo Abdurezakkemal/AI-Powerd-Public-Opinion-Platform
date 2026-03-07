@@ -1,5 +1,3 @@
-like this?
-
 ## API Documentation
 
 ### Base URL
