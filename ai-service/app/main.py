@@ -7,7 +7,7 @@ from keybert import KeyBERT
 
 # Import your modules
 from .models.sentiment import SentimentModel
-from .utils.language_detector import detect_language
+from .utils.language_detector import detect_language, detect_language_full
 from .utils.preprocess import normalize_text
 from .config.languages import SENTIMENT_MODELS
 from .predict import router as predict_router
@@ -71,6 +71,8 @@ class CompareResponse(BaseModel):
     primary: dict
     english: dict
     detected_language: str
+    detection_raw_label: Optional[str] = None
+    detection_confidence: Optional[float] = None
     text: str
 
 @app.post("/compare", response_model=CompareResponse)
@@ -78,11 +80,16 @@ async def compare_models(request: CompareRequest):
     # 1. Normalize text
     cleaned_text = normalize_text(request.text)
     
-    # 2. Determine language (use provided or detect)
+    # 2. Determine language (use provided or detect with full info)
     language = request.language
+    detection_raw = None
+    detection_conf = None
     if language is None:
-        language = detect_language(cleaned_text)
-        print(f"Detected language: {language}")
+        detection_result = detect_language_full(cleaned_text)
+        language = detection_result['language']
+        detection_raw = detection_result['raw_label']
+        detection_conf = detection_result['confidence']
+        print(f"Detected language: {language} (raw: {detection_raw}, conf: {detection_conf})")
     
     # 3. Get primary model result (language‑specific)
     try:
@@ -122,6 +129,8 @@ async def compare_models(request: CompareRequest):
             "model_used": english_model
         },
         detected_language=language,
+        detection_raw_label=detection_raw,
+        detection_confidence=detection_conf,
         text=cleaned_text
     )
 
