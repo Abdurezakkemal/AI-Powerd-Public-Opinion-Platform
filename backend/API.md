@@ -8,7 +8,7 @@ All endpoints return JSON unless otherwise noted.
 
 Protected endpoints require a JWT token in the Authorization header:
 
-```
+```http
 Authorization: Bearer <token>
 ```
 
@@ -414,13 +414,13 @@ Responses:
 
 Access: Planner, Admin
 
----
-
 ### GET /analytics/:policyId/geographic
 
 Get sentiment and rating per region (city) for a policy.
 
-Path Parameter: policyId – policy ID
+Path Parameter:
+
+- policyId – policy ID
 
 Responses:
 
@@ -428,19 +428,19 @@ Responses:
 
 ```json
 {
-"policyId": "POLICY_ID",
-"regions": [
-{
-"region": "CITY_NAME",
-"totalVotes": NUMBER,
-"averageRating": NUMBER,
-"sentimentCounts": {
-"positive": NUMBER,
-"negative": NUMBER,
-"neutral": NUMBER
-}
-}
-]
+  "policyId": "POLICY_ID",
+  "regions": [
+    {
+      "region": "CITY_NAME",
+      "totalVotes": NUMBER,
+      "averageRating": NUMBER,
+      "sentimentCounts": {
+        "positive": NUMBER,
+        "negative": NUMBER,
+        "neutral": NUMBER
+      }
+    }
+  ]
 }
 ```
 
@@ -449,16 +449,17 @@ Responses:
 
 Access: Planner, Admin
 
----
+### GET /analytics/:policyId/trends
 
-### GET /analytics/:policyId/trends?interval=day|week
+Get trends over time for a policy, including vote counts and sentiment breakdowns.
 
-Get trends over time (daily or weekly) for a policy.
+Path Parameter:
 
-Path Parameter: policyId – policy ID
+- policyId – policy ID
+
 Query Parameters (optional):
 
-- interval – `day` (default) or `week`
+- interval – "day" (default) or "week"; controls how dates are grouped.
 
 Responses:
 
@@ -466,18 +467,26 @@ Responses:
 
 ```json
 {
-"policyId": "POLICY_ID",
-"interval": "day",
-"data": [
-{
-"date": "DATE",
-"averageRating": NUMBER,
-"positive": NUMBER,
-"negative": NUMBER,
-"neutral": NUMBER,
-"total": NUMBER
-}
-]
+  "policyId": "POLICY_ID",
+  "interval": "day",
+  "data": [
+    {
+      "date": "2026-03-01",
+      "averageRating": 4.12,
+      "positive": 8,
+      "negative": 2,
+      "neutral": 5,
+      "total": 15
+    },
+    {
+      "date": "2026-03-02",
+      "averageRating": 4.2,
+      "positive": 12,
+      "negative": 1,
+      "neutral": 7,
+      "total": 20
+    }
+  ]
 }
 ```
 
@@ -681,31 +690,32 @@ Response:
 }
 ```
 
----
-
 ### GET /predict/predict/:policyId
 
-Generate rating predictions for a policy (internal service only, not public).
+Generate rating predictions for a policy (internal service only).
 
-Path Parameter: policyId – policy ID
+Path Parameter:
+
+- policyId – policy ID
+
 Query Parameters (optional):
 
 - days – number of days to predict (default 5)
 
-Responses:
-
-200 OK
+Response:
 
 ```json
 {
-"policyId": "POLICY_ID",
-"predictions": [
-{
-"date": "DATE",
-"predictedRating": NUMBER
-}
-]
+  "policyId": "60d...",
+  "predictions": [
+    {
+      "date": "2026-03-08",
+      "predictedRating": 4.12
+    },
+    {
+      "date": "2026-03-09",
+      "predictedRating": 4.08
+    }
+  ]
 }
 ```
-
-Access: Internal backend service only
