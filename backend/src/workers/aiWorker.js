@@ -1,7 +1,7 @@
 const Feedback = require("../models/Feedback");
 const axios = require("axios");
 
-// Mock AI service URL – replace with real when Person 4 provides it
+// Mock AI service URL – replace with real
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "http://localhost:8000/analyze";
 

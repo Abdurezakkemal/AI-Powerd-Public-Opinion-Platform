@@ -2,21 +2,20 @@ from dotenv import load_dotenv
 load_dotenv()
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List, Any, Dict
 from keybert import KeyBERT
+import time
 
-# Import your modules
-from .models.sentiment import SentimentModel
 from .utils.language_detector import detect_language, detect_language_full
 from .utils.preprocess import normalize_text
-from .config.languages import SENTIMENT_MODELS
-from .predict import router as predict_router
+from .models import ModelManager
 
 app = FastAPI(title="AI Service for Multilingual Sentiment Analysis")
 
-# Initialize models (lazy loading)
-sentiment_model = SentimentModel()
+# Keyword extraction model (remains global)
 kw_model = KeyBERT(model="paraphrase-multilingual-MiniLM-L12-v2")
+
+# ------------------- Request/Response Models -------------------
 
 class AnalyzeRequest(BaseModel):
     text: str
@@ -25,27 +24,36 @@ class AnalyzeRequest(BaseModel):
 class AnalyzeResponse(BaseModel):
     sentiment: str
     confidence: float
-    keywords: list[str]
+    keywords: List[str]
     language: str
+
+class BenchmarkRequest(BaseModel):
+    text: str
+    language: Optional[str] = None
+
+class BenchmarkResponse(BaseModel):
+    text: str
+    detected_language: str
+    detection_raw_label: Optional[str] = None
+    detection_confidence: Optional[float] = None
+    results: List[Dict[str, Any]]
+
+# ------------------- Endpoints -------------------
 
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(request: AnalyzeRequest):
-    # 1. Normalize input text
     cleaned_text = normalize_text(request.text)
     
-    # 2. Detect language if not provided
+    # Detect language if not provided
     language = request.language
     if language is None:
         language = detect_language(cleaned_text)
-        print(f"Detected language: {language}")
     
-    # 3. Get sentiment from appropriate model
-    try:
-        sentiment, confidence = sentiment_model.analyze(cleaned_text, language)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Sentiment analysis failed: {str(e)}")
+    # Get default model for language
+    model = ModelManager.get_model_for_language(language)
+    sentiment, confidence = model.predict(cleaned_text, language)
     
-    # 4. Extract keywords (multilingual)
+    # Extract keywords
     keywords = kw_model.extract_keywords(
         cleaned_text,
         keyphrase_ngram_range=(1, 2),
@@ -61,84 +69,46 @@ async def analyze(request: AnalyzeRequest):
         language=language
     )
 
-# ------------------- New Comparison Endpoint -------------------
-
-class CompareRequest(BaseModel):
-    text: str
-    language: Optional[str] = None
-
-class CompareResponse(BaseModel):
-    primary: dict
-    english: dict
-    detected_language: str
-    detection_raw_label: Optional[str] = None
-    detection_confidence: Optional[float] = None
-    text: str
-
-@app.post("/compare", response_model=CompareResponse)
-async def compare_models(request: CompareRequest):
-    # 1. Normalize text
+@app.post("/benchmark", response_model=BenchmarkResponse)
+async def benchmark_models(request: BenchmarkRequest):
     cleaned_text = normalize_text(request.text)
     
-    # 2. Determine language (use provided or detect with full info)
     language = request.language
     detection_raw = None
     detection_conf = None
     if language is None:
-        detection_result = detect_language_full(cleaned_text)
-        language = detection_result['language']
-        detection_raw = detection_result['raw_label']
-        detection_conf = detection_result['confidence']
-        print(f"Detected language: {language} (raw: {detection_raw}, conf: {detection_conf})")
+        detection = detect_language_full(cleaned_text)
+        language = detection['language']
+        detection_raw = detection['raw_label']
+        detection_conf = detection['confidence']
     
-    # 3. Get primary model result (language‑specific)
-    try:
-        prim_sent, prim_conf = sentiment_model.analyze(cleaned_text, language)
-        primary_model = SENTIMENT_MODELS.get(language, SENTIMENT_MODELS["en"])["model"]
-    except Exception:
-        # Fallback to English if primary fails
-        prim_sent, prim_conf = sentiment_model.analyze(cleaned_text, "en")
-        primary_model = SENTIMENT_MODELS["en"]["model"]
-        language = "en"  # adjust detected language
+    # Get all models for this language
+    models = ModelManager.get_all_models_for_language(language)
+    results = []
     
-    # 4. Get English model result (force "en")
-    eng_sent, eng_conf = sentiment_model.analyze(cleaned_text, "en")
-    english_model = SENTIMENT_MODELS["en"]["model"]
+    for model in models:
+        start = time.time()
+        try:
+            sentiment, conf = model.predict(cleaned_text, language)
+        except Exception as e:
+            sentiment, conf = f"error: {str(e)}", 0.0
+        elapsed = (time.time() - start) * 1000  # ms
+        
+        results.append({
+            "model_name": model.name,
+            "sentiment": sentiment,
+            "confidence": round(conf, 4) if isinstance(conf, float) else conf,
+            "time_ms": round(elapsed, 2)
+        })
     
-    # 5. Extract keywords (same for both – we can return one set)
-    keywords = kw_model.extract_keywords(
-        cleaned_text,
-        keyphrase_ngram_range=(1, 2),
-        stop_words=None,
-        top_n=5
-    )
-    keyword_list = [kw[0] for kw in keywords]
-    
-    # 6. Build response
-    return CompareResponse(
-        primary={
-            "sentiment": prim_sent,
-            "confidence": prim_conf,
-            "keywords": keyword_list,
-            "model_used": primary_model
-        },
-        english={
-            "sentiment": eng_sent,
-            "confidence": eng_conf,
-            "keywords": keyword_list,
-            "model_used": english_model
-        },
+    return BenchmarkResponse(
+        text=cleaned_text,
         detected_language=language,
         detection_raw_label=detection_raw,
         detection_confidence=detection_conf,
-        text=cleaned_text
+        results=results
     )
-
-# ------------------- End of Comparison Endpoint -------------------
 
 @app.get("/health")
 async def health():
     return {"status": "ok"}
-
-# Include prediction router (for enhanced analytics)
-app.include_router(predict_router, prefix="/predict", tags=["predict"])
