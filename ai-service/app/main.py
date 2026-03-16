@@ -3,17 +3,14 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
-from keybert import KeyBERT
 import time
 
 from .utils.language_detector import detect_language, detect_language_full
 from .utils.preprocess import normalize_text
-from .models import ModelManager
+from .models.sentiment import ModelManager
+from .models.keywords import KeywordManager
 
 app = FastAPI(title="AI Service for Multilingual Sentiment Analysis")
-
-# Keyword extraction model (remains global)
-kw_model = KeyBERT(model="paraphrase-multilingual-MiniLM-L12-v2")
 
 # ------------------- Request/Response Models -------------------
 
@@ -26,6 +23,8 @@ class AnalyzeResponse(BaseModel):
     confidence: float
     keywords: List[str]
     language: str
+    sentiment_model: str          # NEW: name of sentiment model used
+    keyword_model: str            # NEW: name of keyword model used
 
 class BenchmarkRequest(BaseModel):
     text: str
@@ -37,6 +36,8 @@ class BenchmarkResponse(BaseModel):
     detection_raw_label: Optional[str] = None
     detection_confidence: Optional[float] = None
     results: List[Dict[str, Any]]
+    keywords: List[str]           # NEW: keywords extracted by default keyword model
+    keyword_model: str            # NEW: name of keyword model used
 
 # ------------------- Endpoints -------------------
 
@@ -49,24 +50,21 @@ async def analyze(request: AnalyzeRequest):
     if language is None:
         language = detect_language(cleaned_text)
     
-    # Get default model for language
-    model = ModelManager.get_model_for_language(language)
-    sentiment, confidence = model.predict(cleaned_text, language)
+    # Get default sentiment model for language
+    sentiment_model = ModelManager.get_model_for_language(language)
+    sentiment, confidence = sentiment_model.predict(cleaned_text, language)
     
-    # Extract keywords
-    keywords = kw_model.extract_keywords(
-        cleaned_text,
-        keyphrase_ngram_range=(1, 2),
-        stop_words=None,
-        top_n=5
-    )
-    keyword_list = [kw[0] for kw in keywords]
+    # Extract keywords using KeywordManager
+    keywords = KeywordManager.extract(cleaned_text, language=language, top_n=5)
+    keyword_model_name = KeywordManager.get_default_model_name()
     
     return AnalyzeResponse(
         sentiment=sentiment,
         confidence=confidence,
-        keywords=keyword_list,
-        language=language
+        keywords=keywords,
+        language=language,
+        sentiment_model=sentiment_model.name,
+        keyword_model=keyword_model_name
     )
 
 @app.post("/benchmark", response_model=BenchmarkResponse)
@@ -82,7 +80,7 @@ async def benchmark_models(request: BenchmarkRequest):
         detection_raw = detection['raw_label']
         detection_conf = detection['confidence']
     
-    # Get all models for this language
+    # Get all sentiment models for this language
     models = ModelManager.get_all_models_for_language(language)
     results = []
     
@@ -101,12 +99,18 @@ async def benchmark_models(request: BenchmarkRequest):
             "time_ms": round(elapsed, 2)
         })
     
+    # Extract keywords using default keyword model
+    keywords = KeywordManager.extract(cleaned_text, language=language, top_n=5)
+    keyword_model_name = KeywordManager.get_default_model_name()
+    
     return BenchmarkResponse(
         text=cleaned_text,
         detected_language=language,
         detection_raw_label=detection_raw,
         detection_confidence=detection_conf,
-        results=results
+        results=results,
+        keywords=keywords,
+        keyword_model=keyword_model_name
     )
 
 @app.get("/health")

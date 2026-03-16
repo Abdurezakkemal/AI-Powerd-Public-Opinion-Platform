@@ -3,7 +3,7 @@ import torch
 from typing import Dict, Tuple
 import os
 
-from ..config.languages import SENTIMENT_MODELS
+from app.config.languages import SENTIMENT_MODELS
 
 class SentimentModel:
     def __init__(self):
