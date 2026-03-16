@@ -1,6 +1,6 @@
 from .base import BaseModel
-from ..models.sentiment import SentimentModel as LegacySentimentModel
-from ..config.languages import SENTIMENT_MODELS
+from .sentiment import SentimentModel as LegacySentimentModel
+from app.config.languages import SENTIMENT_MODELS
 
 class CustomSentimentModel(BaseModel):
     def __init__(self, model_name: str):
