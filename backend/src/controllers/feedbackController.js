@@ -5,7 +5,6 @@ exports.submitFeedback = async (req, res) => {
   try {
     const { policyId, rating, comment } = req.body;
 
-    // Basic validation
     if (!policyId || !rating) {
       return res
         .status(400)
@@ -22,14 +21,12 @@ exports.submitFeedback = async (req, res) => {
         .json({ message: "Comment too long (max 500 chars)" });
     }
 
-    // Check if user is verified (from auth middleware)
     if (!req.user.verified) {
       return res
         .status(403)
         .json({ message: "Please verify your phone first" });
     }
 
-    // Check if policy exists and is active
     const policy = await Policy.findOne({ _id: policyId, status: "active" });
     if (!policy) {
       return res
@@ -37,7 +34,17 @@ exports.submitFeedback = async (req, res) => {
         .json({ message: "Policy not found or not active" });
     }
 
-    // Check if user already voted on this policy
+    // Validate voting period
+    const now = new Date();
+    const start = new Date(policy.startDate);
+    const end = new Date(policy.endDate);
+    if (now < start || now > end) {
+      return res
+        .status(400)
+        .json({ message: "Voting not allowed for this policy at this time" });
+    }
+
+    // Check for duplicate
     const existing = await Feedback.findOne({ policyId, userId: req.user.id });
     if (existing) {
       return res
@@ -45,7 +52,6 @@ exports.submitFeedback = async (req, res) => {
         .json({ message: "You have already voted on this policy" });
     }
 
-    // Create feedback
     const feedback = new Feedback({
       policyId,
       userId: req.user.id,
@@ -59,6 +65,12 @@ exports.submitFeedback = async (req, res) => {
 
     res.status(201).json({ message: "Feedback recorded" });
   } catch (err) {
+    // Handle duplicate key error from unique index
+    if (err.code === 11000) {
+      return res
+        .status(409)
+        .json({ message: "You have already voted on this policy" });
+    }
     console.error(err);
     res.status(500).json({ message: "Server error" });
   }

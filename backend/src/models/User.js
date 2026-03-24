@@ -1,3 +1,4 @@
+// src/models/User.js
 const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
@@ -11,6 +12,7 @@ const userSchema = new mongoose.Schema({
     default: "citizen",
   },
   verified: { type: Boolean, default: false },
+  active: { type: Boolean, default: true }, // <-- add this line
   createdAt: { type: Date, default: Date.now },
 });
 

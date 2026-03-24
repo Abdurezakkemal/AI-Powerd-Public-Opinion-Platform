@@ -1,7 +1,6 @@
 const Policy = require("../models/Policy");
-const User = require("../models/User"); // only needed if you decide to fetch user, but we now have region in token
+const User = require("../models/User");
 
-// Helper to generate policy code (can be placed in utils)
 const generatePolicyCode = (title) => {
   const prefix = title
     .replace(/[^a-zA-Z0-9]/g, "")
@@ -20,12 +19,10 @@ exports.getAll = async (req, res) => {
 
     if (status) filter.status = status;
 
-    // If user is citizen, only show active policies in their region
     if (req.user.role === "citizen") {
       filter.status = "active";
-      filter.targetRegions = req.user.region; // region from JWT
+      filter.targetRegions = req.user.region;
     } else {
-      // For planner/admin, allow filtering by region if provided
       if (region) filter.targetRegions = region;
     }
 
@@ -47,7 +44,7 @@ exports.getAll = async (req, res) => {
         startDate: p.startDate,
         endDate: p.endDate,
         status: p.status,
-        averageRating: 0, // placeholder until feedback is implemented
+        averageRating: 0,
         totalVotes: 0,
       })),
       total,
@@ -67,7 +64,6 @@ exports.getOne = async (req, res) => {
     );
     if (!policy) return res.status(404).json({ message: "Policy not found" });
 
-    // Citizens can only view if active and in their region
     if (req.user.role === "citizen") {
       if (
         policy.status !== "active" ||
@@ -102,7 +98,23 @@ exports.create = async (req, res) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    const policyCode = generatePolicyCode(title);
+    // Validate dates
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (start >= end) {
+      return res
+        .status(400)
+        .json({ message: "Start date must be before end date" });
+    }
+
+    // Ensure unique policy code
+    let policyCode;
+    let exists;
+    do {
+      policyCode = generatePolicyCode(title);
+      exists = await Policy.findOne({ policyCode });
+    } while (exists);
+
     const policy = new Policy({
       title,
       description,
