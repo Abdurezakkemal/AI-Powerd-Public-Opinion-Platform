@@ -1,13 +1,35 @@
 const User = require("../models/User");
 const { hashPassword } = require("../utils/helpers");
 
-// GET /users/planners
+// GET /users/planners?active=true&page=1&limit=10
 exports.listPlanners = async (req, res) => {
   try {
-    const planners = await User.find({ role: "planner" }).select(
-      "-passwordHash",
-    );
-    res.json({ planners });
+    const { active, page = 1, limit = 10 } = req.query;
+
+    const query = { role: "planner" };
+
+    // Filtering
+    if (active !== undefined) {
+      query.active = active === "true";
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [planners, total] = await Promise.all([
+      User.find(query)
+        .select("-passwordHash")
+        .skip(skip)
+        .limit(parseInt(limit))
+        .sort({ createdAt: -1 }),
+      User.countDocuments(query),
+    ]);
+
+    res.json({
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
+      planners,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
@@ -18,6 +40,7 @@ exports.listPlanners = async (req, res) => {
 exports.createPlanner = async (req, res) => {
   try {
     const { email, password } = req.body;
+
     if (!email || !password) {
       return res.status(400).json({ message: "Email and password required" });
     }
@@ -28,14 +51,17 @@ exports.createPlanner = async (req, res) => {
     }
 
     const passwordHash = await hashPassword(password);
+
     const planner = new User({
       email,
       passwordHash,
       role: "planner",
-      phoneHash: "", // planners don't need phone
+      phoneHash: null, // ✅ FIXED
       region: "",
-      verified: true, // planners are trusted
+      verified: true,
+      active: true,
     });
+
     await planner.save();
 
     res.status(201).json({
@@ -53,22 +79,30 @@ exports.createPlanner = async (req, res) => {
 exports.updatePlanner = async (req, res) => {
   try {
     const { id } = req.params;
-    const { password, status } = req.body;
+    const { password, active } = req.body;
 
     const planner = await User.findOne({ _id: id, role: "planner" });
+
     if (!planner) {
       return res.status(404).json({ message: "Planner not found" });
     }
 
+    // Password reset
     if (password) {
       planner.passwordHash = await hashPassword(password);
     }
-    // If status is provided, we can use a field like `isActive` – but our schema doesn't have it.
-    // We'll assume deactivation means setting role to something else? Better to add an `active` boolean.
-    // For simplicity, we'll ignore status for now or you can add a field.
+
+    // ✅ ACTIVE FLAG SUPPORT (CRITICAL FIX)
+    if (active !== undefined) {
+      planner.active = active;
+    }
 
     await planner.save();
-    res.json({ message: "Planner updated" });
+
+    res.json({
+      message: "Planner updated",
+      active: planner.active,
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
