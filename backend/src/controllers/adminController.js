@@ -1,5 +1,8 @@
 const User = require("../models/User");
+const Feedback = require("../models/Feedback");
 const { hashPassword } = require("../utils/helpers");
+
+// ========== PLANNER MANAGEMENT ==========
 
 // GET /users/planners?active=true&page=1&limit=10
 exports.listPlanners = async (req, res) => {
@@ -56,7 +59,7 @@ exports.createPlanner = async (req, res) => {
       email,
       passwordHash,
       role: "planner",
-      phoneHash: null, // ✅ FIXED
+      phoneHash: null,
       region: "",
       verified: true,
       active: true,
@@ -92,7 +95,7 @@ exports.updatePlanner = async (req, res) => {
       planner.passwordHash = await hashPassword(password);
     }
 
-    // ✅ ACTIVE FLAG SUPPORT (CRITICAL FIX)
+    // Active flag support
     if (active !== undefined) {
       planner.active = active;
     }
@@ -103,6 +106,68 @@ exports.updatePlanner = async (req, res) => {
       message: "Planner updated",
       active: planner.active,
     });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// ========== FEEDBACK MANAGEMENT ==========
+
+// GET /admin/feedback/pending
+exports.getPendingFeedback = async (req, res) => {
+  try {
+    const feedbacks = await Feedback.find({ status: "pending review" })
+      .populate("policyId", "title")
+      .populate("userId", "email")
+      .sort({ createdAt: -1 });
+    res.json({ feedbacks });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// PUT /admin/feedback/:id
+exports.updateFeedback = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    // Allowed fields
+    const allowed = ["sentiment", "keywords", "processed", "status"];
+    const updateData = {};
+    for (const key of allowed) {
+      if (updates[key] !== undefined) updateData[key] = updates[key];
+    }
+
+    const feedback = await Feedback.findByIdAndUpdate(id, updateData, {
+      new: true,
+    });
+    if (!feedback)
+      return res.status(404).json({ message: "Feedback not found" });
+    res.json(feedback);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// POST /admin/feedback/:id/retry
+exports.retryFeedback = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const feedback = await Feedback.findById(id);
+    if (!feedback)
+      return res.status(404).json({ message: "Feedback not found" });
+
+    feedback.processed = false;
+    feedback.retryCount = 0;
+    feedback.nextRetry = null;
+    feedback.status = "processing";
+    await feedback.save();
+
+    res.json({ message: "Feedback queued for retry" });
   } catch (err) {
     console.error(err);
     res.status(500).json({ message: "Server error" });
