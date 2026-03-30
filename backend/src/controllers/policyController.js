@@ -1,17 +1,28 @@
+// src/controllers/policyController.js
 const Policy = require("../models/Policy");
 const User = require("../models/User");
+const { customAlphabet } = require("nanoid");
 
+// Nanoid generator: 6 characters, uppercase letters + digits
+const nanoid = customAlphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 6);
+
+/**
+ * Generate unique policy code with title prefix and random string
+ * @param {string} title - Policy title
+ * @returns {string} - Policy code
+ */
 const generatePolicyCode = (title) => {
   const prefix = title
-    .replace(/[^a-zA-Z0-9]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "") // remove special chars
     .substring(0, 4)
     .toUpperCase();
-  const random = Math.floor(Math.random() * 1000)
-    .toString()
-    .padStart(3, "0");
-  return `${prefix}${random}`;
+  const id = nanoid();
+  return `${prefix}${id}`;
 };
 
+/**
+ * Get all policies with optional filters and pagination
+ */
 exports.getAll = async (req, res) => {
   try {
     const { status, region, page = 1, limit = 20 } = req.query;
@@ -51,11 +62,14 @@ exports.getAll = async (req, res) => {
       page: Number(page),
     });
   } catch (err) {
-    console.error(err);
+    console.error("Get all policies error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+/**
+ * Get single policy by ID
+ */
 exports.getOne = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id).populate(
@@ -86,11 +100,14 @@ exports.getOne = async (req, res) => {
       createdAt: policy.createdAt,
     });
   } catch (err) {
-    console.error(err);
+    console.error("Get policy error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+/**
+ * Create new policy with unique policy code
+ */
 exports.create = async (req, res) => {
   try {
     const { title, description, targetRegions, startDate, endDate } = req.body;
@@ -110,9 +127,16 @@ exports.create = async (req, res) => {
     // Ensure unique policy code
     let policyCode;
     let exists;
+    let attempts = 0;
     do {
       policyCode = generatePolicyCode(title);
       exists = await Policy.findOne({ policyCode });
+      attempts++;
+      if (attempts > 10) {
+        return res
+          .status(500)
+          .json({ message: "Unable to generate unique policy code" });
+      }
     } while (exists);
 
     const policy = new Policy({
@@ -130,14 +154,17 @@ exports.create = async (req, res) => {
     res.status(201).json({
       id: policy._id,
       policyCode,
-      message: "Policy created.",
+      message: "Policy created successfully",
     });
   } catch (err) {
-    console.error(err);
+    console.error("Policy creation error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+/**
+ * Update existing draft policy
+ */
 exports.update = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
@@ -156,13 +183,25 @@ exports.update = async (req, res) => {
     if (endDate) policy.endDate = endDate;
 
     await policy.save();
-    res.json(policy);
+    res.json({
+      id: policy._id,
+      title: policy.title,
+      description: policy.description,
+      policyCode: policy.policyCode,
+      targetRegions: policy.targetRegions,
+      startDate: policy.startDate,
+      endDate: policy.endDate,
+      status: policy.status,
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Policy update error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+/**
+ * Delete or close policy
+ */
 exports.delete = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
@@ -179,7 +218,7 @@ exports.delete = async (req, res) => {
       res.status(400).json({ message: "Policy already closed" });
     }
   } catch (err) {
-    console.error(err);
+    console.error("Policy delete error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
