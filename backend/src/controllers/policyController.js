@@ -1,18 +1,28 @@
+// src/controllers/policyController.js
 const Policy = require("../models/Policy");
-const User = require("../models/User"); // only needed if you decide to fetch user, but we now have region in token
+const User = require("../models/User");
+const { customAlphabet } = require("nanoid");
 
-// Helper to generate policy code (can be placed in utils)
+// Nanoid generator: 6 characters, uppercase letters + digits
+const nanoid = customAlphabet("ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789", 6);
+
+/**
+ * Generate unique policy code with title prefix and random string
+ * @param {string} title - Policy title
+ * @returns {string} - Policy code
+ */
 const generatePolicyCode = (title) => {
   const prefix = title
-    .replace(/[^a-zA-Z0-9]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "") // remove special chars
     .substring(0, 4)
     .toUpperCase();
-  const random = Math.floor(Math.random() * 1000)
-    .toString()
-    .padStart(3, "0");
-  return `${prefix}${random}`;
+  const id = nanoid();
+  return `${prefix}${id}`;
 };
 
+/**
+ * Get all policies with optional filters and pagination
+ */
 exports.getAll = async (req, res) => {
   try {
     const { status, region, page = 1, limit = 20 } = req.query;
@@ -20,12 +30,10 @@ exports.getAll = async (req, res) => {
 
     if (status) filter.status = status;
 
-    // If user is citizen, only show active policies in their region
     if (req.user.role === "citizen") {
       filter.status = "active";
-      filter.targetRegions = req.user.region; // region from JWT
+      filter.targetRegions = req.user.region;
     } else {
-      // For planner/admin, allow filtering by region if provided
       if (region) filter.targetRegions = region;
     }
 
@@ -47,18 +55,21 @@ exports.getAll = async (req, res) => {
         startDate: p.startDate,
         endDate: p.endDate,
         status: p.status,
-        averageRating: 0, // placeholder until feedback is implemented
+        averageRating: 0,
         totalVotes: 0,
       })),
       total,
       page: Number(page),
     });
   } catch (err) {
-    console.error(err);
+    console.error("Get all policies error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+/**
+ * Get single policy by ID
+ */
 exports.getOne = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id).populate(
@@ -67,7 +78,6 @@ exports.getOne = async (req, res) => {
     );
     if (!policy) return res.status(404).json({ message: "Policy not found" });
 
-    // Citizens can only view if active and in their region
     if (req.user.role === "citizen") {
       if (
         policy.status !== "active" ||
@@ -90,11 +100,14 @@ exports.getOne = async (req, res) => {
       createdAt: policy.createdAt,
     });
   } catch (err) {
-    console.error(err);
+    console.error("Get policy error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+/**
+ * Create new policy with unique policy code
+ */
 exports.create = async (req, res) => {
   try {
     const { title, description, targetRegions, startDate, endDate } = req.body;
@@ -102,7 +115,30 @@ exports.create = async (req, res) => {
       return res.status(400).json({ message: "All fields are required" });
     }
 
-    const policyCode = generatePolicyCode(title);
+    // Validate dates
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    if (start >= end) {
+      return res
+        .status(400)
+        .json({ message: "Start date must be before end date" });
+    }
+
+    // Ensure unique policy code
+    let policyCode;
+    let exists;
+    let attempts = 0;
+    do {
+      policyCode = generatePolicyCode(title);
+      exists = await Policy.findOne({ policyCode });
+      attempts++;
+      if (attempts > 10) {
+        return res
+          .status(500)
+          .json({ message: "Unable to generate unique policy code" });
+      }
+    } while (exists);
+
     const policy = new Policy({
       title,
       description,
@@ -118,14 +154,17 @@ exports.create = async (req, res) => {
     res.status(201).json({
       id: policy._id,
       policyCode,
-      message: "Policy created.",
+      message: "Policy created successfully",
     });
   } catch (err) {
-    console.error(err);
+    console.error("Policy creation error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+/**
+ * Update existing draft policy
+ */
 exports.update = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
@@ -144,13 +183,25 @@ exports.update = async (req, res) => {
     if (endDate) policy.endDate = endDate;
 
     await policy.save();
-    res.json(policy);
+    res.json({
+      id: policy._id,
+      title: policy.title,
+      description: policy.description,
+      policyCode: policy.policyCode,
+      targetRegions: policy.targetRegions,
+      startDate: policy.startDate,
+      endDate: policy.endDate,
+      status: policy.status,
+    });
   } catch (err) {
-    console.error(err);
+    console.error("Policy update error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };
 
+/**
+ * Delete or close policy
+ */
 exports.delete = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
@@ -167,7 +218,7 @@ exports.delete = async (req, res) => {
       res.status(400).json({ message: "Policy already closed" });
     }
   } catch (err) {
-    console.error(err);
+    console.error("Policy delete error:", err);
     res.status(500).json({ message: "Server error" });
   }
 };

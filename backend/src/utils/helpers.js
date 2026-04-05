@@ -9,9 +9,20 @@ const comparePassword = async (password, hash) => {
   return await bcrypt.compare(password, hash);
 };
 
+const normalizePhone = (phone) => {
+  // Remove all non-digit characters, then strip leading +251 or 0
+  const digits = phone.replace(/\D/g, "");
+  if (digits.startsWith("251")) {
+    return digits.slice(3);
+  }
+  if (digits.startsWith("0")) {
+    return digits.slice(1);
+  }
+  return digits;
+};
+
 const hashPhone = (phone) => {
-  // Normalize phone: remove +251, leading zero, keep digits
-  const normalized = phone.replace(/^\+251|^0?/, "");
+  const normalized = normalizePhone(phone);
   return crypto.createHash("sha256").update(normalized).digest("hex");
 };
 
@@ -22,6 +33,7 @@ const generateOTP = () => {
 module.exports = {
   hashPassword,
   comparePassword,
+  normalizePhone,
   hashPhone,
   generateOTP,
 };

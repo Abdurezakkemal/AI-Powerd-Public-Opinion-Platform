@@ -1,20 +1,22 @@
 const Policy = require("../models/Policy");
 const Feedback = require("../models/Feedback");
 const User = require("../models/User");
-const { hashPhone } = require("../utils/helpers");
-const client = require("../config/redis"); // our in‑memory store (or real Redis)
+const { hashPhone, normalizePhone } = require("../utils/helpers");
+const client = require("../config/redis");
 
-// Rate limit: max 3 votes per phone per day
 const RATE_LIMIT = 3;
-const RATE_WINDOW = 24 * 60 * 60; // 24 hours in seconds
+const RATE_WINDOW = 24 * 60 * 60;
 
-// POST /sms/receive
 exports.receiveSms = async (req, res) => {
   try {
     const { phone, message } = req.body;
     if (!phone || !message) {
       return res.status(400).send("Phone and message are required");
     }
+
+    // Normalize phone
+    const normalized = normalizePhone(phone);
+    const phoneHash = hashPhone(normalized); // use normalized for consistency
 
     // Parse message: RATE <code> <rating>
     const match = message.trim().match(/^RATE\s+(\S+)\s+([1-5])$/i);
@@ -32,9 +34,6 @@ exports.receiveSms = async (req, res) => {
     if (!policy) {
       return res.status(404).send("Policy not found or not active");
     }
-
-    // Hash phone
-    const phoneHash = hashPhone(phone);
 
     // Check if this phone is already registered as an app user
     const existingUser = await User.findOne({ phoneHash });
@@ -57,7 +56,7 @@ exports.receiveSms = async (req, res) => {
         .send("You have already voted on this policy via SMS.");
     }
 
-    // Rate limiting
+    // Rate limiting – use hash as key
     const rateKey = `rate:sms:${phoneHash}:${new Date().toISOString().split("T")[0]}`;
     const current = await client.incr(rateKey);
     if (current === 1) {
@@ -84,7 +83,6 @@ exports.receiveSms = async (req, res) => {
   }
 };
 
-// GET /sms/results
 exports.getResults = async (req, res) => {
   try {
     const { phone, code } = req.query;
@@ -97,7 +95,6 @@ exports.getResults = async (req, res) => {
       return res.status(404).send("Policy not found or not yet closed");
     }
 
-    // (Optional rate limiting on results – can be lighter)
     const feedbacks = await Feedback.find({ policyId: policy._id });
     const totalVotes = feedbacks.length;
     const avgRating = totalVotes

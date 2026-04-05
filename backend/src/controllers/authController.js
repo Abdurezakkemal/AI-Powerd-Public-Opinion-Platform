@@ -6,6 +6,7 @@ const {
   comparePassword,
   hashPhone,
   generateOTP,
+  normalizePhone,
 } = require("../utils/helpers");
 
 exports.register = async (req, res) => {
@@ -34,6 +35,7 @@ exports.register = async (req, res) => {
       region,
       role: "citizen",
       verified: false,
+      active: true, // default active
     });
     await user.save();
 
@@ -51,7 +53,7 @@ exports.sendOtp = async (req, res) => {
     const { phone } = req.body;
     if (!phone) return res.status(400).json({ message: "Phone required" });
 
-    const normalized = phone.replace(/^\+251|^0?/, "");
+    const normalized = normalizePhone(phone);
     const key = `otp:${normalized}`;
 
     const attempts = await client.get(`otp:attempts:${normalized}`);
@@ -82,8 +84,19 @@ exports.verifyOtp = async (req, res) => {
     if (!phone || !code)
       return res.status(400).json({ message: "Phone and code required" });
 
-    const normalized = phone.replace(/^\+251|^0?/, "");
+    const normalized = normalizePhone(phone);
     const key = `otp:${normalized}`;
+
+    // Verify attempt limit
+    const attemptsKey = `otp:verify:${normalized}`;
+    const attempts = await client.incr(attemptsKey);
+    if (attempts > 3) {
+      return res
+        .status(429)
+        .json({ message: "Too many verification attempts" });
+    }
+    await client.expire(attemptsKey, 300);
+
     const stored = await client.get(key);
     if (!stored || stored !== code) {
       return res.status(400).json({ message: "Invalid or expired OTP" });
@@ -98,13 +111,12 @@ exports.verifyOtp = async (req, res) => {
     user.verified = true;
     await user.save();
 
-    // ✅ Include verified field in JWT
     const token = jwt.sign(
       {
         id: user._id,
         role: user.role,
         region: user.region,
-        verified: user.verified, // <-- added
+        verified: user.verified,
       },
       process.env.JWT_SECRET,
       { expiresIn: "7d" },
@@ -126,16 +138,29 @@ exports.login = async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) return res.status(401).json({ message: "Invalid credentials" });
 
+    // Check active and verified
+    if (!user.active) {
+      return res
+        .status(403)
+        .json({ message: "Account is deactivated. Contact admin." });
+    }
+    if (!user.verified) {
+      return res
+        .status(403)
+        .json({
+          message: "Phone number not verified. Please verify your phone first.",
+        });
+    }
+
     const valid = await comparePassword(password, user.passwordHash);
     if (!valid) return res.status(401).json({ message: "Invalid credentials" });
 
-    // ✅ Include verified field in JWT
     const token = jwt.sign(
       {
         id: user._id,
         role: user.role,
         region: user.region,
-        verified: user.verified, // <-- added
+        verified: user.verified,
       },
       process.env.JWT_SECRET,
       { expiresIn: "7d" },
