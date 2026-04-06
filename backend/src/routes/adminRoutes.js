@@ -20,5 +20,10 @@ router.post(
   auth(["admin"]),
   adminController.retryFeedback,
 );
+router.post(
+  "/feedback/retry-all",
+  auth(["admin"]),
+  adminController.retryAllFeedback,
+);
 
 module.exports = router;
