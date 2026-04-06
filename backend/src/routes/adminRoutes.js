@@ -25,5 +25,17 @@ router.post(
   auth(["admin"]),
   adminController.retryAllFeedback,
 );
+// ========== CITIZEN MANAGEMENT ==========
+router.get("/users/citizens", auth(["admin"]), adminController.listCitizens);
 
+router.put(
+  "/users/:id/status",
+  auth(["admin"]),
+  adminController.updateCitizenStatus,
+);
+router.put(
+  "/planners/:id/status",
+  auth(["admin"]),
+  adminController.updatePlannerStatus,
+);
 module.exports = router;
