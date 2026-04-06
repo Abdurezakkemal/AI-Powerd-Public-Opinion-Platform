@@ -270,3 +270,36 @@ exports.updateCitizenStatus = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+// ========== PLANNER STATUS TOGGLE ==========
+
+// PUT /admin/planners/:id/status
+exports.updatePlannerStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { active } = req.body;
+
+    if (active === undefined) {
+      return res.status(400).json({
+        message: "active field is required (true/false)",
+      });
+    }
+
+    const planner = await User.findOne({ _id: id, role: "planner" });
+
+    if (!planner) {
+      return res.status(404).json({ message: "Planner not found" });
+    }
+
+    planner.active = active;
+    await planner.save();
+
+    res.json({
+      message: `Planner ${active ? "activated" : "deactivated"} successfully`,
+      plannerId: planner._id,
+      active: planner.active,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};

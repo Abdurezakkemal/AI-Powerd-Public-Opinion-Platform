@@ -33,4 +33,9 @@ router.put(
   auth(["admin"]),
   adminController.updateCitizenStatus,
 );
+router.put(
+  "/planners/:id/status",
+  auth(["admin"]),
+  adminController.updatePlannerStatus,
+);
 module.exports = router;
