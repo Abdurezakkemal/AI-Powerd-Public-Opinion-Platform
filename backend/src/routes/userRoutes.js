@@ -10,5 +10,5 @@ router.get("/me", userController.getMe);
 router.put("/me", userController.updateMe);
 router.put("/me/password", userController.changePassword);
 router.get("/me/history", userController.getHistory);
-
+router.delete("/me", userController.deleteMe);
 module.exports = router;
