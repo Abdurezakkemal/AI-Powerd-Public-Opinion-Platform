@@ -8,21 +8,37 @@ const {
   generateOTP,
   normalizePhone,
 } = require("../utils/helpers");
+const {
+  sendSuccess,
+  sendError,
+  ErrorCodes,
+} = require("../utils/responseHelper");
 
 exports.register = async (req, res) => {
   try {
     const { email, password, phone, region } = req.body;
     if (!email || !password || !phone || !region) {
-      return res.status(400).json({ message: "All fields are required" });
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Missing required fields: email, password, phone, region are all required",
+        { required: ["email", "password", "phone", "region"] },
+        400,
+      );
     }
 
     const existing = await User.findOne({
       $or: [{ email }, { phoneHash: hashPhone(phone) }],
     });
     if (existing) {
-      return res
-        .status(409)
-        .json({ message: "Email or phone already registered" });
+      const field = existing.email === email ? "Email" : "Phone number";
+      return sendError(
+        res,
+        ErrorCodes.DUPLICATE,
+        `${field} already registered. Please use a different ${field.toLowerCase()}.`,
+        null,
+        409,
+      );
     }
 
     const passwordHash = await hashPassword(password);
@@ -35,78 +51,135 @@ exports.register = async (req, res) => {
       region,
       role: "citizen",
       verified: false,
-      active: true, // default active
+      active: true,
     });
     await user.save();
 
-    res
-      .status(201)
-      .json({ message: "User created. Please verify phone with OTP." });
+    return sendSuccess(
+      res,
+      { userId: user._id },
+      "User registered successfully. A 6-digit OTP has been sent to your phone for verification.",
+      201,
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Registration error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Unable to complete registration. Please try again later.",
+      null,
+      500,
+    );
   }
 };
 
 exports.sendOtp = async (req, res) => {
   try {
     const { phone } = req.body;
-    if (!phone) return res.status(400).json({ message: "Phone required" });
+    if (!phone) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Phone number is required",
+        null,
+        400,
+      );
+    }
 
     const normalized = normalizePhone(phone);
     const key = `otp:${normalized}`;
+    const attemptsKey = `otp:attempts:${normalized}`;
 
-    const attempts = await client.get(`otp:attempts:${normalized}`);
+    const attempts = await client.get(attemptsKey);
     if (attempts && parseInt(attempts) >= 3) {
-      return res
-        .status(429)
-        .json({ message: "Too many OTP requests. Try later." });
+      return sendError(
+        res,
+        ErrorCodes.RATE_LIMIT,
+        "Too many OTP requests. Please wait 1 hour before requesting again.",
+        null,
+        429,
+      );
     }
 
     const otp = generateOTP();
     await client.setEx(key, 300, otp);
+    await client.incr(attemptsKey);
+    await client.expire(attemptsKey, 3600);
 
-    await client.incr(`otp:attempts:${normalized}`);
-    await client.expire(`otp:attempts:${normalized}`, 3600);
+    // Simulate SMS – replace with actual gateway
+    console.log(`[SIMULATED SMS] OTP for ${normalized}: ${otp}`);
 
-    console.log(`OTP for ${normalized}: ${otp}`); // TODO: replace with actual SMS sending
-
-    res.json({ message: "OTP sent." });
+    return sendSuccess(
+      res,
+      null,
+      "OTP sent successfully. It expires in 5 minutes.",
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Send OTP error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to send OTP. Please try again.",
+      null,
+      500,
+    );
   }
 };
 
 exports.verifyOtp = async (req, res) => {
   try {
     const { phone, code } = req.body;
-    if (!phone || !code)
-      return res.status(400).json({ message: "Phone and code required" });
+    if (!phone || !code) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Phone number and verification code are required",
+        null,
+        400,
+      );
+    }
 
     const normalized = normalizePhone(phone);
     const key = `otp:${normalized}`;
-
-    // Verify attempt limit
     const attemptsKey = `otp:verify:${normalized}`;
+
     const attempts = await client.incr(attemptsKey);
     if (attempts > 3) {
-      return res
-        .status(429)
-        .json({ message: "Too many verification attempts" });
+      return sendError(
+        res,
+        ErrorCodes.RATE_LIMIT,
+        "Too many verification attempts. Please wait 5 minutes.",
+        null,
+        429,
+      );
     }
     await client.expire(attemptsKey, 300);
 
     const stored = await client.get(key);
     if (!stored || stored !== code) {
-      return res.status(400).json({ message: "Invalid or expired OTP" });
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid or expired OTP. Please request a new one.",
+        null,
+        400,
+      );
     }
 
     await client.del(key);
+    await client.del(attemptsKey);
 
     const phoneHash = hashPhone(phone);
     const user = await User.findOne({ phoneHash });
-    if (!user) return res.status(404).json({ message: "User not found" });
+    if (!user) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "No account found with this phone number.",
+        null,
+        404,
+      );
+    }
 
     user.verified = true;
     await user.save();
@@ -122,38 +195,77 @@ exports.verifyOtp = async (req, res) => {
       { expiresIn: "7d" },
     );
 
-    res.json({ token, role: user.role });
+    return sendSuccess(
+      res,
+      { token, role: user.role },
+      "Phone verified successfully. You can now log in.",
+      200,
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("OTP verification error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Verification failed. Please try again.",
+      null,
+      500,
+    );
   }
 };
 
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-    if (!email || !password)
-      return res.status(400).json({ message: "Email and password required" });
+    if (!email || !password) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Email and password are required",
+        null,
+        400,
+      );
+    }
 
     const user = await User.findOne({ email });
-    if (!user) return res.status(401).json({ message: "Invalid credentials" });
+    if (!user) {
+      return sendError(
+        res,
+        ErrorCodes.INVALID_CREDENTIALS,
+        "Invalid email or password.",
+        null,
+        401,
+      );
+    }
 
-    // Check active and verified
     if (!user.active) {
-      return res
-        .status(403)
-        .json({ message: "Account is deactivated. Contact admin." });
+      return sendError(
+        res,
+        ErrorCodes.ACCOUNT_DISABLED,
+        "Your account has been deactivated. Please contact an administrator.",
+        null,
+        403,
+      );
     }
     if (!user.verified) {
-      return res
-        .status(403)
-        .json({
-          message: "Phone number not verified. Please verify your phone first.",
-        });
+      return sendError(
+        res,
+        ErrorCodes.NOT_VERIFIED,
+        "Your phone number is not verified. Please complete OTP verification first.",
+        null,
+        403,
+      );
     }
 
     const valid = await comparePassword(password, user.passwordHash);
-    if (!valid) return res.status(401).json({ message: "Invalid credentials" });
+    if (!valid) {
+      return sendError(
+        res,
+        ErrorCodes.INVALID_CREDENTIALS,
+        "Invalid email or password.",
+        null,
+        401,
+      );
+    }
 
     const token = jwt.sign(
       {
@@ -166,9 +278,20 @@ exports.login = async (req, res) => {
       { expiresIn: "7d" },
     );
 
-    res.json({ token, role: user.role });
+    return sendSuccess(
+      res,
+      { token, role: user.role, userId: user._id },
+      "Login successful.",
+      200,
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Login error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Login failed. Please try again later.",
+      null,
+      500,
+    );
   }
 };
