@@ -10,8 +10,21 @@ const RATE_WINDOW = 24 * 60 * 60;
 exports.receiveSms = async (req, res) => {
   try {
     const { phone, message } = req.body;
+
     if (!phone || !message) {
       return res.status(400).send("Phone and message are required");
+    }
+
+    const trimmed = message.trim().toUpperCase();
+
+    // ✅ HELP command
+    if (trimmed === "HELP") {
+      return res.send(
+        "Commands:\n" +
+          "RATE <code> <1-5> - Vote on a policy\n" +
+          "RESULTS <code> - Get final results\n" +
+          "HELP - Show this message",
+      );
     }
 
     // Normalize phone
@@ -63,7 +76,14 @@ exports.receiveSms = async (req, res) => {
       await client.expire(rateKey, RATE_WINDOW);
     }
     if (current > RATE_LIMIT) {
-      return res.status(429).send("Rate limit exceeded. Try again tomorrow.");
+      const ttl = await client.ttl(rateKey);
+      const hours = Math.ceil(ttl / 3600);
+
+      return res
+        .status(429)
+        .send(
+          `You have reached your daily limit of ${RATE_LIMIT} votes. Try again in ${hours} hour(s).`,
+        );
     }
 
     // Save feedback
@@ -76,7 +96,7 @@ exports.receiveSms = async (req, res) => {
     });
     await feedback.save();
 
-    res.send(`Your vote for "${policy.title}" has been recorded. Thank you!`);
+    res.send(`You voted ${rating} stars for "${policy.title}". Thank you!`);
   } catch (err) {
     console.error(err);
     res.status(500).send("Server error");
