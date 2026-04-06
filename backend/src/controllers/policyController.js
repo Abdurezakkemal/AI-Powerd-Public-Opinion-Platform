@@ -205,18 +205,38 @@ exports.update = async (req, res) => {
 exports.delete = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
-    if (!policy) return res.status(404).json({ message: "Policy not found" });
+    // console.log("=== DEBUG DELETE POLICY ===");
+    // console.log("REQ USER ID:", req.user.id);
+    // console.log("POLICY CREATED BY:", policy.createdBy.toString());
+    // console.log("ROLE:", req.user.role);
+    // console.log("===========================");
+    if (!policy) {
+      return res.status(404).json({ message: "Policy not found" });
+    }
 
+    // 🔒 Ownership / Admin check
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      return res.status(403).json({ message: "Forbidden" });
+    }
+
+    // ✅ Draft → delete permanently
     if (policy.status === "draft") {
       await policy.deleteOne();
-      res.json({ message: "Policy deleted" });
-    } else if (policy.status === "active") {
+      return res.json({ message: "Policy deleted" });
+    }
+
+    // ✅ Active → close only
+    if (policy.status === "active") {
       policy.status = "closed";
       await policy.save();
-      res.json({ message: "Policy closed" });
-    } else {
-      res.status(400).json({ message: "Policy already closed" });
+      return res.json({ message: "Policy closed" });
     }
+
+    // ❌ Already closed
+    return res.status(400).json({ message: "Policy already closed" });
   } catch (err) {
     console.error("Policy delete error:", err);
     res.status(500).json({ message: "Server error" });
