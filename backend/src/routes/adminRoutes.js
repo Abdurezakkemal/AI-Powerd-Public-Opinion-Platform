@@ -29,8 +29,8 @@ router.post(
 router.get("/users/citizens", auth(["admin"]), adminController.listCitizens);
 
 router.put(
-  "/users/:id/deactivate",
+  "/users/:id/status",
   auth(["admin"]),
-  adminController.deactivateCitizen,
+  adminController.updateCitizenStatus,
 );
 module.exports = router;

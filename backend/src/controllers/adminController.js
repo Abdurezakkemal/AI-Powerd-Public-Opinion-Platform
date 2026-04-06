@@ -237,10 +237,19 @@ exports.listCitizens = async (req, res) => {
   }
 };
 
-// PUT /admin/users/:id/deactivate
-exports.deactivateCitizen = async (req, res) => {
+// ========== CITIZEN STATUS TOGGLE ==========
+
+// PUT /admin/users/:id/status
+exports.updateCitizenStatus = async (req, res) => {
   try {
     const { id } = req.params;
+    const { active } = req.body;
+
+    if (active === undefined) {
+      return res.status(400).json({
+        message: "active field is required (true/false)",
+      });
+    }
 
     const user = await User.findOne({ _id: id, role: "citizen" });
 
@@ -248,12 +257,13 @@ exports.deactivateCitizen = async (req, res) => {
       return res.status(404).json({ message: "Citizen not found" });
     }
 
-    user.active = false;
+    user.active = active;
     await user.save();
 
     res.json({
-      message: "Citizen deactivated successfully",
+      message: `Citizen ${active ? "activated" : "deactivated"} successfully`,
       userId: user._id,
+      active: user.active,
     });
   } catch (err) {
     console.error(err);
