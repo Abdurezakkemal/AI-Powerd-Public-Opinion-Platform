@@ -173,3 +173,30 @@ exports.retryFeedback = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+// POST /admin/feedback/retry-all
+exports.retryAllFeedback = async (req, res) => {
+  try {
+    // Target only feedback that needs retry
+    const result = await Feedback.updateMany(
+      {
+        status: "pending review",
+      },
+      {
+        $set: {
+          processed: false,
+          retryCount: 0,
+          nextRetry: null,
+          status: "processing",
+        },
+      },
+    );
+
+    res.json({
+      message: "All pending feedback queued for retry",
+      updatedCount: result.modifiedCount,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
