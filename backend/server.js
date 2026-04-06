@@ -41,3 +41,4 @@ startWorker();
 app.use("/api/analytics", require("./src/routes/analyticsRoutes"));
 app.use("/api/sms", require("./src/routes/smsRoutes"));
 app.use("/api/admin", require("./src/routes/adminRoutes"));
+app.use("/api/users", require("./src/routes/userRoutes"));
