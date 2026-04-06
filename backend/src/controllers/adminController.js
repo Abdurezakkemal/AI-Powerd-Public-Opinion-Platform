@@ -20,7 +20,7 @@ exports.listPlanners = async (req, res) => {
 
     const [planners, total] = await Promise.all([
       User.find(query)
-        .select("-passwordHash")
+        .select("-passwordHash -phoneHash")
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ createdAt: -1 }),
@@ -218,7 +218,7 @@ exports.listCitizens = async (req, res) => {
 
     const [citizens, total] = await Promise.all([
       User.find(query)
-        .select("-passwordHash")
+        .select("-passwordHash -phoneHash")
         .skip(skip)
         .limit(parseInt(limit))
         .sort({ createdAt: -1 }),
