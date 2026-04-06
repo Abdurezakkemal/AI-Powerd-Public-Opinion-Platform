@@ -25,5 +25,12 @@ router.post(
   auth(["admin"]),
   adminController.retryAllFeedback,
 );
+// ========== CITIZEN MANAGEMENT ==========
+router.get("/users/citizens", auth(["admin"]), adminController.listCitizens);
 
+router.put(
+  "/users/:id/deactivate",
+  auth(["admin"]),
+  adminController.deactivateCitizen,
+);
 module.exports = router;

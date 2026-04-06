@@ -200,3 +200,63 @@ exports.retryAllFeedback = async (req, res) => {
     res.status(500).json({ message: "Server error" });
   }
 };
+// ========== CITIZEN MANAGEMENT ==========
+
+// GET /admin/users/citizens?active=true&page=1&limit=10
+exports.listCitizens = async (req, res) => {
+  try {
+    const { active, page = 1, limit = 10 } = req.query;
+
+    const query = { role: "citizen" };
+
+    // Optional filter
+    if (active !== undefined) {
+      query.active = active === "true";
+    }
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const [citizens, total] = await Promise.all([
+      User.find(query)
+        .select("-passwordHash")
+        .skip(skip)
+        .limit(parseInt(limit))
+        .sort({ createdAt: -1 }),
+      User.countDocuments(query),
+    ]);
+
+    res.json({
+      total,
+      page: parseInt(page),
+      pages: Math.ceil(total / limit),
+      citizens,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
+
+// PUT /admin/users/:id/deactivate
+exports.deactivateCitizen = async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const user = await User.findOne({ _id: id, role: "citizen" });
+
+    if (!user) {
+      return res.status(404).json({ message: "Citizen not found" });
+    }
+
+    user.active = false;
+    await user.save();
+
+    res.json({
+      message: "Citizen deactivated successfully",
+      userId: user._id,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ message: "Server error" });
+  }
+};
