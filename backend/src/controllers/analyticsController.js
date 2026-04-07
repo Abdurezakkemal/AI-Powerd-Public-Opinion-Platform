@@ -1,14 +1,17 @@
 const Feedback = require("../models/Feedback");
 const Policy = require("../models/Policy");
+const {
+  sendSuccess,
+  sendError,
+  ErrorCodes,
+} = require("../utils/responseHelper");
 
-// Helper to aggregate rating distribution
 const getRatingDistribution = (feedbackList) => {
   const dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
   feedbackList.forEach((f) => dist[f.rating]++);
   return dist;
 };
 
-// Helper to aggregate sentiment counts
 const getSentimentCounts = (feedbackList) => {
   const counts = { positive: 0, negative: 0, neutral: 0 };
   feedbackList.forEach((f) => {
@@ -19,7 +22,6 @@ const getSentimentCounts = (feedbackList) => {
   return counts;
 };
 
-// Helper to aggregate top keywords
 const getTopKeywords = (feedbackList, limit = 10) => {
   const freq = {};
   feedbackList.forEach((f) => {
@@ -29,80 +31,104 @@ const getTopKeywords = (feedbackList, limit = 10) => {
       });
     }
   });
-  const sorted = Object.entries(freq)
+  return Object.entries(freq)
     .sort((a, b) => b[1] - a[1])
     .slice(0, limit)
     .map(([keyword, count]) => ({ keyword, count }));
-  return sorted;
 };
 
 // GET /analytics/:policyId
 exports.getAnalytics = async (req, res) => {
   try {
     const { policyId } = req.params;
-
     const policy = await Policy.findById(policyId);
     if (!policy) {
-      return res.status(404).json({ message: "Policy not found" });
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
     }
 
-    // Only planners/admins can access analytics
     if (req.user.role !== "planner" && req.user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied" });
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "Access denied. Only planners and admins can view analytics.",
+        null,
+        403,
+      );
     }
 
     const feedbacks = await Feedback.find({ policyId });
-
     const totalVotes = feedbacks.length;
     const appVotes = feedbacks.filter((f) => f.channel === "app").length;
     const smsVotes = feedbacks.filter((f) => f.channel === "sms").length;
-
     const ratings = feedbacks.map((f) => f.rating);
     const averageRating = ratings.length
       ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2)
       : 0;
-
     const ratingDistribution = getRatingDistribution(feedbacks);
     const sentimentCounts = getSentimentCounts(feedbacks);
     const topKeywords = getTopKeywords(feedbacks);
 
-    res.json({
-      policyId: policy._id,
-      title: policy.title,
-      averageRating: Number(averageRating),
-      ratingDistribution,
-      sentimentCounts,
-      topKeywords,
-      totalVotes,
-      appVotes,
-      smsVotes,
-    });
+    return sendSuccess(
+      res,
+      {
+        policyId: policy._id,
+        title: policy.title,
+        averageRating: Number(averageRating),
+        ratingDistribution,
+        sentimentCounts,
+        topKeywords,
+        totalVotes,
+        appVotes,
+        smsVotes,
+      },
+      "Analytics retrieved successfully",
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Get analytics error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve analytics",
+      null,
+      500,
+    );
   }
 };
 
-// GET /analytics/:policyId/export
+// GET /analytics/:policyId/export (CSV)
 exports.exportAnalytics = async (req, res) => {
   try {
     const { policyId } = req.params;
-
     const policy = await Policy.findById(policyId);
-    if (!policy) return res.status(404).json({ message: "Policy not found" });
-
+    if (!policy) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
     if (req.user.role !== "planner" && req.user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied" });
+      return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
-    const feedbacks = await Feedback.find({ policyId }).lean();
+    // ✅ FIX: populate userId to get region for app votes
+    const feedbacks = await Feedback.find({ policyId })
+      .populate("userId", "region")
+      .lean();
 
-    // Create CSV header
     let csv = "rating,channel,date,region\n";
-
     feedbacks.forEach((f) => {
       const date = f.createdAt.toISOString().split("T")[0];
-      // For app votes, region is in user; for SMS, region unknown – we could leave empty or derive from policy target? We'll leave empty.
+      // For app votes: use populated user's region (if any)
+      // For SMS votes: region stays empty
       const region = f.channel === "app" ? f.userId?.region || "" : "";
       csv += `${f.rating},${f.channel},${date},${region}\n`;
     });
@@ -112,10 +138,16 @@ exports.exportAnalytics = async (req, res) => {
       "Content-Disposition",
       `attachment; filename="policy-${policyId}-analytics.csv"`,
     );
-    res.send(csv);
+    return res.send(csv);
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Export analytics error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to export analytics",
+      null,
+      500,
+    );
   }
 };
 
@@ -124,43 +156,53 @@ exports.getComments = async (req, res) => {
   try {
     const { policyId } = req.params;
     const { page = 1, limit = 20, sentiment } = req.query;
-
     const policy = await Policy.findById(policyId);
-    if (!policy) return res.status(404).json({ message: "Policy not found" });
-
+    if (!policy) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
     if (req.user.role !== "planner" && req.user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied" });
+      return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
     const filter = { policyId, comment: { $ne: "" } };
-    if (sentiment) {
-      filter["sentiment.label"] = sentiment;
-    }
-
+    if (sentiment) filter["sentiment.label"] = sentiment;
     const comments = await Feedback.find(filter)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit))
       .select("comment sentiment keywords createdAt")
       .lean();
-
     const total = await Feedback.countDocuments(filter);
 
-    res.json({
-      comments: comments.map((c) => ({
-        id: c._id,
-        text: c.comment,
-        sentiment: c.sentiment?.label || null,
-        confidence: c.sentiment?.confidence || null,
-        keywords: c.keywords || [],
-        createdAt: c.createdAt,
-      })),
-      total,
-      page: Number(page),
-    });
+    const formattedComments = comments.map((c) => ({
+      id: c._id,
+      text: c.comment,
+      sentiment: c.sentiment?.label || null,
+      confidence: c.sentiment?.confidence || null,
+      keywords: c.keywords || [],
+      createdAt: c.createdAt,
+    }));
+
+    return sendSuccess(
+      res,
+      { comments: formattedComments, total, page: Number(page) },
+      "Comments retrieved successfully",
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Get comments error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve comments",
+      null,
+      500,
+    );
   }
 };
 
@@ -168,16 +210,20 @@ exports.getComments = async (req, res) => {
 exports.getGeographicAnalytics = async (req, res) => {
   try {
     const { policyId } = req.params;
-
     const policy = await Policy.findById(policyId);
-    if (!policy) return res.status(404).json({ message: "Policy not found" });
-
-    // Only planners/admins
+    if (!policy) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
     if (req.user.role !== "planner" && req.user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied" });
+      return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
-    // Aggregate feedback by region (from user data)
     const geographicData = await Feedback.aggregate([
       {
         $match: { policyId: policy._id, channel: "app", comment: { $ne: "" } },
@@ -221,10 +267,20 @@ exports.getGeographicAnalytics = async (req, res) => {
       },
     }));
 
-    res.json({ policyId, regions: result });
+    return sendSuccess(
+      res,
+      { policyId, regions: result },
+      "Geographic analytics retrieved successfully",
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Geographic analytics error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve geographic analytics",
+      null,
+      500,
+    );
   }
 };
 
@@ -233,17 +289,21 @@ exports.getTrends = async (req, res) => {
   try {
     const { policyId } = req.params;
     const { interval = "day" } = req.query;
-
     const policy = await Policy.findById(policyId);
-    if (!policy) return res.status(404).json({ message: "Policy not found" });
-
+    if (!policy) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
     if (req.user.role !== "planner" && req.user.role !== "admin") {
-      return res.status(403).json({ message: "Access denied" });
+      return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
-    // MongoDB date grouping format
     const dateFormat = interval === "week" ? "%Y-%W" : "%Y-%m-%d";
-
     const trends = await Feedback.aggregate([
       { $match: { policyId: policy._id } },
       {
@@ -274,9 +334,19 @@ exports.getTrends = async (req, res) => {
       total: item.total,
     }));
 
-    res.json({ policyId, interval, data: result });
+    return sendSuccess(
+      res,
+      { policyId, interval, data: result },
+      "Trends retrieved successfully",
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Trends error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve trends",
+      null,
+      500,
+    );
   }
 };

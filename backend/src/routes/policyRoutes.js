@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const policyController = require("../controllers/policyController");
-const auth = require("../middleware/auth");
+const auth = require("../middleware/authMiddleware");
 
 router.get("/", auth(["citizen", "planner", "admin"]), policyController.getAll);
 router.get(

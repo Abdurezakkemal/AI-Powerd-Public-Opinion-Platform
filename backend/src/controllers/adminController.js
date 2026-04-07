@@ -1,23 +1,23 @@
 const User = require("../models/User");
 const Feedback = require("../models/Feedback");
 const { hashPassword } = require("../utils/helpers");
+const {
+  sendSuccess,
+  sendError,
+  ErrorCodes,
+} = require("../utils/responseHelper");
 
 // ========== PLANNER MANAGEMENT ==========
 
-// GET /users/planners?active=true&page=1&limit=10
+// GET /admin/planners?active=true&page=1&limit=10
 exports.listPlanners = async (req, res) => {
   try {
     const { active, page = 1, limit = 10 } = req.query;
 
     const query = { role: "planner" };
-
-    // Filtering
-    if (active !== undefined) {
-      query.active = active === "true";
-    }
+    if (active !== undefined) query.active = active === "true";
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
-
     const [planners, total] = await Promise.all([
       User.find(query)
         .select("-passwordHash -phoneHash")
@@ -27,34 +27,54 @@ exports.listPlanners = async (req, res) => {
       User.countDocuments(query),
     ]);
 
-    res.json({
-      total,
-      page: parseInt(page),
-      pages: Math.ceil(total / limit),
-      planners,
-    });
+    return sendSuccess(
+      res,
+      {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / limit),
+        planners,
+      },
+      "Planners retrieved successfully",
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("List planners error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve planners. Please try again later.",
+      null,
+      500,
+    );
   }
 };
 
-// POST /users/planners
+// POST /admin/planners
 exports.createPlanner = async (req, res) => {
   try {
     const { email, password } = req.body;
-
     if (!email || !password) {
-      return res.status(400).json({ message: "Email and password required" });
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Email and password are required",
+        { required: ["email", "password"] },
+        400,
+      );
     }
 
     const existing = await User.findOne({ email });
     if (existing) {
-      return res.status(409).json({ message: "Email already exists" });
+      return sendError(
+        res,
+        ErrorCodes.DUPLICATE,
+        "A user with this email already exists",
+        null,
+        409,
+      );
     }
 
     const passwordHash = await hashPassword(password);
-
     const planner = new User({
       email,
       passwordHash,
@@ -64,51 +84,72 @@ exports.createPlanner = async (req, res) => {
       verified: true,
       active: true,
     });
-
     await planner.save();
 
-    res.status(201).json({
-      id: planner._id,
-      email: planner.email,
-      message: "Planner created",
-    });
+    return sendSuccess(
+      res,
+      {
+        id: planner._id,
+        email: planner.email,
+      },
+      "Planner account created successfully",
+      201,
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Create planner error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to create planner. Please try again.",
+      null,
+      500,
+    );
   }
 };
 
-// PUT /users/planners/:id
+// PUT /admin/planners/:id
 exports.updatePlanner = async (req, res) => {
   try {
     const { id } = req.params;
     const { password, active } = req.body;
 
     const planner = await User.findOne({ _id: id, role: "planner" });
-
     if (!planner) {
-      return res.status(404).json({ message: "Planner not found" });
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Planner not found",
+        null,
+        404,
+      );
     }
 
-    // Password reset
     if (password) {
       planner.passwordHash = await hashPassword(password);
     }
-
-    // Active flag support
     if (active !== undefined) {
       planner.active = active;
     }
-
     await planner.save();
 
-    res.json({
-      message: "Planner updated",
-      active: planner.active,
-    });
+    return sendSuccess(
+      res,
+      {
+        id: planner._id,
+        email: planner.email,
+        active: planner.active,
+      },
+      "Planner updated successfully",
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Update planner error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to update planner. Please try again.",
+      null,
+      500,
+    );
   }
 };
 
@@ -121,10 +162,20 @@ exports.getPendingFeedback = async (req, res) => {
       .populate("policyId", "title")
       .populate("userId", "email")
       .sort({ createdAt: -1 });
-    res.json({ feedbacks });
+    return sendSuccess(
+      res,
+      { feedbacks },
+      "Pending feedback retrieved successfully",
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Get pending feedback error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve pending feedback",
+      null,
+      500,
+    );
   }
 };
 
@@ -133,8 +184,6 @@ exports.updateFeedback = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
-
-    // Allowed fields
     const allowed = ["sentiment", "keywords", "processed", "status"];
     const updateData = {};
     for (const key of allowed) {
@@ -144,12 +193,25 @@ exports.updateFeedback = async (req, res) => {
     const feedback = await Feedback.findByIdAndUpdate(id, updateData, {
       new: true,
     });
-    if (!feedback)
-      return res.status(404).json({ message: "Feedback not found" });
-    res.json(feedback);
+    if (!feedback) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Feedback not found",
+        null,
+        404,
+      );
+    }
+    return sendSuccess(res, feedback, "Feedback updated successfully");
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Update feedback error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to update feedback",
+      null,
+      500,
+    );
   }
 };
 
@@ -158,8 +220,15 @@ exports.retryFeedback = async (req, res) => {
   try {
     const { id } = req.params;
     const feedback = await Feedback.findById(id);
-    if (!feedback)
-      return res.status(404).json({ message: "Feedback not found" });
+    if (!feedback) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Feedback not found",
+        null,
+        404,
+      );
+    }
 
     feedback.processed = false;
     feedback.retryCount = 0;
@@ -167,20 +236,28 @@ exports.retryFeedback = async (req, res) => {
     feedback.status = "processing";
     await feedback.save();
 
-    res.json({ message: "Feedback queued for retry" });
+    return sendSuccess(
+      res,
+      { feedbackId: id },
+      "Feedback queued for retry. The AI worker will process it shortly.",
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Retry feedback error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to queue feedback for retry",
+      null,
+      500,
+    );
   }
 };
+
 // POST /admin/feedback/retry-all
 exports.retryAllFeedback = async (req, res) => {
   try {
-    // Target only feedback that needs retry
     const result = await Feedback.updateMany(
-      {
-        status: "pending review",
-      },
+      { status: "pending review" },
       {
         $set: {
           processed: false,
@@ -190,32 +267,33 @@ exports.retryAllFeedback = async (req, res) => {
         },
       },
     );
-
-    res.json({
-      message: "All pending feedback queued for retry",
-      updatedCount: result.modifiedCount,
-    });
+    return sendSuccess(
+      res,
+      { updatedCount: result.modifiedCount },
+      `${result.modifiedCount} feedback items queued for retry`,
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Retry all feedback error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to queue feedback for retry",
+      null,
+      500,
+    );
   }
 };
+
 // ========== CITIZEN MANAGEMENT ==========
 
 // GET /admin/users/citizens?active=true&page=1&limit=10
 exports.listCitizens = async (req, res) => {
   try {
     const { active, page = 1, limit = 10 } = req.query;
-
     const query = { role: "citizen" };
-
-    // Optional filter
-    if (active !== undefined) {
-      query.active = active === "true";
-    }
+    if (active !== undefined) query.active = active === "true";
 
     const skip = (parseInt(page) - 1) * parseInt(limit);
-
     const [citizens, total] = await Promise.all([
       User.find(query)
         .select("-passwordHash -phoneHash")
@@ -224,82 +302,118 @@ exports.listCitizens = async (req, res) => {
         .sort({ createdAt: -1 }),
       User.countDocuments(query),
     ]);
-
-    res.json({
-      total,
-      page: parseInt(page),
-      pages: Math.ceil(total / limit),
-      citizens,
-    });
+    return sendSuccess(
+      res,
+      {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / limit),
+        citizens,
+      },
+      "Citizens retrieved successfully",
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("List citizens error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve citizens",
+      null,
+      500,
+    );
   }
 };
-
-// ========== CITIZEN STATUS TOGGLE ==========
 
 // PUT /admin/users/:id/status
 exports.updateCitizenStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { active } = req.body;
-
     if (active === undefined) {
-      return res.status(400).json({
-        message: "active field is required (true/false)",
-      });
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "active field is required (true/false)",
+        null,
+        400,
+      );
     }
 
     const user = await User.findOne({ _id: id, role: "citizen" });
-
     if (!user) {
-      return res.status(404).json({ message: "Citizen not found" });
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Citizen not found",
+        null,
+        404,
+      );
     }
 
     user.active = active;
     await user.save();
 
-    res.json({
-      message: `Citizen ${active ? "activated" : "deactivated"} successfully`,
-      userId: user._id,
-      active: user.active,
-    });
+    const statusText = active ? "activated" : "deactivated";
+    return sendSuccess(
+      res,
+      { userId: user._id, active: user.active },
+      `Citizen account ${statusText} successfully`,
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Update citizen status error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to update citizen status",
+      null,
+      500,
+    );
   }
 };
-// ========== PLANNER STATUS TOGGLE ==========
 
 // PUT /admin/planners/:id/status
 exports.updatePlannerStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { active } = req.body;
-
     if (active === undefined) {
-      return res.status(400).json({
-        message: "active field is required (true/false)",
-      });
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "active field is required (true/false)",
+        null,
+        400,
+      );
     }
 
     const planner = await User.findOne({ _id: id, role: "planner" });
-
     if (!planner) {
-      return res.status(404).json({ message: "Planner not found" });
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Planner not found",
+        null,
+        404,
+      );
     }
 
     planner.active = active;
     await planner.save();
 
-    res.json({
-      message: `Planner ${active ? "activated" : "deactivated"} successfully`,
-      plannerId: planner._id,
-      active: planner.active,
-    });
+    const statusText = active ? "activated" : "deactivated";
+    return sendSuccess(
+      res,
+      { plannerId: planner._id, active: planner.active },
+      `Planner account ${statusText} successfully`,
+    );
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ message: "Server error" });
+    console.error("Update planner status error:", err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to update planner status",
+      null,
+      500,
+    );
   }
 };
