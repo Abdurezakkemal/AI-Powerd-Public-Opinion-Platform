@@ -1,7 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const adminController = require("../controllers/adminController");
-const auth = require("../middleware/auth");
+const auth = require("../middleware/authMiddleware");
 
 // Planner management
 router.get("/planners", auth(["admin"]), adminController.listPlanners);
