@@ -1,5 +1,6 @@
 const Feedback = require("../models/Feedback");
 const Policy = require("../models/Policy");
+const logger = require("../utils/logger");
 const {
   sendSuccess,
   sendError,
@@ -43,6 +44,7 @@ exports.getAnalytics = async (req, res) => {
     const { policyId } = req.params;
     const policy = await Policy.findById(policyId);
     if (!policy) {
+      logger.warn(`Analytics requested for non-existent policy: ${policyId}`);
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -53,6 +55,9 @@ exports.getAnalytics = async (req, res) => {
     }
 
     if (req.user.role !== "planner" && req.user.role !== "admin") {
+      logger.warn(
+        `Access denied to analytics for policy ${policyId} by user ${req.user.id} (role: ${req.user.role})`,
+      );
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
@@ -74,6 +79,9 @@ exports.getAnalytics = async (req, res) => {
     const sentimentCounts = getSentimentCounts(feedbacks);
     const topKeywords = getTopKeywords(feedbacks);
 
+    logger.info(
+      `Analytics delivered for policy ${policyId} to user ${req.user.id}`,
+    );
     return sendSuccess(
       res,
       {
@@ -90,7 +98,10 @@ exports.getAnalytics = async (req, res) => {
       "Analytics retrieved successfully",
     );
   } catch (err) {
-    console.error("Get analytics error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Get analytics error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -107,6 +118,7 @@ exports.exportAnalytics = async (req, res) => {
     const { policyId } = req.params;
     const policy = await Policy.findById(policyId);
     if (!policy) {
+      logger.warn(`CSV export requested for non-existent policy: ${policyId}`);
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -116,6 +128,9 @@ exports.exportAnalytics = async (req, res) => {
       );
     }
     if (req.user.role !== "planner" && req.user.role !== "admin") {
+      logger.warn(
+        `Access denied to CSV export for policy ${policyId} by user ${req.user.id}`,
+      );
       return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
@@ -133,6 +148,9 @@ exports.exportAnalytics = async (req, res) => {
       csv += `${f.rating},${f.channel},${date},${region}\n`;
     });
 
+    logger.info(
+      `CSV exported for policy ${policyId} by user ${req.user.id} (${feedbacks.length} rows)`,
+    );
     res.setHeader("Content-Type", "text/csv");
     res.setHeader(
       "Content-Disposition",
@@ -140,7 +158,10 @@ exports.exportAnalytics = async (req, res) => {
     );
     return res.send(csv);
   } catch (err) {
-    console.error("Export analytics error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Export analytics error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -158,6 +179,7 @@ exports.getComments = async (req, res) => {
     const { page = 1, limit = 20, sentiment } = req.query;
     const policy = await Policy.findById(policyId);
     if (!policy) {
+      logger.warn(`Comments requested for non-existent policy: ${policyId}`);
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -167,6 +189,9 @@ exports.getComments = async (req, res) => {
       );
     }
     if (req.user.role !== "planner" && req.user.role !== "admin") {
+      logger.warn(
+        `Access denied to comments for policy ${policyId} by user ${req.user.id}`,
+      );
       return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
@@ -189,13 +214,19 @@ exports.getComments = async (req, res) => {
       createdAt: c.createdAt,
     }));
 
+    logger.info(
+      `Comments retrieved for policy ${policyId} by user ${req.user.id} (page ${page}, total ${total})`,
+    );
     return sendSuccess(
       res,
       { comments: formattedComments, total, page: Number(page) },
       "Comments retrieved successfully",
     );
   } catch (err) {
-    console.error("Get comments error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Get comments error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -212,6 +243,9 @@ exports.getGeographicAnalytics = async (req, res) => {
     const { policyId } = req.params;
     const policy = await Policy.findById(policyId);
     if (!policy) {
+      logger.warn(
+        `Geographic analytics requested for non-existent policy: ${policyId}`,
+      );
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -221,6 +255,9 @@ exports.getGeographicAnalytics = async (req, res) => {
       );
     }
     if (req.user.role !== "planner" && req.user.role !== "admin") {
+      logger.warn(
+        `Access denied to geographic analytics for policy ${policyId} by user ${req.user.id}`,
+      );
       return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
@@ -267,13 +304,19 @@ exports.getGeographicAnalytics = async (req, res) => {
       },
     }));
 
+    logger.info(
+      `Geographic analytics delivered for policy ${policyId} to user ${req.user.id} (${result.length} regions)`,
+    );
     return sendSuccess(
       res,
       { policyId, regions: result },
       "Geographic analytics retrieved successfully",
     );
   } catch (err) {
-    console.error("Geographic analytics error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Geographic analytics error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -291,6 +334,7 @@ exports.getTrends = async (req, res) => {
     const { interval = "day" } = req.query;
     const policy = await Policy.findById(policyId);
     if (!policy) {
+      logger.warn(`Trends requested for non-existent policy: ${policyId}`);
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -300,6 +344,9 @@ exports.getTrends = async (req, res) => {
       );
     }
     if (req.user.role !== "planner" && req.user.role !== "admin") {
+      logger.warn(
+        `Access denied to trends for policy ${policyId} by user ${req.user.id}`,
+      );
       return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
@@ -334,13 +381,16 @@ exports.getTrends = async (req, res) => {
       total: item.total,
     }));
 
+    logger.info(
+      `Trends retrieved for policy ${policyId} by user ${req.user.id} (interval ${interval}, ${result.length} points)`,
+    );
     return sendSuccess(
       res,
       { policyId, interval, data: result },
       "Trends retrieved successfully",
     );
   } catch (err) {
-    console.error("Trends error:", err);
+    logger.error({ error: err.message, stack: err.stack }, "Trends error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,

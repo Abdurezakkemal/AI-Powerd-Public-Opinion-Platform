@@ -1,6 +1,8 @@
 const User = require("../models/User");
 const Feedback = require("../models/Feedback");
 const { hashPassword, comparePassword } = require("../utils/helpers");
+const logger = require("../utils/logger");
+const { createAuditLog } = require("../utils/audit");
 const {
   sendSuccess,
   sendError,
@@ -16,9 +18,10 @@ exports.getMe = async (req, res) => {
     if (!user) {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
     }
+    logger.info(`User ${req.user.id} retrieved their profile`);
     return sendSuccess(res, user, "User profile retrieved successfully");
   } catch (err) {
-    console.error("Get user error:", err);
+    logger.error({ error: err.message, stack: err.stack }, "Get user error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -50,6 +53,9 @@ exports.updateMe = async (req, res) => {
     if (email) {
       const existing = await User.findOne({ email });
       if (existing && existing._id.toString() !== req.user.id) {
+        logger.warn(
+          `User ${req.user.id} attempted to use existing email ${email}`,
+        );
         return sendError(
           res,
           ErrorCodes.DUPLICATE,
@@ -66,9 +72,22 @@ exports.updateMe = async (req, res) => {
     if (!user) {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
     }
+
+    // Audit log for profile update
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: user.role,
+      action: "UPDATE_PROFILE",
+      details: { updatedFields: Object.keys(updates) },
+      req,
+    });
+
+    logger.info(
+      `User ${req.user.id} updated profile: ${Object.keys(updates).join(", ")}`,
+    );
     return sendSuccess(res, user, "User profile updated successfully");
   } catch (err) {
-    console.error("Update user error:", err);
+    logger.error({ error: err.message, stack: err.stack }, "Update user error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -100,6 +119,9 @@ exports.changePassword = async (req, res) => {
 
     const valid = await comparePassword(currentPassword, user.passwordHash);
     if (!valid) {
+      logger.warn(
+        `User ${req.user.id} attempted password change with incorrect current password`,
+      );
       return sendError(
         res,
         ErrorCodes.INVALID_CREDENTIALS,
@@ -112,9 +134,22 @@ exports.changePassword = async (req, res) => {
     user.passwordHash = await hashPassword(newPassword);
     await user.save();
 
+    // Audit log for password change
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: user.role,
+      action: "CHANGE_PASSWORD",
+      details: {},
+      req,
+    });
+
+    logger.info(`User ${req.user.id} changed password`);
     return sendSuccess(res, null, "Password changed successfully");
   } catch (err) {
-    console.error("Change password error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Change password error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -149,13 +184,16 @@ exports.getHistory = async (req, res) => {
       createdAt: h.createdAt,
     }));
 
+    logger.info(
+      `User ${req.user.id} retrieved feedback history (${history.length} items)`,
+    );
     return sendSuccess(
       res,
       { history: formatted },
       "User feedback history retrieved successfully",
     );
   } catch (err) {
-    console.error("Get history error:", err);
+    logger.error({ error: err.message, stack: err.stack }, "Get history error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -175,6 +213,9 @@ exports.deleteMe = async (req, res) => {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
     }
 
+    // Capture email before anonymization for audit
+    const originalEmail = user.email;
+
     user.email = `deleted_${user._id}@deleted.com`;
     user.passwordHash = "deleted";
     user.phoneHash = null;
@@ -184,13 +225,26 @@ exports.deleteMe = async (req, res) => {
 
     await Feedback.updateMany({ userId: userId }, { $unset: { userId: "" } });
 
+    // Audit log for account deletion
+    await createAuditLog({
+      userId: userId,
+      userRole: user.role,
+      action: "DELETE_ACCOUNT",
+      details: { email: originalEmail },
+      req,
+    });
+
+    logger.info(`User ${userId} (${originalEmail}) deleted their account`);
     return sendSuccess(
       res,
       null,
       "Account deleted successfully. Your data has been anonymized.",
     );
   } catch (err) {
-    console.error("Delete account error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Delete account error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
