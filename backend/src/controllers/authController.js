@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 const client = require("../config/redis");
+const nodemailer = require("nodemailer");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
 const {
@@ -15,6 +16,28 @@ const {
   sendError,
   ErrorCodes,
 } = require("../utils/responseHelper");
+
+// Email transporter (configure once)
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: parseInt(process.env.EMAIL_PORT),
+  secure: process.env.EMAIL_PORT === "465", // true for 465, false for other
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
+  },
+});
+
+// Helper to send OTP email
+const sendOtpEmail = async (toEmail, otp) => {
+  await transporter.sendMail({
+    from: process.env.EMAIL_USER,
+    to: toEmail,
+    subject: "Your OTP Code - Civic Engagement Platform",
+    text: `Your verification code is: ${otp}\nIt expires in 5 minutes.`,
+    html: `<p>Your verification code is: <strong>${otp}</strong></p><p>It expires in 5 minutes.</p>`,
+  });
+};
 
 exports.register = async (req, res) => {
   try {
@@ -57,6 +80,16 @@ exports.register = async (req, res) => {
     });
     await user.save();
 
+    // Generate and store OTP in Redis (keyed by email)
+    const otp = generateOTP();
+    const key = `otp:email:${email}`;
+    const attemptsKey = `otp:verify:${email}`;
+    await client.setEx(key, 300, otp);
+    await client.del(attemptsKey); // reset attempts
+
+    // Send OTP via email
+    await sendOtpEmail(email, otp);
+
     // Audit: account registration
     await createAuditLog({
       userId: user._id,
@@ -71,7 +104,7 @@ exports.register = async (req, res) => {
     return sendSuccess(
       res,
       { userId: user._id },
-      "User registered successfully. A 6-digit OTP has been sent to your phone for verification.",
+      "User registered successfully. A 6-digit OTP has been sent to your email for verification.",
       201,
     );
   } catch (err) {
@@ -91,28 +124,38 @@ exports.register = async (req, res) => {
 
 exports.sendOtp = async (req, res) => {
   try {
-    const { phone } = req.body;
-    if (!phone) {
+    const { email } = req.body;
+    if (!email) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Phone number is required",
+        "Email is required",
         null,
         400,
       );
     }
 
-    const normalized = normalizePhone(phone);
-    const key = `otp:${normalized}`;
-    const attemptsKey = `otp:attempts:${normalized}`;
+    const user = await User.findOne({ email });
+    if (!user) {
+      logger.warn(`OTP requested for non-existent email: ${email}`);
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "No account found with this email address.",
+        null,
+        404,
+      );
+    }
 
+    const key = `otp:email:${email}`;
+    const attemptsKey = `otp:verify:${email}`;
     const attempts = await client.get(attemptsKey);
     if (attempts && parseInt(attempts) >= 3) {
-      logger.warn(`OTP rate limit exceeded for ${normalized}`);
+      logger.warn(`OTP verify rate limit exceeded for ${email}`);
       return sendError(
         res,
         ErrorCodes.RATE_LIMIT,
-        "Too many OTP requests. Please wait 1 hour before requesting again.",
+        "Too many OTP requests. Please wait 5 minutes.",
         null,
         429,
       );
@@ -121,13 +164,14 @@ exports.sendOtp = async (req, res) => {
     const otp = generateOTP();
     await client.setEx(key, 300, otp);
     await client.incr(attemptsKey);
-    await client.expire(attemptsKey, 3600);
+    await client.expire(attemptsKey, 300);
 
-    // Simulate SMS – replace with actual gateway
-    logger.info(`OTP sent to ${normalized}`); // DO NOT log OTP in production unless debugging
-    // For debugging only – remove in production
+    // Send OTP email
+    await sendOtpEmail(email, otp);
+
+    logger.info(`OTP sent to email: ${email}`);
     if (process.env.NODE_ENV !== "production") {
-      logger.debug(`[DEV] OTP for ${normalized}: ${otp}`);
+      logger.debug(`[DEV] OTP for ${email}: ${otp}`);
     }
 
     return sendSuccess(
@@ -149,24 +193,22 @@ exports.sendOtp = async (req, res) => {
 
 exports.verifyOtp = async (req, res) => {
   try {
-    const { phone, code } = req.body;
-    if (!phone || !code) {
+    const { email, code } = req.body;
+    if (!email || !code) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Phone number and verification code are required",
+        "Email and verification code are required",
         null,
         400,
       );
     }
 
-    const normalized = normalizePhone(phone);
-    const key = `otp:${normalized}`;
-    const attemptsKey = `otp:verify:${normalized}`;
-
+    const key = `otp:email:${email}`;
+    const attemptsKey = `otp:verify:${email}`;
     const attempts = await client.incr(attemptsKey);
     if (attempts > 3) {
-      logger.warn(`OTP verify rate limit exceeded for ${normalized}`);
+      logger.warn(`OTP verify rate limit exceeded for ${email}`);
       return sendError(
         res,
         ErrorCodes.RATE_LIMIT,
@@ -179,7 +221,7 @@ exports.verifyOtp = async (req, res) => {
 
     const stored = await client.get(key);
     if (!stored || stored !== code) {
-      logger.warn(`Failed OTP verification for ${normalized}`);
+      logger.warn(`Failed OTP verification for ${email}`);
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -192,13 +234,12 @@ exports.verifyOtp = async (req, res) => {
     await client.del(key);
     await client.del(attemptsKey);
 
-    const phoneHash = hashPhone(phone);
-    const user = await User.findOne({ phoneHash });
+    const user = await User.findOne({ email });
     if (!user) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
-        "No account found with this phone number.",
+        "No account found with this email address.",
         null,
         404,
       );
@@ -207,12 +248,12 @@ exports.verifyOtp = async (req, res) => {
     user.verified = true;
     await user.save();
 
-    // Audit: phone verified
+    // Audit: email verified
     await createAuditLog({
       userId: user._id,
       userRole: user.role,
       action: "VERIFY_OTP",
-      details: { phone: normalized },
+      details: { email },
       req,
     });
 
@@ -232,7 +273,7 @@ exports.verifyOtp = async (req, res) => {
     return sendSuccess(
       res,
       { token, role: user.role },
-      "Phone verified successfully. You can now log in.",
+      "Email verified successfully. You can now log in.",
       200,
     );
   } catch (err) {
@@ -290,7 +331,7 @@ exports.login = async (req, res) => {
       return sendError(
         res,
         ErrorCodes.NOT_VERIFIED,
-        "Your phone number is not verified. Please complete OTP verification first.",
+        "Your email address is not verified. Please complete OTP verification first.",
         null,
         403,
       );
