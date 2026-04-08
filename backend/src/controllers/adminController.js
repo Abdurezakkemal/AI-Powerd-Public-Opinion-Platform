@@ -1,6 +1,8 @@
 const User = require("../models/User");
 const Feedback = require("../models/Feedback");
 const { hashPassword } = require("../utils/helpers");
+const logger = require("../utils/logger");
+const { createAuditLog } = require("../utils/audit");
 const {
   sendSuccess,
   sendError,
@@ -27,6 +29,9 @@ exports.listPlanners = async (req, res) => {
       User.countDocuments(query),
     ]);
 
+    logger.info(
+      `Admin ${req.user.id} listed planners (page ${page}, total ${total})`,
+    );
     return sendSuccess(
       res,
       {
@@ -38,7 +43,10 @@ exports.listPlanners = async (req, res) => {
       "Planners retrieved successfully",
     );
   } catch (err) {
-    console.error("List planners error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "List planners error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -65,6 +73,9 @@ exports.createPlanner = async (req, res) => {
 
     const existing = await User.findOne({ email });
     if (existing) {
+      logger.warn(
+        `Admin ${req.user.id} attempted to create planner with existing email: ${email}`,
+      );
       return sendError(
         res,
         ErrorCodes.DUPLICATE,
@@ -86,6 +97,21 @@ exports.createPlanner = async (req, res) => {
     });
     await planner.save();
 
+    // Audit log
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "CREATE_PLANNER",
+      targetType: "User",
+      targetId: planner._id,
+      details: { email: planner.email },
+      req,
+    });
+
+    logger.info(
+      `Admin ${req.user.id} created planner: ${email} (${planner._id})`,
+    );
+
     return sendSuccess(
       res,
       {
@@ -96,7 +122,10 @@ exports.createPlanner = async (req, res) => {
       201,
     );
   } catch (err) {
-    console.error("Create planner error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Create planner error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -124,13 +153,31 @@ exports.updatePlanner = async (req, res) => {
       );
     }
 
+    const changes = {};
     if (password) {
       planner.passwordHash = await hashPassword(password);
+      changes.password = "updated";
     }
     if (active !== undefined) {
       planner.active = active;
+      changes.active = active;
     }
     await planner.save();
+
+    // Audit log
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "UPDATE_PLANNER",
+      targetType: "User",
+      targetId: planner._id,
+      details: { email: planner.email, changes },
+      req,
+    });
+
+    logger.info(
+      `Admin ${req.user.id} updated planner: ${planner.email} (${planner._id})`,
+    );
 
     return sendSuccess(
       res,
@@ -142,7 +189,10 @@ exports.updatePlanner = async (req, res) => {
       "Planner updated successfully",
     );
   } catch (err) {
-    console.error("Update planner error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Update planner error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -162,13 +212,19 @@ exports.getPendingFeedback = async (req, res) => {
       .populate("policyId", "title")
       .populate("userId", "email")
       .sort({ createdAt: -1 });
+    logger.info(
+      `Admin ${req.user.id} retrieved ${feedbacks.length} pending feedback items`,
+    );
     return sendSuccess(
       res,
       { feedbacks },
       "Pending feedback retrieved successfully",
     );
   } catch (err) {
-    console.error("Get pending feedback error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Get pending feedback error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -202,9 +258,26 @@ exports.updateFeedback = async (req, res) => {
         404,
       );
     }
+
+    // Audit log
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "UPDATE_FEEDBACK",
+      targetType: "Feedback",
+      targetId: feedback._id,
+      details: { policyId: feedback.policyId, updates: updateData },
+      req,
+    });
+
+    logger.info(`Admin ${req.user.id} updated feedback ${id}`);
+
     return sendSuccess(res, feedback, "Feedback updated successfully");
   } catch (err) {
-    console.error("Update feedback error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Update feedback error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -236,13 +309,29 @@ exports.retryFeedback = async (req, res) => {
     feedback.status = "processing";
     await feedback.save();
 
+    // Audit log
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "RETRY_FEEDBACK",
+      targetType: "Feedback",
+      targetId: feedback._id,
+      details: { policyId: feedback.policyId },
+      req,
+    });
+
+    logger.info(`Admin ${req.user.id} queued feedback ${id} for retry`);
+
     return sendSuccess(
       res,
       { feedbackId: id },
       "Feedback queued for retry. The AI worker will process it shortly.",
     );
   } catch (err) {
-    console.error("Retry feedback error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Retry feedback error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -267,13 +356,30 @@ exports.retryAllFeedback = async (req, res) => {
         },
       },
     );
+
+    // Audit log
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "RETRY_ALL_FEEDBACK",
+      details: { count: result.modifiedCount },
+      req,
+    });
+
+    logger.info(
+      `Admin ${req.user.id} queued ${result.modifiedCount} feedback items for retry`,
+    );
+
     return sendSuccess(
       res,
       { updatedCount: result.modifiedCount },
       `${result.modifiedCount} feedback items queued for retry`,
     );
   } catch (err) {
-    console.error("Retry all feedback error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Retry all feedback error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -302,6 +408,9 @@ exports.listCitizens = async (req, res) => {
         .sort({ createdAt: -1 }),
       User.countDocuments(query),
     ]);
+    logger.info(
+      `Admin ${req.user.id} listed citizens (page ${page}, total ${total})`,
+    );
     return sendSuccess(
       res,
       {
@@ -313,7 +422,10 @@ exports.listCitizens = async (req, res) => {
       "Citizens retrieved successfully",
     );
   } catch (err) {
-    console.error("List citizens error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "List citizens error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -353,14 +465,32 @@ exports.updateCitizenStatus = async (req, res) => {
     user.active = active;
     await user.save();
 
+    // Audit log
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "UPDATE_CITIZEN_STATUS",
+      targetType: "User",
+      targetId: user._id,
+      details: { email: user.email, active: user.active },
+      req,
+    });
+
     const statusText = active ? "activated" : "deactivated";
+    logger.info(
+      `Admin ${req.user.id} ${statusText} citizen: ${user.email} (${user._id})`,
+    );
+
     return sendSuccess(
       res,
       { userId: user._id, active: user.active },
       `Citizen account ${statusText} successfully`,
     );
   } catch (err) {
-    console.error("Update citizen status error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Update citizen status error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -400,14 +530,32 @@ exports.updatePlannerStatus = async (req, res) => {
     planner.active = active;
     await planner.save();
 
+    // Audit log
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "UPDATE_PLANNER_STATUS",
+      targetType: "User",
+      targetId: planner._id,
+      details: { email: planner.email, active: planner.active },
+      req,
+    });
+
     const statusText = active ? "activated" : "deactivated";
+    logger.info(
+      `Admin ${req.user.id} ${statusText} planner: ${planner.email} (${planner._id})`,
+    );
+
     return sendSuccess(
       res,
       { plannerId: planner._id, active: planner.active },
       `Planner account ${statusText} successfully`,
     );
   } catch (err) {
-    console.error("Update planner status error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Update planner status error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,

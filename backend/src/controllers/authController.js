@@ -1,6 +1,8 @@
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 const client = require("../config/redis");
+const logger = require("../utils/logger");
+const { createAuditLog } = require("../utils/audit");
 const {
   hashPassword,
   comparePassword,
@@ -55,6 +57,17 @@ exports.register = async (req, res) => {
     });
     await user.save();
 
+    // Audit: account registration
+    await createAuditLog({
+      userId: user._id,
+      userRole: "citizen",
+      action: "REGISTER",
+      details: { email, phone: normalizePhone(phone) },
+      req,
+    });
+
+    logger.info(`User registered: ${email} (${user._id})`);
+
     return sendSuccess(
       res,
       { userId: user._id },
@@ -62,7 +75,10 @@ exports.register = async (req, res) => {
       201,
     );
   } catch (err) {
-    console.error("Registration error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Registration error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -92,6 +108,7 @@ exports.sendOtp = async (req, res) => {
 
     const attempts = await client.get(attemptsKey);
     if (attempts && parseInt(attempts) >= 3) {
+      logger.warn(`OTP rate limit exceeded for ${normalized}`);
       return sendError(
         res,
         ErrorCodes.RATE_LIMIT,
@@ -107,7 +124,11 @@ exports.sendOtp = async (req, res) => {
     await client.expire(attemptsKey, 3600);
 
     // Simulate SMS – replace with actual gateway
-    console.log(`[SIMULATED SMS] OTP for ${normalized}: ${otp}`);
+    logger.info(`OTP sent to ${normalized}`); // DO NOT log OTP in production unless debugging
+    // For debugging only – remove in production
+    if (process.env.NODE_ENV !== "production") {
+      logger.debug(`[DEV] OTP for ${normalized}: ${otp}`);
+    }
 
     return sendSuccess(
       res,
@@ -115,7 +136,7 @@ exports.sendOtp = async (req, res) => {
       "OTP sent successfully. It expires in 5 minutes.",
     );
   } catch (err) {
-    console.error("Send OTP error:", err);
+    logger.error({ error: err.message, stack: err.stack }, "Send OTP error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -145,6 +166,7 @@ exports.verifyOtp = async (req, res) => {
 
     const attempts = await client.incr(attemptsKey);
     if (attempts > 3) {
+      logger.warn(`OTP verify rate limit exceeded for ${normalized}`);
       return sendError(
         res,
         ErrorCodes.RATE_LIMIT,
@@ -157,6 +179,7 @@ exports.verifyOtp = async (req, res) => {
 
     const stored = await client.get(key);
     if (!stored || stored !== code) {
+      logger.warn(`Failed OTP verification for ${normalized}`);
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -184,6 +207,17 @@ exports.verifyOtp = async (req, res) => {
     user.verified = true;
     await user.save();
 
+    // Audit: phone verified
+    await createAuditLog({
+      userId: user._id,
+      userRole: user.role,
+      action: "VERIFY_OTP",
+      details: { phone: normalized },
+      req,
+    });
+
+    logger.info(`User verified: ${user.email} (${user._id})`);
+
     const token = jwt.sign(
       {
         id: user._id,
@@ -202,7 +236,10 @@ exports.verifyOtp = async (req, res) => {
       200,
     );
   } catch (err) {
-    console.error("OTP verification error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "OTP verification error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -228,6 +265,7 @@ exports.login = async (req, res) => {
 
     const user = await User.findOne({ email });
     if (!user) {
+      logger.warn(`Failed login attempt for non-existent email: ${email}`);
       return sendError(
         res,
         ErrorCodes.INVALID_CREDENTIALS,
@@ -238,6 +276,7 @@ exports.login = async (req, res) => {
     }
 
     if (!user.active) {
+      logger.warn(`Login attempt for deactivated account: ${email}`);
       return sendError(
         res,
         ErrorCodes.ACCOUNT_DISABLED,
@@ -247,6 +286,7 @@ exports.login = async (req, res) => {
       );
     }
     if (!user.verified) {
+      logger.warn(`Login attempt for unverified account: ${email}`);
       return sendError(
         res,
         ErrorCodes.NOT_VERIFIED,
@@ -258,6 +298,7 @@ exports.login = async (req, res) => {
 
     const valid = await comparePassword(password, user.passwordHash);
     if (!valid) {
+      logger.warn(`Failed login attempt for ${email} – wrong password`);
       return sendError(
         res,
         ErrorCodes.INVALID_CREDENTIALS,
@@ -278,6 +319,17 @@ exports.login = async (req, res) => {
       { expiresIn: "7d" },
     );
 
+    // Audit: successful login
+    await createAuditLog({
+      userId: user._id,
+      userRole: user.role,
+      action: "LOGIN",
+      details: { email: user.email },
+      req,
+    });
+
+    logger.info(`User logged in: ${email} (${user._id})`);
+
     return sendSuccess(
       res,
       { token, role: user.role, userId: user._id },
@@ -285,7 +337,7 @@ exports.login = async (req, res) => {
       200,
     );
   } catch (err) {
-    console.error("Login error:", err);
+    logger.error({ error: err.message, stack: err.stack }, "Login error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,

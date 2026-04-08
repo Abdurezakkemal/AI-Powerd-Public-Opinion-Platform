@@ -3,6 +3,7 @@ const dotenv = require("dotenv");
 const cors = require("cors");
 const connectDB = require("./src/config/db");
 const redisClient = require("./src/config/redis");
+const requestLogger = require("./src/middleware/requestLogger");
 
 dotenv.config();
 connectDB(); // connect to MongoDB
@@ -42,3 +43,4 @@ app.use("/api/analytics", require("./src/routes/analyticsRoutes"));
 app.use("/api/sms", require("./src/routes/smsRoutes"));
 app.use("/api/admin", require("./src/routes/adminRoutes"));
 app.use("/api/users", require("./src/routes/userRoutes"));
+app.use(requestLogger);

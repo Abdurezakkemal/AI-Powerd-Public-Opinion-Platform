@@ -1,5 +1,7 @@
 const Policy = require("../models/Policy");
 const { customAlphabet } = require("nanoid");
+const logger = require("../utils/logger");
+const { createAuditLog } = require("../utils/audit");
 const {
   sendSuccess,
   sendError,
@@ -55,13 +57,19 @@ exports.getAll = async (req, res) => {
       totalVotes: 0,
     }));
 
+    logger.info(
+      `User ${req.user.id} (${req.user.role}) retrieved policies (page ${page}, total ${total})`,
+    );
     return sendSuccess(
       res,
       { policies: formatted, total, page: Number(page) },
       "Policies retrieved successfully",
     );
   } catch (err) {
-    console.error("Get all policies error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Get all policies error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -104,6 +112,9 @@ exports.getOne = async (req, res) => {
       }
     }
 
+    logger.info(
+      `User ${req.user.id} retrieved policy ${policy._id} (${policy.policyCode})`,
+    );
     return sendSuccess(
       res,
       {
@@ -121,7 +132,7 @@ exports.getOne = async (req, res) => {
       "Policy retrieved successfully",
     );
   } catch (err) {
-    console.error("Get policy error:", err);
+    logger.error({ error: err.message, stack: err.stack }, "Get policy error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -166,6 +177,9 @@ exports.create = async (req, res) => {
       exists = await Policy.findOne({ policyCode });
       attempts++;
       if (attempts > 10) {
+        logger.error(
+          `Failed to generate unique policy code for title: ${title}`,
+        );
         return sendError(
           res,
           ErrorCodes.INTERNAL,
@@ -188,6 +202,19 @@ exports.create = async (req, res) => {
     });
     await policy.save();
 
+    // Audit log
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "CREATE_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { title, policyCode, targetRegions, startDate, endDate },
+      req,
+    });
+
+    logger.info(`User ${req.user.id} created policy: ${title} (${policyCode})`);
+
     return sendSuccess(
       res,
       { id: policy._id, policyCode },
@@ -195,7 +222,10 @@ exports.create = async (req, res) => {
       201,
     );
   } catch (err) {
-    console.error("Policy creation error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Policy creation error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -229,10 +259,13 @@ exports.update = async (req, res) => {
       );
     }
 
-    // 🔒 Ownership check (same as delete)
+    // Ownership check
     const ownerId = policy.createdBy.toString();
     const userId = req.user.id.toString();
     if (req.user.role !== "admin" && ownerId !== userId) {
+      logger.warn(
+        `User ${userId} attempted to edit policy ${policy._id} owned by ${ownerId}`,
+      );
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
@@ -243,12 +276,43 @@ exports.update = async (req, res) => {
     }
 
     const { title, description, targetRegions, startDate, endDate } = req.body;
-    if (title) policy.title = title;
-    if (description) policy.description = description;
-    if (targetRegions) policy.targetRegions = targetRegions;
-    if (startDate) policy.startDate = startDate;
-    if (endDate) policy.endDate = endDate;
+    const changes = {};
+    if (title) {
+      policy.title = title;
+      changes.title = title;
+    }
+    if (description) {
+      policy.description = description;
+      changes.description = description;
+    }
+    if (targetRegions) {
+      policy.targetRegions = targetRegions;
+      changes.targetRegions = targetRegions;
+    }
+    if (startDate) {
+      policy.startDate = startDate;
+      changes.startDate = startDate;
+    }
+    if (endDate) {
+      policy.endDate = endDate;
+      changes.endDate = endDate;
+    }
     await policy.save();
+
+    // Audit log
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "UPDATE_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { policyCode: policy.policyCode, changes },
+      req,
+    });
+
+    logger.info(
+      `User ${req.user.id} updated policy ${policy._id} (${policy.policyCode})`,
+    );
 
     return sendSuccess(
       res,
@@ -265,7 +329,10 @@ exports.update = async (req, res) => {
       "Policy updated successfully",
     );
   } catch (err) {
-    console.error("Policy update error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Policy update error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -293,6 +360,9 @@ exports.delete = async (req, res) => {
     const ownerId = policy.createdBy.toString();
     const userId = req.user.id.toString();
     if (req.user.role !== "admin" && ownerId !== userId) {
+      logger.warn(
+        `User ${userId} attempted to delete/close policy ${policy._id} owned by ${ownerId}`,
+      );
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
@@ -302,14 +372,47 @@ exports.delete = async (req, res) => {
       );
     }
 
+    let action = "";
+    let details = {};
+
     if (policy.status === "draft") {
       await policy.deleteOne();
+      action = "DELETE_POLICY";
+      details = { policyCode: policy.policyCode, title: policy.title };
+      logger.info(
+        `User ${req.user.id} deleted draft policy ${policy._id} (${policy.policyCode})`,
+      );
+      // Audit log
+      await createAuditLog({
+        userId: req.user.id,
+        userRole: req.user.role,
+        action,
+        targetType: "Policy",
+        targetId: policy._id,
+        details,
+        req,
+      });
       return sendSuccess(res, null, "Policy deleted successfully");
     }
 
     if (policy.status === "active") {
       policy.status = "closed";
       await policy.save();
+      action = "CLOSE_POLICY";
+      details = { policyCode: policy.policyCode, title: policy.title };
+      logger.info(
+        `User ${req.user.id} closed active policy ${policy._id} (${policy.policyCode})`,
+      );
+      // Audit log
+      await createAuditLog({
+        userId: req.user.id,
+        userRole: req.user.role,
+        action,
+        targetType: "Policy",
+        targetId: policy._id,
+        details,
+        req,
+      });
       return sendSuccess(
         res,
         { id: policy._id, status: policy.status },
@@ -325,7 +428,10 @@ exports.delete = async (req, res) => {
       400,
     );
   } catch (err) {
-    console.error("Policy delete error:", err);
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Policy delete/close error",
+    );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
