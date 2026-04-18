@@ -1,11 +1,13 @@
-const express = require("express");
 const dotenv = require("dotenv");
+dotenv.config();
+
+
+const express = require("express");
 const cors = require("cors");
 const connectDB = require("./src/config/db");
 const redisClient = require("./src/config/redis");
 const requestLogger = require("./src/middleware/requestLogger");
 
-dotenv.config();
 connectDB(); // connect to MongoDB
 
 const app = express();
