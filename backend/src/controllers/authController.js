@@ -149,9 +149,25 @@ exports.sendOtp = async (req, res) => {
 
     const key = `otp:email:${email}`;
     const attemptsKey = `otp:verify:${email}`;
+
+    // Check if an OTP already exists and is still valid
+    const existingOtp = await client.get(key);
+    if (existingOtp) {
+      const ttl = await client.ttl(key);
+      logger.warn(`OTP already active for ${email}, expires in ${ttl}s`);
+      return sendError(
+        res,
+        ErrorCodes.RATE_LIMIT,
+        `An OTP has already been sent and is valid for ${ttl} more seconds. Please use that code or wait until it expires.`,
+        null,
+        429,
+      );
+    }
+
+    // Rate limit for requesting new OTPs
     const attempts = await client.get(attemptsKey);
     if (attempts && parseInt(attempts) >= 3) {
-      logger.warn(`OTP verify rate limit exceeded for ${email}`);
+      logger.warn(`OTP request rate limit exceeded for ${email}`);
       return sendError(
         res,
         ErrorCodes.RATE_LIMIT,
@@ -166,7 +182,6 @@ exports.sendOtp = async (req, res) => {
     await client.incr(attemptsKey);
     await client.expire(attemptsKey, 300);
 
-    // Send OTP email
     await sendOtpEmail(email, otp);
 
     logger.info(`OTP sent to email: ${email}`);
