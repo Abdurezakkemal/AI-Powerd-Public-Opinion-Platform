@@ -29,10 +29,13 @@ exports.getAll = async (req, res) => {
 
     if (req.user.role === "citizen") {
       filter.status = "active";
-      filter.targetRegions = req.user.region;
+      filter.targetRegions = { $in: [req.user.region] };
     } else if (region) {
-      filter.targetRegions = region;
+      filter.targetRegions = { $in: [region] };
     }
+
+    // Debug logging
+    logger.info(`Policy filter: ${JSON.stringify(filter)}, User: ${req.user.id}, Role: ${req.user.role}, Region: ${req.user.region}`);
 
     const skip = (page - 1) * limit;
     const [policies, total] = await Promise.all([
@@ -43,6 +46,8 @@ exports.getAll = async (req, res) => {
         .populate("createdBy", "email"),
       Policy.countDocuments(filter),
     ]);
+
+    logger.info(`Found ${policies.length} policies, total: ${total}`);
 
     const formatted = policies.map((p) => ({
       id: p._id,
