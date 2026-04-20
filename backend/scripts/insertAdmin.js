@@ -1,24 +1,25 @@
 const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const path = require("path");
-require("dotenv").config();
+require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
 const MONGO_URI = process.env.MONGO_URI;
 
 const insertAdmin = async () => {
   try {
     await mongoose.connect(MONGO_URI);
-    const User = require(path.join(__dirname, "src", "models", "User"));
+    const User = require(path.join(__dirname, "..", "src", "models", "User"));
 
     const email = "admin@example.com";
     const password = "temp123";
 
     const passwordHash = await bcrypt.hash(password, 10);
 
+    // Use a unique dummy phoneHash to avoid sparse index issues
     const admin = {
       email,
       passwordHash,
-      phoneHash: null, // no phone number
+      phoneHash: `admin_dummy_${Date.now()}`,
       region: "",
       role: "admin",
       verified: true,
