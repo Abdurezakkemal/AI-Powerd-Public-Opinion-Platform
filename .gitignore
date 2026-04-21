@@ -148,3 +148,8 @@ __pycache__/
 # AI service
 ai-service/venv/
 ai-service/venv311/
+
+
+design.md
+requirements.md
+tasks.md
