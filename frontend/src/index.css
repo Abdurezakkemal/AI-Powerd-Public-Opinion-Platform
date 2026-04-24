@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+	html {
+		font-size: 18px;
+	}
+}
+
+@layer utilities {
+	@keyframes navbar-drop {
+		0% {
+			opacity: 0;
+			transform: translateY(-10px);
+		}
+		100% {
+			opacity: 1;
+			transform: translateY(0);
+		}
+	}
+
+	.animate-navbar-drop {
+		animation: navbar-drop 420ms ease-out both;
+	}
+}
+
