@@ -45,7 +45,7 @@ exports.submitFeedback = async (req, res) => {
       );
     }
 
-    // Fetch user from DB to ensure verified status
+    // Fetch user
     const user = await User.findById(req.user.id);
     if (!user) {
       logger.warn(
@@ -64,21 +64,35 @@ exports.submitFeedback = async (req, res) => {
       );
     }
 
-    // Fetch policy and validate
-    const policy = await Policy.findOne({ _id: policyId, status: "active" });
+    // Fetch policy – don't filter by status yet
+    const policy = await Policy.findById(policyId);
     if (!policy) {
-      logger.warn(
-        `Feedback submission for non-active or missing policy: ${policyId}`,
-      );
+      logger.warn(`Feedback submission for missing policy: ${policyId}`);
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
-        "Policy not found or not active",
+        "Policy not found",
         null,
         404,
       );
     }
 
+    // Specific status messages
+    if (policy.status !== "active") {
+      let message = "This policy is not open for voting";
+      if (policy.status === "paused")
+        message = "Voting is temporarily paused for this policy";
+      else if (policy.status === "closed")
+        message = "This policy is closed for voting";
+      else if (policy.status === "draft")
+        message = "This policy has not been published yet";
+      logger.warn(
+        `Feedback submission for policy ${policyId} with status ${policy.status}`,
+      );
+      return sendError(res, ErrorCodes.FORBIDDEN, message, null, 403);
+    }
+
+    // Date range check (only for active policies)
     const now = new Date();
     const start = new Date(policy.startDate);
     const end = new Date(policy.endDate);
@@ -95,11 +109,8 @@ exports.submitFeedback = async (req, res) => {
       );
     }
 
-    // Check for duplicate feedback
-    const existing = await Feedback.findOne({
-      policyId,
-      userId: user._id,
-    });
+    // Duplicate vote check
+    const existing = await Feedback.findOne({ policyId, userId: user._id });
     if (existing) {
       logger.warn(
         `Duplicate feedback attempt for policy ${policyId} by user ${user._id}`,
@@ -125,7 +136,6 @@ exports.submitFeedback = async (req, res) => {
     });
     await feedback.save();
 
-    // Audit log
     await createAuditLog({
       userId: user._id,
       userRole: user.role,

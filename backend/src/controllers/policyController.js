@@ -159,6 +159,17 @@ exports.create = async (req, res) => {
 
     const start = new Date(startDate);
     const end = new Date(endDate);
+    const now = new Date();
+
+    if (start < now) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Start date cannot be in the past. Please set a future start date.",
+        null,
+        400,
+      );
+    }
     if (start >= end) {
       return sendError(
         res,
@@ -202,7 +213,6 @@ exports.create = async (req, res) => {
     });
     await policy.save();
 
-    // Audit log
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
@@ -259,7 +269,6 @@ exports.update = async (req, res) => {
       );
     }
 
-    // Ownership check
     const ownerId = policy.createdBy.toString();
     const userId = req.user.id.toString();
     if (req.user.role !== "admin" && ownerId !== userId) {
@@ -277,6 +286,9 @@ exports.update = async (req, res) => {
 
     const { title, description, targetRegions, startDate, endDate } = req.body;
     const changes = {};
+    const now = new Date();
+
+    // Update simple fields
     if (title) {
       policy.title = title;
       changes.title = title;
@@ -289,17 +301,73 @@ exports.update = async (req, res) => {
       policy.targetRegions = targetRegions;
       changes.targetRegions = targetRegions;
     }
-    if (startDate) {
-      policy.startDate = startDate;
-      changes.startDate = startDate;
+
+    // Update startDate with validations
+    if (startDate !== undefined) {
+      const newStart = new Date(startDate);
+      if (newStart < now) {
+        return sendError(
+          res,
+          ErrorCodes.VALIDATION,
+          "Start date cannot be in the past.",
+          null,
+          400,
+        );
+      }
+      // If endDate is also being updated in this request, we need to validate against the new endDate.
+      // We'll handle that after we have the final endDate value.
+      // For now, store the tentative start; final check will be done after processing endDate.
+      policy.startDate = newStart;
+      changes.startDate = newStart;
     }
-    if (endDate) {
-      policy.endDate = endDate;
-      changes.endDate = endDate;
+
+    // Update endDate with validations
+    if (endDate !== undefined) {
+      const newEnd = new Date(endDate);
+      // Use the (possibly updated) startDate for comparison
+      const effectiveStart = startDate ? new Date(startDate) : policy.startDate;
+      if (newEnd <= effectiveStart) {
+        return sendError(
+          res,
+          ErrorCodes.VALIDATION,
+          "End date must be after start date.",
+          null,
+          400,
+        );
+      }
+      policy.endDate = newEnd;
+      changes.endDate = newEnd;
+    } else if (startDate !== undefined) {
+      // Only startDate was updated, need to ensure it is before existing endDate
+      const newStart = new Date(startDate);
+      if (newStart >= policy.endDate) {
+        return sendError(
+          res,
+          ErrorCodes.VALIDATION,
+          "Start date must be before end date.",
+          null,
+          400,
+        );
+      }
     }
+
+    // Additional check if both were provided (redundant but safe)
+    if (startDate !== undefined && endDate !== undefined) {
+      const newStart = new Date(startDate);
+      const newEnd = new Date(endDate);
+      if (newStart >= newEnd) {
+        return sendError(
+          res,
+          ErrorCodes.VALIDATION,
+          "Start date must be before end date.",
+          null,
+          400,
+        );
+      }
+    }
+
     await policy.save();
 
-    // Audit log
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
@@ -343,7 +411,435 @@ exports.update = async (req, res) => {
   }
 };
 
-// DELETE /api/policies/:id (also closes active policies)
+// ==================== POLICY LIFECYCLE METHODS ====================
+
+// PATCH /api/policies/:id/activate (draft -> active, only if within date window)
+exports.activate = async (req, res) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    if (policy.status !== "draft") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only draft policies can be activated. Current: ${policy.status}`,
+        null,
+        400,
+      );
+    }
+
+    const now = new Date();
+    const start = new Date(policy.startDate);
+    const end = new Date(policy.endDate);
+    if (now < start || now > end) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Cannot activate policy outside its voting window (${start.toISOString()} to ${end.toISOString()})`,
+        null,
+        400,
+      );
+    }
+
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      logger.warn(
+        `User ${userId} attempted to activate policy ${policy._id} owned by ${ownerId}`,
+      );
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission to activate this policy",
+        null,
+        403,
+      );
+    }
+
+    policy.status = "active";
+    await policy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "ACTIVATE_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { policyCode: policy.policyCode, title: policy.title },
+      req,
+    });
+    logger.info(
+      `Policy ${policy._id} (${policy.policyCode}) activated by ${req.user.id}`,
+    );
+    return sendSuccess(
+      res,
+      { id: policy._id, status: policy.status },
+      "Policy activated successfully. Voting is now open (within date range).",
+      200,
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Policy activation error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to activate policy",
+      null,
+      500,
+    );
+  }
+};
+
+// PATCH /api/policies/:id/extend (change endDate for active or paused policies)
+exports.extendEndDate = async (req, res) => {
+  try {
+    const { newEndDate } = req.body;
+    if (!newEndDate)
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "newEndDate is required",
+        null,
+        400,
+      );
+
+    const policy = await Policy.findById(req.params.id);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+
+    if (!["active", "paused"].includes(policy.status)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only active or paused policies can change end date. Current: ${policy.status}`,
+        null,
+        400,
+      );
+    }
+
+    const start = new Date(policy.startDate);
+    const newEnd = new Date(newEndDate);
+    const now = new Date();
+    const currentEnd = new Date(policy.endDate);
+
+    if (isNaN(newEnd.getTime()))
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid date format",
+        null,
+        400,
+      );
+    if (newEnd <= start)
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "New end date must be after start date",
+        null,
+        400,
+      );
+    if (policy.status === "active" && newEnd <= now)
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "New end date must be after current date for active policy",
+        null,
+        400,
+      );
+    if (newEnd.getTime() === currentEnd.getTime())
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "New end date is same as current",
+        null,
+        400,
+      );
+
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission",
+        null,
+        403,
+      );
+    }
+
+    const oldEndDate = policy.endDate;
+    policy.endDate = newEnd;
+    await policy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "UPDATE_POLICY_END_DATE",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { policyCode: policy.policyCode, oldEndDate, newEndDate },
+      req,
+    });
+    logger.info(
+      `Policy ${policy._id} end date changed from ${oldEndDate} to ${newEndDate} by ${req.user.id}`,
+    );
+    return sendSuccess(
+      res,
+      { id: policy._id, endDate: policy.endDate },
+      "Policy end date updated successfully",
+      200,
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Change end date error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to update end date",
+      null,
+      500,
+    );
+  }
+};
+
+// PATCH /api/policies/:id/pause (active -> paused)
+exports.pause = async (req, res) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    if (policy.status !== "active")
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only active policies can be paused. Current: ${policy.status}`,
+        null,
+        400,
+      );
+
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission",
+        null,
+        403,
+      );
+    }
+
+    policy.status = "paused";
+    await policy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "PAUSE_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { policyCode: policy.policyCode, title: policy.title },
+      req,
+    });
+    logger.info(`Policy ${policy._id} paused by ${req.user.id}`);
+    return sendSuccess(
+      res,
+      { id: policy._id, status: policy.status },
+      "Policy paused. Voting disabled.",
+      200,
+    );
+  } catch (err) {
+    logger.error({ error: err.message, stack: err.stack }, "Pause error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to pause policy",
+      null,
+      500,
+    );
+  }
+};
+
+// PATCH /api/policies/:id/resume (paused -> active, must still be within date range)
+exports.resume = async (req, res) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    if (policy.status !== "paused")
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only paused policies can be resumed. Current: ${policy.status}`,
+        null,
+        400,
+      );
+
+    const now = new Date();
+    const start = new Date(policy.startDate);
+    const end = new Date(policy.endDate);
+    if (now < start || now > end) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Cannot resume policy outside its voting window. Consider extending end date first.",
+        null,
+        400,
+      );
+    }
+
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission",
+        null,
+        403,
+      );
+    }
+
+    policy.status = "active";
+    await policy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "RESUME_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { policyCode: policy.policyCode, title: policy.title },
+      req,
+    });
+    logger.info(`Policy ${policy._id} resumed by ${req.user.id}`);
+    return sendSuccess(
+      res,
+      { id: policy._id, status: policy.status },
+      "Policy resumed. Voting enabled.",
+      200,
+    );
+  } catch (err) {
+    logger.error({ error: err.message, stack: err.stack }, "Resume error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to resume policy",
+      null,
+      500,
+    );
+  }
+};
+
+// POST /api/policies/:id/close (active or paused -> closed)
+exports.close = async (req, res) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
+    if (!["active", "paused"].includes(policy.status)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only active or paused policies can be closed. Current status: ${policy.status}`,
+        null,
+        400,
+      );
+    }
+
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      logger.warn(
+        `User ${userId} attempted to close policy ${policy._id} not owned`,
+      );
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission to close this policy",
+        null,
+        403,
+      );
+    }
+
+    policy.status = "closed";
+    await policy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "CLOSE_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: {
+        policyCode: policy.policyCode,
+        title: policy.title,
+        previousStatus: policy.status,
+      },
+      req,
+    });
+
+    logger.info(
+      `Policy ${policy._id} (${policy.policyCode}) closed by ${req.user.id}`,
+    );
+    return sendSuccess(
+      res,
+      { id: policy._id, status: policy.status },
+      "Policy closed successfully. No more votes will be accepted.",
+      200,
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Close policy error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to close policy",
+      null,
+      500,
+    );
+  }
+};
+// DELETE /api/policies/:id (only for draft policies)
 exports.delete = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
@@ -357,85 +853,56 @@ exports.delete = async (req, res) => {
       );
     }
 
-    const ownerId = policy.createdBy.toString();
-    const userId = req.user.id.toString();
-    if (req.user.role !== "admin" && ownerId !== userId) {
-      logger.warn(
-        `User ${userId} attempted to delete/close policy ${policy._id} owned by ${ownerId}`,
-      );
+    if (policy.status !== "draft") {
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
-        "You do not have permission to modify this policy",
+        "Only draft policies can be deleted. For active or paused policies, use the close endpoint.",
         null,
         403,
       );
     }
 
-    let action = "";
-    let details = {};
-
-    if (policy.status === "draft") {
-      await policy.deleteOne();
-      action = "DELETE_POLICY";
-      details = { policyCode: policy.policyCode, title: policy.title };
-      logger.info(
-        `User ${req.user.id} deleted draft policy ${policy._id} (${policy.policyCode})`,
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      logger.warn(
+        `User ${userId} attempted to delete policy ${policy._id} not owned`,
       );
-      // Audit log
-      await createAuditLog({
-        userId: req.user.id,
-        userRole: req.user.role,
-        action,
-        targetType: "Policy",
-        targetId: policy._id,
-        details,
-        req,
-      });
-      return sendSuccess(res, null, "Policy deleted successfully");
-    }
-
-    if (policy.status === "active") {
-      policy.status = "closed";
-      await policy.save();
-      action = "CLOSE_POLICY";
-      details = { policyCode: policy.policyCode, title: policy.title };
-      logger.info(
-        `User ${req.user.id} closed active policy ${policy._id} (${policy.policyCode})`,
-      );
-      // Audit log
-      await createAuditLog({
-        userId: req.user.id,
-        userRole: req.user.role,
-        action,
-        targetType: "Policy",
-        targetId: policy._id,
-        details,
-        req,
-      });
-      return sendSuccess(
+      return sendError(
         res,
-        { id: policy._id, status: policy.status },
-        "Policy closed successfully. No more votes will be accepted.",
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission to delete this policy",
+        null,
+        403,
       );
     }
 
-    return sendError(
-      res,
-      ErrorCodes.FORBIDDEN,
-      "Policy is already closed and cannot be modified",
-      null,
-      400,
+    await policy.deleteOne();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "DELETE_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { policyCode: policy.policyCode, title: policy.title },
+      req,
+    });
+
+    logger.info(
+      `Policy ${policy._id} (${policy.policyCode}) deleted by ${req.user.id}`,
     );
+    return sendSuccess(res, null, "Policy deleted successfully", 200);
   } catch (err) {
     logger.error(
       { error: err.message, stack: err.stack },
-      "Policy delete/close error",
+      "Delete policy error",
     );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to delete or close policy",
+      "Failed to delete policy",
       null,
       500,
     );
