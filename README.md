@@ -64,8 +64,8 @@ For setup and environment variables, continue reading below.
 ### Local Development
 - Node.js 18+ and npm
 - Python 3.10+ (with `venv`)
-- MongoDB (running locally or via Docker)
-- Redis (optional – falls back to in‑memory)
+- MongoDB (running locally or via cloud)
+- Redis 
 - Git
 
 ### On Arch Linux
@@ -207,7 +207,7 @@ uvicorn app.main:app --reload --port 8000
 | `PORT` | Backend port | `5000` |
 | `MONGO_URI` | MongoDB connection string | `mongodb://localhost:27017/communityinsight` |
 | `JWT_SECRET` | Secret for signing tokens | `change this` |
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379` (optional) |
+| `REDIS_URL` | Redis connection URL | `redis://localhost:6379`  |
 | `AI_SERVICE_URL` | URL of AI service | `http://localhost:8000` |
 | `EMAIL_HOST` | SMTP server for OTP | `smtp.gmail.com` |
 | `EMAIL_PORT` | SMTP port | `587` |
