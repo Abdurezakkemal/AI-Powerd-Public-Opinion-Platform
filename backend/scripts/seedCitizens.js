@@ -9,7 +9,7 @@ const User = require("../src/models/User");
 const { hashPhone } = require("../src/utils/helpers");
 
 const MONGO_URI =
-  process.env.MONGO_URI || "mongodb://localhost:27017/civic_engagement";
+  process.env.MONGO_URI || "mongodb://localhost:27017/communityinsight";
 const API_URL = process.env.API_URL || "http://localhost:5000/api";
 const DEFAULT_PASSWORD = "Pass123!";
 
