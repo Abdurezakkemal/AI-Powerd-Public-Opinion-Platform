@@ -40,7 +40,7 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 **Backend**
 - Node.js 18+, Express 4.x
 - MongoDB (Mongoose)
-- Redis (optional, fallback to in‑memory)
+- Redis
 - JWT authentication, bcrypt, nanoid
 - Winston logging, custom audit trails
 
