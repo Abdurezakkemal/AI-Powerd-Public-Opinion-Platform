@@ -22,7 +22,15 @@ Features:
 
 ## 3. Authentication
 
-No authentication – the service is internal. Access should be restricted by network rules (e.g., Docker internal network).
+All endpoints except `/health` require an internal API key.
+
+Include the key in the request header:
+
+```http
+X-Internal-API-Key: your-internal-api-key
+```
+
+The key must match the `INTERNAL_API_KEY` environment variable set in both the AI service and the backend. Requests without a valid key receive a `403 Forbidden` response with a JSON error body.
 
 ## 4. Uniform Response Format
 

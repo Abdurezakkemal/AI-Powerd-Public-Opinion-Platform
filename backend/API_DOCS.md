@@ -1378,8 +1378,6 @@ Error responses (plain text):
 | 400    | "Policy code is required"            |
 | 404    | "Policy not found or not yet closed" |
 
-End of Section 8.
-
 ## 9. Health Check
 
 ### 9.1 Backend health
@@ -1393,58 +1391,6 @@ Response (200 OK):
   "status": "ok",
   "timestamp": "2026-04-09T12:00:00Z"
 }
-```
-
-## 10. AI Service Endpoints (Internal)
-
-    These endpoints are called by the backend worker and are not exposed to clients. They are documented here for reference.
-
-Base URL for AI service (internal): **`http://ai-service:8000`**
-
-### 10.1 Analyze comment
-
-**`POST /analyze`**
-
-Request body:
-
-| Field    | Type   | Required | Description                                         |
-| -------- | ------ | -------- | --------------------------------------------------- |
-| text     | string | yes      | Comment text (max 500 chars)                        |
-| language | string | no       | ISO code (am, om, ti, en); auto-detected if omitted |
-
-Response (200 OK):
-
-```json
-{
-  "sentiment": "positive",
-  "confidence": 0.95,
-  "keywords": ["water", "access", "support"],
-  "language": "am",
-  "sentiment_model": "rasyosef/bert-medium-amharic-finetuned-sentiment",
-  "keyword_model": "keybert"
-}
-```
-
-Error responses: HTTP 500 with JSON error.
-
-### 10.2 Benchmark models
-
-**`POST /benchmark`**
-
-Runs all sentiment models on the given text and returns comparison.
-
-Request body: same as **`/analyze`**.
-
-Response (200 OK): includes list of results per model.
-
-### 10.3 Health check
-
-**`GET /health`**
-
-Response (200 OK):
-
-```json
-{ "status": "ok" }
 ```
 
 ## Appendix: Rate Limiting Summary
