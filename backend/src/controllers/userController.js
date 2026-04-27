@@ -1,5 +1,6 @@
 const User = require("../models/User");
-const Feedback = require("../models/Feedback");
+const Vote = require("../models/Vote");
+const Comment = require("../models/Comment");
 const { hashPassword, comparePassword } = require("../utils/helpers");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
@@ -73,7 +74,6 @@ exports.updateMe = async (req, res) => {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
     }
 
-    // Audit log for profile update
     await createAuditLog({
       userId: req.user.id,
       userRole: user.role,
@@ -134,7 +134,6 @@ exports.changePassword = async (req, res) => {
     user.passwordHash = await hashPassword(newPassword);
     await user.save();
 
-    // Audit log for password change
     await createAuditLog({
       userId: req.user.id,
       userRole: user.role,
@@ -163,41 +162,47 @@ exports.changePassword = async (req, res) => {
 // GET /users/me/history
 exports.getHistory = async (req, res) => {
   try {
-    const history = await Feedback.find({ userId: req.user.id })
+    // Get all votes by the user
+    const votes = await Vote.find({ userId: req.user.id })
       .populate("policyId", "title policyCode")
       .sort({ createdAt: -1 })
       .lean();
 
-    const formatted = history.map((h) => ({
-      id: h._id,
-      policy: h.policyId
-        ? {
-            id: h.policyId._id,
-            title: h.policyId.title,
-            policyCode: h.policyId.policyCode,
-          }
-        : null,
-      rating: h.rating,
-      comment: h.comment,
-      channel: h.channel,
-      sentiment: h.sentiment?.label || null,
-      createdAt: h.createdAt,
-    }));
+    // For each vote, find the associated comment (if any)
+    const formatted = [];
+    for (const vote of votes) {
+      const comment = await Comment.findOne({ voteId: vote._id }).lean();
+      formatted.push({
+        id: vote._id,
+        policy: vote.policyId
+          ? {
+              id: vote.policyId._id,
+              title: vote.policyId.title,
+              policyCode: vote.policyId.policyCode,
+            }
+          : null,
+        rating: vote.rating,
+        comment: comment?.comment || null,
+        channel: vote.channel,
+        sentiment: comment?.sentiment?.label || null,
+        createdAt: vote.createdAt,
+      });
+    }
 
     logger.info(
-      `User ${req.user.id} retrieved feedback history (${history.length} items)`,
+      `User ${req.user.id} retrieved history (${formatted.length} items)`,
     );
     return sendSuccess(
       res,
       { history: formatted },
-      "User feedback history retrieved successfully",
+      "User history retrieved successfully",
     );
   } catch (err) {
     logger.error({ error: err.message, stack: err.stack }, "Get history error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to retrieve feedback history",
+      "Failed to retrieve history",
       null,
       500,
     );
@@ -213,9 +218,9 @@ exports.deleteMe = async (req, res) => {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
     }
 
-    // Capture email before anonymization for audit
     const originalEmail = user.email;
 
+    // Anonymize user account
     user.email = `deleted_${user._id}@deleted.com`;
     user.passwordHash = "deleted";
     user.phoneHash = null;
@@ -223,9 +228,11 @@ exports.deleteMe = async (req, res) => {
     user.verified = false;
     await user.save();
 
-    await Feedback.updateMany({ userId: userId }, { $unset: { userId: "" } });
+    // Remove user reference from votes (set userId to null) instead of deleting
+    await Vote.updateMany({ userId: userId }, { $unset: { userId: "" } });
+    // Remove user reference from comments
+    await Comment.updateMany({ userId: userId }, { $unset: { userId: "" } });
 
-    // Audit log for account deletion
     await createAuditLog({
       userId: userId,
       userRole: user.role,

@@ -1,4 +1,5 @@
-const Feedback = require("../models/Feedback");
+const Vote = require("../models/Vote");
+const Comment = require("../models/Comment");
 const Policy = require("../models/Policy");
 const logger = require("../utils/logger");
 const {
@@ -7,27 +8,30 @@ const {
   ErrorCodes,
 } = require("../utils/responseHelper");
 
-const getRatingDistribution = (feedbackList) => {
+// Helper to get rating distribution from votes
+const getRatingDistribution = (votes) => {
   const dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  feedbackList.forEach((f) => dist[f.rating]++);
+  votes.forEach((v) => dist[v.rating]++);
   return dist;
 };
 
-const getSentimentCounts = (feedbackList) => {
+// Helper to get sentiment counts from comments
+const getSentimentCounts = (comments) => {
   const counts = { positive: 0, negative: 0, neutral: 0 };
-  feedbackList.forEach((f) => {
-    if (f.sentiment && f.sentiment.label) {
-      counts[f.sentiment.label] = (counts[f.sentiment.label] || 0) + 1;
+  comments.forEach((c) => {
+    if (c.sentiment && c.sentiment.label) {
+      counts[c.sentiment.label] = (counts[c.sentiment.label] || 0) + 1;
     }
   });
   return counts;
 };
 
-const getTopKeywords = (feedbackList, limit = 10) => {
+// Helper to get top keywords from comments
+const getTopKeywords = (comments, limit = 10) => {
   const freq = {};
-  feedbackList.forEach((f) => {
-    if (f.keywords && Array.isArray(f.keywords)) {
-      f.keywords.forEach((kw) => {
+  comments.forEach((c) => {
+    if (c.keywords && Array.isArray(c.keywords)) {
+      c.keywords.forEach((kw) => {
         freq[kw] = (freq[kw] || 0) + 1;
       });
     }
@@ -56,7 +60,7 @@ exports.getAnalytics = async (req, res) => {
 
     if (req.user.role !== "planner" && req.user.role !== "admin") {
       logger.warn(
-        `Access denied to analytics for policy ${policyId} by user ${req.user.id} (role: ${req.user.role})`,
+        `Access denied to analytics for policy ${policyId} by user ${req.user.id}`,
       );
       return sendError(
         res,
@@ -67,17 +71,21 @@ exports.getAnalytics = async (req, res) => {
       );
     }
 
-    const feedbacks = await Feedback.find({ policyId });
-    const totalVotes = feedbacks.length;
-    const appVotes = feedbacks.filter((f) => f.channel === "app").length;
-    const smsVotes = feedbacks.filter((f) => f.channel === "sms").length;
-    const ratings = feedbacks.map((f) => f.rating);
+    // Get all votes for rating distribution and totals
+    const votes = await Vote.find({ policyId });
+    const totalVotes = votes.length;
+    const appVotes = votes.filter((v) => v.channel === "app").length;
+    const smsVotes = votes.filter((v) => v.channel === "sms").length;
+    const ratings = votes.map((v) => v.rating);
     const averageRating = ratings.length
       ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2)
       : 0;
-    const ratingDistribution = getRatingDistribution(feedbacks);
-    const sentimentCounts = getSentimentCounts(feedbacks);
-    const topKeywords = getTopKeywords(feedbacks);
+    const ratingDistribution = getRatingDistribution(votes);
+
+    // Get comments for sentiment and keywords
+    const comments = await Comment.find({ policyId });
+    const sentimentCounts = getSentimentCounts(comments);
+    const topKeywords = getTopKeywords(comments);
 
     logger.info(
       `Analytics delivered for policy ${policyId} to user ${req.user.id}`,
@@ -134,22 +142,23 @@ exports.exportAnalytics = async (req, res) => {
       return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
-    // ✅ FIX: populate userId to get region for app votes
-    const feedbacks = await Feedback.find({ policyId })
+    // Get all votes and populate user region for app votes
+    const votes = await Vote.find({ policyId })
       .populate("userId", "region")
       .lean();
 
     let csv = "rating,channel,date,region\n";
-    feedbacks.forEach((f) => {
-      const date = f.createdAt.toISOString().split("T")[0];
-      // For app votes: use populated user's region (if any)
-      // For SMS votes: region stays empty
-      const region = f.channel === "app" ? f.userId?.region || "" : "";
-      csv += `${f.rating},${f.channel},${date},${region}\n`;
+    votes.forEach((v) => {
+      const date = v.createdAt.toISOString().split("T")[0];
+      let region = "";
+      if (v.channel === "app" && v.userId) {
+        region = v.userId.region || "";
+      }
+      csv += `${v.rating},${v.channel},${date},${region}\n`;
     });
 
     logger.info(
-      `CSV exported for policy ${policyId} by user ${req.user.id} (${feedbacks.length} rows)`,
+      `CSV exported for policy ${policyId} by user ${req.user.id} (${votes.length} rows)`,
     );
     res.setHeader("Content-Type", "text/csv");
     res.setHeader(
@@ -195,15 +204,17 @@ exports.getComments = async (req, res) => {
       return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
-    const filter = { policyId, comment: { $ne: "" } };
+    const filter = { policyId };
     if (sentiment) filter["sentiment.label"] = sentiment;
-    const comments = await Feedback.find(filter)
+    const comments = await Comment.find(filter)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit))
-      .select("comment sentiment keywords createdAt")
+      .select("comment sentiment keywords createdAt userId")
+      .populate("userId", "email")
       .lean();
-    const total = await Feedback.countDocuments(filter);
+
+    const total = await Comment.countDocuments(filter);
 
     const formattedComments = comments.map((c) => ({
       id: c._id,
@@ -212,6 +223,7 @@ exports.getComments = async (req, res) => {
       confidence: c.sentiment?.confidence || null,
       keywords: c.keywords || [],
       createdAt: c.createdAt,
+      userEmail: c.userId?.email || "anonymous",
     }));
 
     logger.info(
@@ -261,10 +273,9 @@ exports.getGeographicAnalytics = async (req, res) => {
       return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
-    const geographicData = await Feedback.aggregate([
-      {
-        $match: { policyId: policy._id, channel: "app", comment: { $ne: "" } },
-      },
+    // Only consider app votes that have comments (same as original logic)
+    const geographicData = await Comment.aggregate([
+      { $match: { policyId: policy._id } },
       {
         $lookup: {
           from: "users",
@@ -351,13 +362,26 @@ exports.getTrends = async (req, res) => {
     }
 
     const dateFormat = interval === "week" ? "%Y-%W" : "%Y-%m-%d";
-    const trends = await Feedback.aggregate([
+
+    // Get rating trends from Votes
+    const voteTrends = await Vote.aggregate([
       { $match: { policyId: policy._id } },
       {
         $group: {
           _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
           total: { $sum: 1 },
           averageRating: { $avg: "$rating" },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    // Get sentiment trends from Comments
+    const sentimentTrends = await Comment.aggregate([
+      { $match: { policyId: policy._id } },
+      {
+        $group: {
+          _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
           positive: {
             $sum: { $cond: [{ $eq: ["$sentiment.label", "positive"] }, 1, 0] },
           },
@@ -372,14 +396,38 @@ exports.getTrends = async (req, res) => {
       { $sort: { _id: 1 } },
     ]);
 
-    const result = trends.map((item) => ({
-      date: item._id,
-      averageRating: parseFloat(item.averageRating.toFixed(2)),
-      positive: item.positive,
-      negative: item.negative,
-      neutral: item.neutral,
-      total: item.total,
-    }));
+    // Merge both results
+    const merged = {};
+    voteTrends.forEach((vt) => {
+      merged[vt._id] = {
+        date: vt._id,
+        averageRating: parseFloat(vt.averageRating?.toFixed(2) || 0),
+        total: vt.total,
+        positive: 0,
+        negative: 0,
+        neutral: 0,
+      };
+    });
+    sentimentTrends.forEach((st) => {
+      if (merged[st._id]) {
+        merged[st._id].positive = st.positive;
+        merged[st._id].negative = st.negative;
+        merged[st._id].neutral = st.neutral;
+      } else {
+        merged[st._id] = {
+          date: st._id,
+          averageRating: 0,
+          total: 0,
+          positive: st.positive,
+          negative: st.negative,
+          neutral: st.neutral,
+        };
+      }
+    });
+
+    const result = Object.values(merged).sort((a, b) =>
+      a.date > b.date ? 1 : -1,
+    );
 
     logger.info(
       `Trends retrieved for policy ${policyId} by user ${req.user.id} (interval ${interval}, ${result.length} points)`,

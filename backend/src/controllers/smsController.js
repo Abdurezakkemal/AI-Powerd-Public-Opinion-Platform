@@ -1,5 +1,5 @@
 const Policy = require("../models/Policy");
-const Feedback = require("../models/Feedback");
+const Vote = require("../models/Vote"); // ← changed from Feedback
 const User = require("../models/User");
 const { hashPhone, normalizePhone } = require("../utils/helpers");
 const client = require("../config/redis");
@@ -30,11 +30,10 @@ exports.receiveSms = async (req, res) => {
       );
     }
 
-    // Normalize phone
     const normalized = normalizePhone(phone);
     const phoneHash = hashPhone(normalized);
 
-    // Parse message: RATE <code> <rating>
+    // Parse RATE command
     const match = message.trim().match(/^RATE\s+(\S+)\s+([1-5])$/i);
     if (!match) {
       logger.warn(`Invalid SMS format from ${normalized}: ${message}`);
@@ -46,7 +45,6 @@ exports.receiveSms = async (req, res) => {
     const policyCode = match[1];
     const rating = parseInt(match[2], 10);
 
-    // Find policy by code
     const policy = await Policy.findOne({ policyCode, status: "active" });
     if (!policy) {
       logger.warn(
@@ -55,7 +53,7 @@ exports.receiveSms = async (req, res) => {
       return res.status(404).send("Policy not found or not active");
     }
 
-    // Check if this phone is already registered as an app user
+    // Check if phone is registered as app user
     const existingUser = await User.findOne({ phoneHash });
     if (existingUser && existingUser.verified) {
       logger.warn(`Registered app user attempted SMS vote: ${normalized}`);
@@ -66,8 +64,8 @@ exports.receiveSms = async (req, res) => {
         );
     }
 
-    // Check duplicate SMS vote on this policy
-    const existingVote = await Feedback.findOne({
+    // Check duplicate SMS vote on this policy using Vote model
+    const existingVote = await Vote.findOne({
       policyId: policy._id,
       phoneHash,
     });
@@ -83,9 +81,7 @@ exports.receiveSms = async (req, res) => {
     // Rate limiting
     const rateKey = `rate:sms:${phoneHash}:${new Date().toISOString().split("T")[0]}`;
     const current = await client.incr(rateKey);
-    if (current === 1) {
-      await client.expire(rateKey, RATE_WINDOW);
-    }
+    if (current === 1) await client.expire(rateKey, RATE_WINDOW);
     if (current > RATE_LIMIT) {
       const ttl = await client.ttl(rateKey);
       const hours = Math.ceil(ttl / 3600);
@@ -99,15 +95,14 @@ exports.receiveSms = async (req, res) => {
         );
     }
 
-    // Save feedback
-    const feedback = new Feedback({
+    // Save vote using Vote model
+    const vote = new Vote({
       policyId: policy._id,
       phoneHash,
       channel: "sms",
       rating,
-      processed: true, // no comment, so no AI needed
     });
-    await feedback.save();
+    await vote.save();
 
     logger.info(
       `SMS vote recorded: ${normalized} rated ${rating} for policy ${policyCode}`,
@@ -135,12 +130,11 @@ exports.getResults = async (req, res) => {
       return res.status(404).send("Policy not found or not yet closed");
     }
 
-    const feedbacks = await Feedback.find({ policyId: policy._id });
-    const totalVotes = feedbacks.length;
+    // Use Vote model to get all votes (SMS + app) for this policy
+    const votes = await Vote.find({ policyId: policy._id });
+    const totalVotes = votes.length;
     const avgRating = totalVotes
-      ? (feedbacks.reduce((sum, f) => sum + f.rating, 0) / totalVotes).toFixed(
-          2,
-        )
+      ? (votes.reduce((sum, v) => sum + v.rating, 0) / totalVotes).toFixed(2)
       : 0;
 
     logger.info(

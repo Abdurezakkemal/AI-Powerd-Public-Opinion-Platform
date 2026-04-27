@@ -469,21 +469,23 @@ Request body:
 | 403    | `FORBIDDEN` | `"You do not have permission to delete this policy"` (not creator)                             |
 | 404    | `NOT_FOUND` | `"Policy not found"`                                                                           |
 
-## 4. Feedback Endpoints
+## 4. Voting & Comment Endpoints
 
-### 4.1 Submit feedback
+All endpoints in this section require authentication with a citizen token.
 
-**`POST /feedback`**
+### 4.1 Submit a vote (rating only, with optional immediate comment)
 
-**Role:** citizen (must be authenticated and verified)
+**`POST /votes`**
+
+Records a user’s rating for a policy. If the `comment` field is provided, a `Comment` document is automatically created and linked to this vote (the AI worker will process it asynchronously).
 
 **Request body:**
 
-| Field      | Type    | Required | Description            |
-| ---------- | ------- | -------- | ---------------------- |
-| `policyId` | string  | yes      | ID of an active policy |
-| `rating`   | integer | yes      | 1 to 5 stars           |
-| `comment`  | string  | no       | Max 500 characters     |
+| Field      | Type    | Required | Description                                           |
+| ---------- | ------- | -------- | ----------------------------------------------------- |
+| `policyId` | string  | yes      | ID of an active policy                                |
+| `rating`   | integer | yes      | 1 to 5 stars                                          |
+| `comment`  | string  | no       | Max 500 characters (if present, a Comment is created) |
 
 **Response (201 Created):**
 
@@ -491,12 +493,11 @@ Request body:
 {
   "status": "success",
   "data": {
-    "id": "...",
-    "policyId": "...",
+    "voteId": "67f1a2b3c4d5e6f7a8b9c0d1",
+    "commentId": null, // or the comment ID if comment was provided
     "rating": 5
   },
-  "message": "Feedback recorded successfully. Thank you for your input.",
-  "timestamp": "..."
+  "message": "Vote recorded successfully" // or "Vote and comment recorded. AI will process comment."
 }
 ```
 
@@ -508,13 +509,56 @@ Request body:
 | 400    | `VALIDATION_ERROR`      | `"Rating must be between 1 and 5"`                                                     |
 | 400    | `VALIDATION_ERROR`      | `"Comment too long (max 500 characters)"`                                              |
 | 400    | `VOTING_CLOSED`         | `"Voting is not allowed for this policy at this time. Please check the policy dates."` |
-| 403    | `NOT_VERIFIED`          | `"Please verify your phone number before submitting feedback"`                         |
-| 403    | `FORBIDDEN`             | `"This policy has not been published yet"` (policy status = draft)                     |
-| 403    | `FORBIDDEN`             | `"Voting is temporarily paused for this policy"` (policy status = paused)              |
-| 403    | `FORBIDDEN`             | `"This policy is closed for voting"` (policy status = closed)                          |
-| 404    | `NOT_FOUND`             | `"Policy not found"` (invalid policy ID)                                               |
+| 403    | `NOT_VERIFIED`          | `"Please verify your phone number before voting"`                                      |
+| 403    | `FORBIDDEN`             | `"This policy has not been published yet"` (status = `draft`)                          |
+| 403    | `FORBIDDEN`             | `"Voting is temporarily paused for this policy"` (status = `paused`)                   |
+| 403    | `FORBIDDEN`             | `"This policy is closed for voting"` (status = `closed`)                               |
+| 404    | `NOT_FOUND`             | `"Policy not found"`                                                                   |
 | 409    | `ALREADY_VOTED`         | `"You have already voted on this policy. Each user can vote only once."`               |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to submit feedback. Please try again later."`                                 |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to submit vote"`                                                              |
+
+### 4.2 Add a comment to an existing vote
+
+**`POST /comments/:voteId`**
+
+Adds a detailed comment to a vote that was previously cast without one (or allows a user to amend their comment – only one comment per vote is allowed). The AI worker will process the comment asynchronously.
+
+**Path parameter:**
+
+| Parameter | Type   | Description                              |
+| --------- | ------ | ---------------------------------------- |
+| `voteId`  | string | ID of an existing vote owned by the user |
+
+**Request body:**
+
+| Field     | Type   | Required | Description        |
+| --------- | ------ | -------- | ------------------ |
+| `comment` | string | yes      | Max 500 characters |
+
+**Response (201 Created):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "commentId": "67f1a2b3c4d5e6f7a8b9c0d2"
+  },
+  "message": "Comment added successfully. AI will process it."
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                           |
+| ------ | ----------------------- | ------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Comment text is required"`                      |
+| 400    | `VALIDATION_ERROR`      | `"Comment too long (max 500 characters)"`         |
+| 403    | `FORBIDDEN`             | `"You can only comment on your own votes"`        |
+| 403    | `FORBIDDEN`             | `"Cannot comment on a policy that is not active"` |
+| 400    | `VOTING_CLOSED`         | `"Voting period is closed, cannot add comment"`   |
+| 404    | `NOT_FOUND`             | `"Vote not found"`                                |
+| 409    | `ALREADY_VOTED`         | `"You have already commented on this vote"`       |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to add comment"`                         |
 
 ## 5. Analytics Endpoints
 
@@ -787,7 +831,7 @@ Error responses:
 | 409    | DUPLICATE_ENTRY       | "A user with this email already exists"       |
 | 500    | INTERNAL_SERVER_ERROR | "Failed to create planner. Please try again." |
 
-### 6.1.3 Update planner
+#### 6.1.3 Update planner
 
 **`PUT /admin/planners/:id`**
 
@@ -948,116 +992,131 @@ Error responses:
 | 404    | NOT_FOUND             | "Citizen not found"                     |
 | 500    | INTERNAL_SERVER_ERROR | "Failed to update citizen status"       |
 
-### 6.3 Feedback Moderation
+### 6.3 Comment Moderation
 
-#### 6.3.1 Get pending feedback
+All endpoints in this section require the **Admin** role.
 
-**`GET /admin/feedback/pending`**
+#### 6.3.1 Get pending comments
 
-Response (200 OK):
+**`GET /admin/comments/pending`**
+
+Returns all comments that the AI could not process and are awaiting manual review.
+
+**Response (200 OK):**
 
 ```json
 {
   "status": "success",
   "data": {
-    "feedbacks": [
+    "comments": [
       {
-        "_id": "...",
-        "policyId": { "_id": "...", "title": "Policy title" },
-        "userId": { "_id": "...", "email": "user@example.com" },
+        "_id": "67f1a2b3...",
+        "voteId": "67f1a2b3...",
+        "policyId": {
+          "_id": "...",
+          "title": "Clean Water Initiative"
+        },
+        "userId": {
+          "_id": "...",
+          "email": "user@example.com"
+        },
         "comment": "Text that AI could not process",
-        "status": "pending review",
-        "createdAt": "..."
+        "status": "pending_review",
+        "createdAt": "2026-04-01T10:00:00Z"
       }
     ]
   },
-  "message": "Pending feedback retrieved successfully",
+  "message": "Pending comments retrieved successfully",
   "timestamp": "..."
 }
 ```
 
-Error responses:
+**Error responses:**
 
-| Status | Code                  | Message                               |
-| ------ | --------------------- | ------------------------------------- |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to retrieve pending feedback" |
+| Status | Code                    | Message                                 |
+| ------ | ----------------------- | --------------------------------------- |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve pending comments"` |
 
-#### 6.3.2 Update feedback (manual review)
+#### 6.3.2 Update comment (manual review)
 
-**`PUT /admin/feedback/:id`**
+**`PUT /admin/comments/:id`**
 
 Path parameter:
 
 | Parameter | Type   | Description |
 | --------- | ------ | ----------- |
-| id        | string | Feedback ID |
+| `id`      | string | Comment ID  |
 
 Request body (fields optional):
 
-| Field     | Type             | Description                                                  |
-| --------- | ---------------- | ------------------------------------------------------------ |
-| sentiment | object           | { "label": "positive/negative/neutral", "confidence": 0.95 } |
-| keywords  | array of strings | e.g., ["water", "access"]                                    |
-| processed | boolean          | Set to true after manual review                              |
-| status    | string           | processed or pending review                                  |
+| Field       | Type             | Description                                                    |
+| ----------- | ---------------- | -------------------------------------------------------------- |
+| `sentiment` | object           | `{ "label": "positive/negative/neutral", "confidence": 0.95 }` |
+| `keywords`  | array of strings | e.g., `["water", "access"]`                                    |
+| `processed` | boolean          | Set to `true` after manual review                              |
+| `status`    | string           | `"processed"` or `"pending_review"`                            |
 
-Response (200 OK): returns the updated feedback object.
+**Response (200 OK):** returns the updated comment object (same structure as in 6.3.1 but with the modified fields).
 
-Error responses:
+**Error responses:**
 
-| Status | Code                  | Message                     |
-| ------ | --------------------- | --------------------------- |
-| 404    | NOT_FOUND             | "Feedback not found"        |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to update feedback" |
+| Status | Code                    | Message                      |
+| ------ | ----------------------- | ---------------------------- |
+| 404    | `NOT_FOUND`             | `"Comment not found"`        |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to update comment"` |
 
-#### 6.3.3 Retry single feedback
+#### 6.3.3 Retry single comment
 
-**`POST /admin/feedback/:id/retry`**
+**`POST /admin/comments/:id/retry`**
 
 Path parameter:
 
 | Parameter | Type   | Description |
 | --------- | ------ | ----------- |
-| id        | string | Feedback ID |
+| `id`      | string | Comment ID  |
 
-Response (200 OK):
+Resets the comment to `"processing"` so that the AI worker will attempt to analyze it again.
+
+**Response (200 OK):**
 
 ```json
 {
   "status": "success",
-  "data": { "feedbackId": "..." },
-  "message": "Feedback queued for retry. The AI worker will process it shortly.",
+  "data": { "commentId": "..." },
+  "message": "Comment queued for retry. The AI worker will process it shortly.",
   "timestamp": "..."
 }
 ```
 
-Error responses:
+**Error responses:**
 
-| Status | Code                  | Message                              |
-| ------ | --------------------- | ------------------------------------ |
-| 404    | NOT_FOUND             | "Feedback not found"                 |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to queue feedback for retry" |
+| Status | Code                    | Message                               |
+| ------ | ----------------------- | ------------------------------------- |
+| 404    | `NOT_FOUND`             | `"Comment not found"`                 |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to queue comment for retry"` |
 
-#### 6.3.4 Retry all pending feedback
+#### 6.3.4 Retry all pending comments
 
-**`POST /admin/feedback/retry-all`**
+**`POST /admin/comments/retry-all`**
 
-Response (200 OK):
+Resets all comments with `status: "pending_review"` to `"processing"` so they will be reprocessed by the AI worker.
+
+**Response (200 OK):**
 
 ```json
 {
   "status": "success",
   "data": { "updatedCount": 5 },
-  "message": "5 feedback items queued for retry",
+  "message": "5 comments queued for retry",
   "timestamp": "..."
 }
 ```
 
-Error responses:
+**Error responses:**
 
-| Status | Code                  | Message                              |
-| ------ | --------------------- | ------------------------------------ |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to queue feedback for retry" |
+| Status | Code                    | Message                                |
+| ------ | ----------------------- | -------------------------------------- |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to queue comments for retry"` |
 
 ## 7. User Profile Endpoints
 
@@ -1162,13 +1221,13 @@ Error responses:
 | 404    | NOT_FOUND             | "User not found"                                 |
 | 500    | INTERNAL_SERVER_ERROR | "Failed to change password"                      |
 
-### 7.4 Get feedback history
+### 7.4 Get user history (votes and comments)
 
 **`GET /users/me/history`**
 
-Returns all feedback submissions by the authenticated user, including policy details and AI analysis results (if available).
+Returns all votes cast by the authenticated user. For each vote, if a comment was added (either immediately or later), the comment text and AI sentiment analysis are included.
 
-Response (200 OK):
+**Response (200 OK):**
 
 ```json
 {
@@ -1176,9 +1235,9 @@ Response (200 OK):
   "data": {
     "history": [
       {
-        "id": "...",
+        "id": "67f1a2b3c4d5e6f7a8b9c0d1",
         "policy": {
-          "id": "...",
+          "id": "67f1a2b3c4d5e6f7a8b9c0d2",
           "title": "Clean Water Initiative",
           "policyCode": "CLEAN123"
         },
@@ -1190,21 +1249,22 @@ Response (200 OK):
       }
     ]
   },
-  "message": "User feedback history retrieved successfully",
+  "message": "User history retrieved successfully",
   "timestamp": "..."
 }
 ```
 
-Notes:
+**Notes:**
 
--sentiment may be null if AI processing hasn't completed or failed.
--policy may be null if the policy was deleted (keeps history intact).
+- `sentiment` may be `null` if AI processing hasn't completed or if the vote has no comment.
+- `policy` may be `null` if the policy was deleted (the vote remains for analytics).
+- `comment` is `null` for votes that never received a comment.
 
-Error responses:
+**Error responses:**
 
-| Status | Code                  | Message                               |
-| ------ | --------------------- | ------------------------------------- |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to retrieve feedback history" |
+| Status | Code                    | Message                        |
+| ------ | ----------------------- | ------------------------------ |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve history"` |
 
 ### 7.5 Delete account (anonymise)
 

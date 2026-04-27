@@ -4,32 +4,37 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 
 ## Architecture Overview
 
-| Component | Technology | Description |
-|-----------|------------|-------------|
-| Backend | Node.js + Express, MongoDB, Redis | User auth, policy management, feedback collection, analytics, SMS simulation |
-| AI Service | Python FastAPI, Transformers | Sentiment analysis, keyword extraction, language detection (fastText) |
+| Component  | Technology                        | Description                                                                  |
+| ---------- | --------------------------------- | ---------------------------------------------------------------------------- |
+| Backend    | Node.js + Express, MongoDB, Redis | User auth, policy management, feedback collection, analytics, SMS simulation |
+| AI Service | Python FastAPI, Transformers      | Sentiment analysis, keyword extraction, language detection (fastText)        |
 
 ## Features
 
 ### For Citizens (Mobile App)
+
 - Registration with email & phone (OTP via email)
 - GPS-based policy feed (active policies in user’s region)
-- Rate policies (1–5 stars) and leave comments
+- Rate policies (1–5 stars) – optionally add a comment (can be added later via separate endpoint)
+- Add a comment to an existing vote (via `/api/comments/:voteId`)
 - Anonymous feedback (identity not exposed)
 
 ### For Basic Phone Users (Simulated SMS)
+
 - Vote via SMS commands: `RATE ` <rating>`
 - Check current status: `STATUS ``
 - Get final results after policy closes: `RESULTS ``
 
 ### For Planners & Admins (Web Dashboard)
+
 - Create, edit (draft), close policies
 - View analytics: average rating, sentiment counts, top keywords, geographic breakdown
 - Export data as CSV
 - Manage planner accounts (admin only)
-- Moderate pending AI feedback (admin only)
+- Moderate pending AI comments (admin only)
 
 ### AI Service (Background)
+
 - Multilingual sentiment analysis (Amharic, Oromo, Tigrinya, English)
 - Keyword extraction with stopwords
 - Automatic language detection (fastText)
@@ -38,6 +43,7 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 ## Tech Stack
 
 **Backend**
+
 - Node.js 18+, Express 4.x
 - MongoDB (Mongoose)
 - Redis
@@ -45,6 +51,7 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 - Winston logging, custom audit trails
 
 **AI Service**
+
 - Python 3.10+, FastAPI
 - Transformers, PyTorch
 - KeyBERT, sentence‑transformers
@@ -54,21 +61,23 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 
 Detailed API documentation is available inside each component:
 
-- **Backend API** – [`backend/API.md`](backend/API.md) (all REST endpoints, authentication, roles)
-- **AI Service API** – [`ai-service/API.md`](ai-service/API.md) (sentiment, keywords, benchmarking)
+- **Backend API** – [`backend/API_DOCS.md`](backend/API_DOCS.md) (all REST endpoints, authentication, roles)
+- **AI Service API** – [`ai-service/API_DOCS.md`](ai-service/API.md) (sentiment, keywords, benchmarking)
 
 For setup and environment variables, continue reading below.
 
 ## Prerequisites
 
 ### Local Development
+
 - Node.js 18+ and npm
 - Python 3.10+ (with `venv`)
 - MongoDB (running locally or via cloud)
-- Redis 
+- Redis
 - Git
 
 ### On Arch Linux
+
 ```bash
 sudo pacman -S base-devel nodejs npm mongodb redis git
 sudo systemctl enable mongodb --now
@@ -102,6 +111,7 @@ sudo systemctl enable mongodb --now
    ```bash
    cp .env.example .env
    ```
+
    Edit `.env` with your values (see [Environment Variables](#environment-variables)).
 
 4. **Create an admin user (one‑time)**
@@ -128,6 +138,7 @@ sudo systemctl enable mongodb --now
    ```bash
    npm run dev
    ```
+
    Backend runs on `http://localhost:5000`
 
 ## AI Service Setup
@@ -164,6 +175,7 @@ sudo systemctl enable mongodb --now
    pip install --upgrade pip setuptools wheel
    pip install -r requirements.txt
    ```
+
    > **Note:** On Linux with Python 3.12, `fasttext-wheel` will download a pre‑compiled wheel. No compilation needed.
 
 5. **(Optional) Configure environment**
@@ -177,6 +189,7 @@ sudo systemctl enable mongodb --now
    ```bash
    uvicorn app.main:app --reload --port 8000
    ```
+
    AI service runs on `http://localhost:8000`
 
 ## Running the Services
@@ -202,20 +215,20 @@ uvicorn app.main:app --reload --port 8000
 
 ### Backend (`.env` in `backend/`)
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `PORT` | Backend port | `5000` |
-| `MONGO_URI` | MongoDB connection string | `mongodb://localhost:27017/communityinsight` |
-| `JWT_SECRET` | Secret for signing tokens | `change this` |
-| `REDIS_URL` | Redis connection URL | `redis://localhost:6379`  |
-| `AI_SERVICE_URL` | URL of AI service | `http://localhost:8000` |
-| `EMAIL_HOST` | SMTP server for OTP | `smtp.gmail.com` |
-| `EMAIL_PORT` | SMTP port | `587` |
-| `EMAIL_USER` | Email account for sending OTP | – |
-| `EMAIL_PASS` | App password or SMTP password | – |
+| Variable         | Description                   | Default                                      |
+| ---------------- | ----------------------------- | -------------------------------------------- |
+| `PORT`           | Backend port                  | `5000`                                       |
+| `MONGO_URI`      | MongoDB connection string     | `mongodb://localhost:27017/communityinsight` |
+| `JWT_SECRET`     | Secret for signing tokens     | `change this`                                |
+| `REDIS_URL`      | Redis connection URL          | `redis://localhost:6379`                     |
+| `AI_SERVICE_URL` | URL of AI service             | `http://localhost:8000`                      |
+| `EMAIL_HOST`     | SMTP server for OTP           | `smtp.gmail.com`                             |
+| `EMAIL_PORT`     | SMTP port                     | `587`                                        |
+| `EMAIL_USER`     | Email account for sending OTP | –                                            |
+| `EMAIL_PASS`     | App password or SMTP password | –                                            |
 
 ### AI Service (`.env` in `ai-service/`)
 
-| Variable | Description | Default |
-|----------|-------------|---------|
-| `FASTTEXT_MODEL_PATH` | Path to `lid.176.bin` (auto‑downloaded if not set) | – |
+| Variable              | Description                                        | Default |
+| --------------------- | -------------------------------------------------- | ------- |
+| `FASTTEXT_MODEL_PATH` | Path to `lid.176.bin` (auto‑downloaded if not set) | –       |

@@ -3,7 +3,7 @@ dotenv.config();
 
 const express = require("express");
 const cors = require("cors");
-const mongoose = require("mongoose"); // ADDED
+const mongoose = require("mongoose");
 const connectDB = require("./src/config/db");
 const redisClient = require("./src/config/redis");
 const requestLogger = require("./src/middleware/requestLogger");
@@ -22,10 +22,11 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-// Routes (mount all before listening)
+// ========== API ROUTES ==========
 app.use("/api/auth", require("./src/routes/authRoutes"));
 app.use("/api/policies", require("./src/routes/policyRoutes"));
-app.use("/api/feedback", require("./src/routes/feedbackRoutes"));
+app.use("/api/votes", require("./src/routes/voteRoutes"));
+app.use("/api/comments", require("./src/routes/commentRoutes"));
 app.use("/api/analytics", require("./src/routes/analyticsRoutes"));
 app.use("/api/sms", require("./src/routes/smsRoutes"));
 app.use("/api/admin", require("./src/routes/adminRoutes"));
