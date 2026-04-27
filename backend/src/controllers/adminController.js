@@ -1,5 +1,5 @@
 const User = require("../models/User");
-const Feedback = require("../models/Feedback");
+const Comment = require("../models/Comment");
 const { hashPassword } = require("../utils/helpers");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
@@ -97,7 +97,6 @@ exports.createPlanner = async (req, res) => {
     });
     await planner.save();
 
-    // Audit log
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
@@ -111,13 +110,9 @@ exports.createPlanner = async (req, res) => {
     logger.info(
       `Admin ${req.user.id} created planner: ${email} (${planner._id})`,
     );
-
     return sendSuccess(
       res,
-      {
-        id: planner._id,
-        email: planner.email,
-      },
+      { id: planner._id, email: planner.email },
       "Planner account created successfully",
       201,
     );
@@ -164,7 +159,6 @@ exports.updatePlanner = async (req, res) => {
     }
     await planner.save();
 
-    // Audit log
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
@@ -178,14 +172,9 @@ exports.updatePlanner = async (req, res) => {
     logger.info(
       `Admin ${req.user.id} updated planner: ${planner.email} (${planner._id})`,
     );
-
     return sendSuccess(
       res,
-      {
-        id: planner._id,
-        email: planner.email,
-        active: planner.active,
-      },
+      { id: planner._id, email: planner.email, active: planner.active },
       "Planner updated successfully",
     );
   } catch (err) {
@@ -203,40 +192,40 @@ exports.updatePlanner = async (req, res) => {
   }
 };
 
-// ========== FEEDBACK MANAGEMENT ==========
+// ========== COMMENT MANAGEMENT (formerly FEEDBACK) ==========
 
-// GET /admin/feedback/pending
-exports.getPendingFeedback = async (req, res) => {
+// GET /admin/comments/pending
+exports.getPendingComments = async (req, res) => {
   try {
-    const feedbacks = await Feedback.find({ status: "pending review" })
+    const comments = await Comment.find({ status: "pending_review" })
       .populate("policyId", "title")
       .populate("userId", "email")
       .sort({ createdAt: -1 });
     logger.info(
-      `Admin ${req.user.id} retrieved ${feedbacks.length} pending feedback items`,
+      `Admin ${req.user.id} retrieved ${comments.length} pending comments`,
     );
     return sendSuccess(
       res,
-      { feedbacks },
-      "Pending feedback retrieved successfully",
+      { comments },
+      "Pending comments retrieved successfully",
     );
   } catch (err) {
     logger.error(
       { error: err.message, stack: err.stack },
-      "Get pending feedback error",
+      "Get pending comments error",
     );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to retrieve pending feedback",
+      "Failed to retrieve pending comments",
       null,
       500,
     );
   }
 };
 
-// PUT /admin/feedback/:id
-exports.updateFeedback = async (req, res) => {
+// PUT /admin/comments/:id
+exports.updateComment = async (req, res) => {
   try {
     const { id } = req.params;
     const updates = req.body;
@@ -246,107 +235,103 @@ exports.updateFeedback = async (req, res) => {
       if (updates[key] !== undefined) updateData[key] = updates[key];
     }
 
-    const feedback = await Feedback.findByIdAndUpdate(id, updateData, {
+    const comment = await Comment.findByIdAndUpdate(id, updateData, {
       new: true,
     });
-    if (!feedback) {
+    if (!comment) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
-        "Feedback not found",
+        "Comment not found",
         null,
         404,
       );
     }
 
-    // Audit log
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
-      action: "UPDATE_FEEDBACK",
-      targetType: "Feedback",
-      targetId: feedback._id,
-      details: { policyId: feedback.policyId, updates: updateData },
+      action: "UPDATE_COMMENT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { policyId: comment.policyId, updates: updateData },
       req,
     });
 
-    logger.info(`Admin ${req.user.id} updated feedback ${id}`);
-
-    return sendSuccess(res, feedback, "Feedback updated successfully");
+    logger.info(`Admin ${req.user.id} updated comment ${id}`);
+    return sendSuccess(res, comment, "Comment updated successfully");
   } catch (err) {
     logger.error(
       { error: err.message, stack: err.stack },
-      "Update feedback error",
+      "Update comment error",
     );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to update feedback",
+      "Failed to update comment",
       null,
       500,
     );
   }
 };
 
-// POST /admin/feedback/:id/retry
-exports.retryFeedback = async (req, res) => {
+// POST /admin/comments/:id/retry
+exports.retryComment = async (req, res) => {
   try {
     const { id } = req.params;
-    const feedback = await Feedback.findById(id);
-    if (!feedback) {
+    const comment = await Comment.findById(id);
+    if (!comment) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
-        "Feedback not found",
+        "Comment not found",
         null,
         404,
       );
     }
 
-    feedback.processed = false;
-    feedback.retryCount = 0;
-    feedback.nextRetry = null;
-    feedback.status = "processing";
-    await feedback.save();
+    comment.processed = false;
+    comment.retryCount = 0;
+    comment.nextRetry = null;
+    comment.status = "processing";
+    await comment.save();
 
-    // Audit log
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
-      action: "RETRY_FEEDBACK",
-      targetType: "Feedback",
-      targetId: feedback._id,
-      details: { policyId: feedback.policyId },
+      action: "RETRY_COMMENT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { policyId: comment.policyId },
       req,
     });
 
-    logger.info(`Admin ${req.user.id} queued feedback ${id} for retry`);
-
+    logger.info(`Admin ${req.user.id} queued comment ${id} for retry`);
     return sendSuccess(
       res,
-      { feedbackId: id },
-      "Feedback queued for retry. The AI worker will process it shortly.",
+      { commentId: id },
+      "Comment queued for retry. The AI worker will process it shortly.",
     );
   } catch (err) {
     logger.error(
       { error: err.message, stack: err.stack },
-      "Retry feedback error",
+      "Retry comment error",
     );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to queue feedback for retry",
+      "Failed to queue comment for retry",
       null,
       500,
     );
   }
 };
 
-// POST /admin/feedback/retry-all
-exports.retryAllFeedback = async (req, res) => {
+// POST /admin/comments/retry-all
+exports.retryAllComments = async (req, res) => {
   try {
-    const result = await Feedback.updateMany(
-      { status: "pending review" },
+    const result = await Comment.updateMany(
+      { status: "pending_review" },
       {
         $set: {
           processed: false,
@@ -357,33 +342,31 @@ exports.retryAllFeedback = async (req, res) => {
       },
     );
 
-    // Audit log
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
-      action: "RETRY_ALL_FEEDBACK",
+      action: "RETRY_ALL_COMMENTS",
       details: { count: result.modifiedCount },
       req,
     });
 
     logger.info(
-      `Admin ${req.user.id} queued ${result.modifiedCount} feedback items for retry`,
+      `Admin ${req.user.id} queued ${result.modifiedCount} comments for retry`,
     );
-
     return sendSuccess(
       res,
       { updatedCount: result.modifiedCount },
-      `${result.modifiedCount} feedback items queued for retry`,
+      `${result.modifiedCount} comments queued for retry`,
     );
   } catch (err) {
     logger.error(
       { error: err.message, stack: err.stack },
-      "Retry all feedback error",
+      "Retry all comments error",
     );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to queue feedback for retry",
+      "Failed to queue comments for retry",
       null,
       500,
     );
@@ -465,7 +448,6 @@ exports.updateCitizenStatus = async (req, res) => {
     user.active = active;
     await user.save();
 
-    // Audit log
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
@@ -480,7 +462,6 @@ exports.updateCitizenStatus = async (req, res) => {
     logger.info(
       `Admin ${req.user.id} ${statusText} citizen: ${user.email} (${user._id})`,
     );
-
     return sendSuccess(
       res,
       { userId: user._id, active: user.active },
@@ -530,7 +511,6 @@ exports.updatePlannerStatus = async (req, res) => {
     planner.active = active;
     await planner.save();
 
-    // Audit log
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
@@ -545,7 +525,6 @@ exports.updatePlannerStatus = async (req, res) => {
     logger.info(
       `Admin ${req.user.id} ${statusText} planner: ${planner.email} (${planner._id})`,
     );
-
     return sendSuccess(
       res,
       { plannerId: planner._id, active: planner.active },

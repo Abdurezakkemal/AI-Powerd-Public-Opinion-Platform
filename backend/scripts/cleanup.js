@@ -8,17 +8,19 @@
  *   --citizens, -c      Delete all citizen users (role: citizen)
  *   --planners, -p      Delete all planner users (role: planner)
  *   --admins, -a        Delete all admin users (role: admin) – DANGEROUS
- *   --feedback, -f      Delete all feedback documents
+ *   --votes, -v         Delete all vote documents
+ *   --comments, -C      Delete all comment documents
  *   --policies, -P      Delete all policies
- *   --sms-feedback      Delete all SMS votes (channel: sms)
- *   --all               Delete EVERYTHING (citizens, planners, feedback, policies, but NOT admins unless --admins also given)
+ *   --sms-votes         Delete all SMS votes (channel: sms) from votes collection
+ *   --app-votes         Delete all app votes (channel: app) from votes collection
+ *   --all               Delete EVERYTHING (citizens, planners, votes, comments, policies, but NOT admins unless --admins also given)
  *   --dry-run           Show what would be deleted without actually deleting
  *   --help, -h          Show this help message
  *
  * Examples:
  *   node scripts/cleanup.js --citizens --planners
  *   node scripts/cleanup.js --all
- *   node scripts/cleanup.js --feedback --policies --dry-run
+ *   node scripts/cleanup.js --votes --comments --policies --dry-run
  */
 
 const mongoose = require("mongoose");
@@ -27,7 +29,8 @@ require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
 const User = require("../src/models/User");
 const Policy = require("../src/models/Policy");
-const Feedback = require("../src/models/Feedback");
+const Vote = require("../src/models/Vote");
+const Comment = require("../src/models/Comment");
 
 const MONGO_URI =
   process.env.MONGO_URI || "mongodb://localhost:27017/communityinsight";
@@ -38,9 +41,11 @@ const flags = {
   citizens: false,
   planners: false,
   admins: false,
-  feedback: false,
+  votes: false,
+  comments: false,
   policies: false,
-  smsFeedback: false,
+  smsVotes: false,
+  appVotes: false,
   all: false,
   dryRun: false,
   help: false,
@@ -61,16 +66,23 @@ for (let i = 0; i < args.length; i++) {
     case "-a":
       flags.admins = true;
       break;
-    case "--feedback":
-    case "-f":
-      flags.feedback = true;
+    case "--votes":
+    case "-v":
+      flags.votes = true;
+      break;
+    case "--comments":
+    case "-C":
+      flags.comments = true;
       break;
     case "--policies":
     case "-P":
       flags.policies = true;
       break;
-    case "--sms-feedback":
-      flags.smsFeedback = true;
+    case "--sms-votes":
+      flags.smsVotes = true;
+      break;
+    case "--app-votes":
+      flags.appVotes = true;
       break;
     case "--all":
       flags.all = true;
@@ -98,17 +110,19 @@ Options:
   --citizens, -c      Delete all citizen users (role: citizen)
   --planners, -p      Delete all planner users (role: planner)
   --admins, -a        Delete all admin users (role: admin) – DANGEROUS
-  --feedback, -f      Delete all feedback documents
+  --votes, -v         Delete all vote documents
+  --comments, -C      Delete all comment documents
   --policies, -P      Delete all policies
-  --sms-feedback      Delete all SMS votes (channel: sms)
-  --all               Delete EVERYTHING (citizens, planners, feedback, policies, but NOT admins unless --admins also given)
+  --sms-votes         Delete only SMS votes (channel: sms)
+  --app-votes         Delete only app votes (channel: app)
+  --all               Delete EVERYTHING (citizens, planners, votes, comments, policies, but NOT admins unless --admins also given)
   --dry-run           Show what would be deleted without actually deleting
   --help, -h          Show this help
 
 Examples:
   node scripts/cleanup.js --citizens --planners
   node scripts/cleanup.js --all
-  node scripts/cleanup.js --feedback --policies --dry-run
+  node scripts/cleanup.js --votes --comments --policies --dry-run
   `);
   process.exit(0);
 }
@@ -117,7 +131,8 @@ Examples:
 if (flags.all) {
   flags.citizens = true;
   flags.planners = true;
-  flags.feedback = true;
+  flags.votes = true;
+  flags.comments = true;
   flags.policies = true;
   // admins remain false unless explicitly requested
 }
@@ -147,16 +162,28 @@ async function cleanup() {
       deletions.push(`Admins: ${result.deletedCount} deleted`);
     }
 
-    // Feedback (all)
-    if (flags.feedback) {
-      const result = await Feedback.deleteMany({});
-      deletions.push(`Feedback (all): ${result.deletedCount} deleted`);
+    // Votes (all)
+    if (flags.votes) {
+      const result = await Vote.deleteMany({});
+      deletions.push(`Votes (all): ${result.deletedCount} deleted`);
     }
 
-    // SMS feedback only
-    if (flags.smsFeedback) {
-      const result = await Feedback.deleteMany({ channel: "sms" });
-      deletions.push(`SMS feedback: ${result.deletedCount} deleted`);
+    // SMS votes only
+    if (flags.smsVotes) {
+      const result = await Vote.deleteMany({ channel: "sms" });
+      deletions.push(`SMS votes: ${result.deletedCount} deleted`);
+    }
+
+    // App votes only
+    if (flags.appVotes) {
+      const result = await Vote.deleteMany({ channel: "app" });
+      deletions.push(`App votes: ${result.deletedCount} deleted`);
+    }
+
+    // Comments
+    if (flags.comments) {
+      const result = await Comment.deleteMany({});
+      deletions.push(`Comments: ${result.deletedCount} deleted`);
     }
 
     // Policies

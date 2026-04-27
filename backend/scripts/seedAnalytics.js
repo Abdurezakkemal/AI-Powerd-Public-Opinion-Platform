@@ -7,7 +7,8 @@ require("dotenv").config({ path: path.join(__dirname, "../.env") });
 
 const User = require("../src/models/User");
 const Policy = require("../src/models/Policy");
-const Feedback = require("../src/models/Feedback");
+const Vote = require("../src/models/Vote");
+const Comment = require("../src/models/Comment");
 
 const MONGO_URI =
   process.env.MONGO_URI || "mongodb://localhost:27017/communityinsight";
@@ -89,9 +90,6 @@ const getSentimentObject = (label) => {
   return { label, confidence };
 };
 
-const uniquePhoneHash = (prefix, counter) =>
-  `${prefix}_${counter}_${Date.now()}_${Math.random()}`;
-
 async function loginAndSaveTokens(users, filename) {
   const tokens = [];
   for (const user of users) {
@@ -138,13 +136,20 @@ async function seed() {
     await mongoose.connect(MONGO_URI);
     console.log("Connected to MongoDB");
 
-    // Drop all indexes except _id_
+    // Drop all indexes except _id_ for Vote and Comment collections
     try {
-      const indexes = await Feedback.collection.getIndexes();
-      for (const name in indexes) {
+      const voteIndexes = await Vote.collection.getIndexes();
+      for (const name in voteIndexes) {
         if (name !== "_id_") {
-          await Feedback.collection.dropIndex(name);
-          console.log(`Dropped index: ${name}`);
+          await Vote.collection.dropIndex(name);
+          console.log(`Dropped Vote index: ${name}`);
+        }
+      }
+      const commentIndexes = await Comment.collection.getIndexes();
+      for (const name in commentIndexes) {
+        if (name !== "_id_") {
+          await Comment.collection.dropIndex(name);
+          console.log(`Dropped Comment index: ${name}`);
         }
       }
     } catch (err) {
@@ -153,21 +158,33 @@ async function seed() {
 
     // Clean database (keep admin users)
     console.log("Cleaning database (keeping admin users)...");
-    await Feedback.deleteMany({});
+    await Vote.deleteMany({});
+    await Comment.deleteMany({});
     await Policy.deleteMany({});
     await User.deleteMany({ role: { $ne: "admin" } });
     console.log("Cleaned.");
 
-    // Recreate the unique indexes (sparse as defined in model)
-    await Feedback.collection.createIndex(
+    // Recreate the unique indexes for Vote (sparse as defined in model)
+    await Vote.collection.createIndex(
       { policyId: 1, userId: 1 },
       { unique: true, sparse: true, name: "policyId_1_userId_1" },
     );
-    await Feedback.collection.createIndex(
+    await Vote.collection.createIndex(
       { policyId: 1, phoneHash: 1 },
       { unique: true, sparse: true, name: "policyId_1_phoneHash_1" },
     );
-    console.log("Recreated unique indexes");
+    console.log("Recreated unique indexes for Vote");
+
+    // Comment index: unique on voteId (enforced in model), and index on policyId+userId
+    await Comment.collection.createIndex(
+      { voteId: 1 },
+      { unique: true, name: "voteId_1" },
+    );
+    await Comment.collection.createIndex(
+      { policyId: 1, userId: 1 },
+      { name: "policyId_1_userId_1" },
+    );
+    console.log("Recreated indexes for Comment");
 
     const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
@@ -208,7 +225,7 @@ async function seed() {
           active: true,
         });
         await user.save();
-        citizens.push({ email, _id: user._id.toString(), region });
+        citizens.push({ email, _id: user._id.toString(), region, phoneHash });
         citizenIndex++;
       }
     }
@@ -270,8 +287,7 @@ async function seed() {
     if (activePolicies.length === 0)
       throw new Error("No active policies to seed feedback.");
 
-    // Generate feedback – only app votes
-    const feedbacks = [];
+    // Generate votes and comments – only app votes
     let voteCounter = 0;
 
     for (const policy of activePolicies) {
@@ -279,58 +295,59 @@ async function seed() {
         voteCounter++;
         const rating = randomInt(1, 5);
         const hasComment = Math.random() > 0.3;
-        let comment = "";
-        let sentimentObj = null;
-        let keywords = [];
-        let processed = false;
-        let status = "processing";
+        const createdAt = randomDate(new Date("2026-02-01"), new Date());
 
+        // Create the Vote (always)
+        const vote = new Vote({
+          policyId: policy._id,
+          userId: citizen._id,
+          phoneHash: citizen.phoneHash,
+          channel: "app",
+          rating,
+          createdAt,
+        });
+        await vote.save();
+
+        // If comment exists, create a Comment linked to this vote
         if (hasComment) {
           const sentimentLabel =
             rating <= 2 ? "negative" : rating === 3 ? "neutral" : "positive";
-          comment = generateComment(sentimentLabel);
-          sentimentObj = getSentimentObject(sentimentLabel);
-          keywords = extractKeywordsFromComment(comment);
-          processed = true;
-          status = "processed";
+          const commentText = generateComment(sentimentLabel);
+          const sentimentObj = getSentimentObject(sentimentLabel);
+          const keywords = extractKeywordsFromComment(commentText);
+          let processed = true;
+          let status = "processed";
           if (Math.random() < 0.1) {
-            status = "pending review";
+            status = "pending_review";
             processed = false;
-            sentimentObj = { label: "neutral", confidence: 0 };
-            keywords = [];
+            sentimentObj.label = "neutral";
+            sentimentObj.confidence = 0;
           }
-        } else {
-          processed = true;
-          status = "processed";
-          sentimentObj = { label: "neutral", confidence: 0 };
-          keywords = [];
+          const commentDoc = new Comment({
+            voteId: vote._id, // link to the vote
+            policyId: policy._id,
+            userId: citizen._id,
+            rating,
+            comment: commentText,
+            sentiment: sentimentObj,
+            keywords,
+            processed,
+            status,
+            retryCount: 0,
+            nextRetry: null,
+            createdAt,
+          });
+          await commentDoc.save();
         }
-
-        const createdAt = randomDate(new Date("2026-02-01"), new Date());
-
-        const feedbackDoc = new Feedback({
-          policyId: policy._id,
-          userId: citizen._id,
-          phoneHash: uniquePhoneHash("app", voteCounter),
-          channel: "app",
-          rating,
-          comment: comment || "",
-          sentiment: sentimentObj,
-          keywords,
-          processed,
-          retryCount: 0,
-          nextRetry: null,
-          status,
-          createdAt,
-        });
-        await feedbackDoc.save();
-        feedbacks.push(feedbackDoc);
       }
     }
 
+    const totalVotes = await Vote.countDocuments();
+    const totalComments = await Comment.countDocuments();
     console.log(
-      `Created ${feedbacks.length} feedback entries (${citizens.length} citizens × ${activePolicies.length} policies = ${citizens.length * activePolicies.length} app votes)`,
+      `Created ${totalVotes} votes (${citizens.length} citizens × ${activePolicies.length} policies)`,
     );
+    console.log(`Created ${totalComments} comments (with AI processing)`);
 
     const geographicPolicy = activePolicies[0];
     if (geographicPolicy) {
@@ -380,7 +397,8 @@ async function seed() {
     console.log(
       `Policies: ${policies.length} (${activePolicies.length} active, ${policies.length - activePolicies.length} inactive)`,
     );
-    console.log(`Feedback: ${feedbacks.length} entries`);
+    console.log(`Votes: ${totalVotes}`);
+    console.log(`Comments: ${totalComments}`);
     console.log(`Regions covered: ${ALL_REGIONS.join(", ")}`);
     if (citizenTokens.length)
       console.log(`Citizen tokens saved: ${citizenTokens.length}`);
