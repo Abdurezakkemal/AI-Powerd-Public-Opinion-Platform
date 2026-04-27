@@ -18,7 +18,7 @@ const createAuditLog = async ({
       targetId,
       details,
       ipAddress: req?.ip || req?.connection?.remoteAddress,
-      userAgent: req?.get("user-agent"),
+      userAgent: req?.get("user-agent") || "auto-closer",
     });
     await log.save();
   } catch (err) {

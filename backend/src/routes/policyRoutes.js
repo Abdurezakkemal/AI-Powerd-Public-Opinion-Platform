@@ -12,5 +12,23 @@ router.get(
 router.post("/", auth(["planner", "admin"]), policyController.create);
 router.put("/:id", auth(["planner", "admin"]), policyController.update);
 router.delete("/:id", auth(["planner", "admin"]), policyController.delete);
+router.post("/:id/close", auth(["planner", "admin"]), policyController.close);
+// New lifecycle endpoints
+router.patch(
+  "/:id/activate",
+  auth(["planner", "admin"]),
+  policyController.activate,
+);
+router.patch(
+  "/:id/extend",
+  auth(["planner", "admin"]),
+  policyController.extendEndDate,
+);
+router.patch("/:id/pause", auth(["planner", "admin"]), policyController.pause);
+router.patch(
+  "/:id/resume",
+  auth(["planner", "admin"]),
+  policyController.resume,
+);
 
 module.exports = router;

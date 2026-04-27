@@ -237,11 +237,11 @@ Error responses:
 
 All policy endpoints require authentication. Role permissions:
 
-| Role    | Can view draft policies?       | Can view active policies? | Can view closed policies? | Can create/update/delete? |
-| ------- | ------------------------------ | ------------------------- | ------------------------- | ------------------------- |
-| Citizen | No (only active in own region) | Yes (only own region)     | No                        | No                        |
-| Planner | Yes (all)                      | Yes (all)                 | Yes (all)                 | Yes (own policies only)   |
-| Admin   | Yes (all)                      | Yes (all)                 | Yes (all)                 | Yes (all policies)        |
+| Role    | View draft? | View active?     | View paused?     | View closed? | Create/Update/Delete (draft only) | Activate / Extend / Pause / Resume / Close |
+| ------- | ----------- | ---------------- | ---------------- | ------------ | --------------------------------- | ------------------------------------------ |
+| Citizen | No          | Yes (own region) | Yes (own region) | No           | No                                | No                                         |
+| Planner | Yes (all)   | Yes (all)        | Yes (all)        | Yes (all)    | Yes (own policies only)           | Yes (own policies only)                    |
+| Admin   | Yes (all)   | Yes (all)        | Yes (all)        | Yes (all)    | Yes (all policies)                | Yes (all policies)                         |
 
 ### 3.1 List policies
 
@@ -249,14 +249,14 @@ All policy endpoints require authentication. Role permissions:
 
 Query parameters (all optional):
 
-| Parameter | Type    | Default | Description                                                                 |
-| --------- | ------- | ------- | --------------------------------------------------------------------------- |
-| `status`  | string  | none    | Filter by `draft`, `active`, or `closed` (citizens cannot see draft/closed) |
-| `region`  | string  | none    | Filter by target region (planners/admins only)                              |
-| `page`    | integer | 1       | Page number (1‑based)                                                       |
-| `limit`   | integer | 20      | Items per page (max 100)                                                    |
+| Parameter | Type    | Default | Description                                                                                                                       |
+| --------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `status`  | string  | none    | Filter by `draft`, `active`, `paused`, or `closed`. Citizens cannot see `draft` or `closed`; they see only `active` and `paused`. |
+| `region`  | string  | none    | Filter by target region (planners/admins only)                                                                                    |
+| `page`    | integer | 1       | Page number (1‑based)                                                                                                             |
+| `limit`   | integer | 20      | Items per page (max 100)                                                                                                          |
 
-Response (200 OK):
+**Response (200 OK):**
 
 ```json
 {
@@ -274,6 +274,18 @@ Response (200 OK):
         "status": "active",
         "averageRating": 0,
         "totalVotes": 0
+      },
+      {
+        "id": "67f1a2b3c4d5e6f7a8b9c0d2",
+        "title": "Temporary Pause Test",
+        "description": "Policy temporarily suspended",
+        "policyCode": "PAUSE123",
+        "targetRegions": ["Addis Ababa"],
+        "startDate": "2026-05-01T00:00:00Z",
+        "endDate": "2026-06-30T23:59:59Z",
+        "status": "paused",
+        "averageRating": 0,
+        "totalVotes": 0
       }
     ],
     "total": 10,
@@ -284,7 +296,7 @@ Response (200 OK):
 }
 ```
 
-Error responses:
+**Error responses:**
 
 | Status | Code                    | Message                               |
 | ------ | ----------------------- | ------------------------------------- |
@@ -301,7 +313,7 @@ Path parameter:
 | --------- | ------ | ---------------------------- |
 | `id`      | string | Policy ID (MongoDB ObjectId) |
 
-Response (200 OK):
+**Response (200 OK):**
 
 ```json
 {
@@ -323,7 +335,7 @@ Response (200 OK):
 }
 ```
 
-Error responses:
+**Error responses:**
 
 | Status | Code           | Message                                                  |
 | ------ | -------------- | -------------------------------------------------------- |
@@ -344,10 +356,10 @@ Request body:
 | `title`         | string            | yes      | Max 200 characters                            |
 | `description`   | string            | yes      | Max 2000 characters                           |
 | `targetRegions` | array of strings  | yes      | At least one region (e.g., `["Addis Ababa"]`) |
-| `startDate`     | string (ISO 8601) | yes      | Must be before endDate                        |
-| `endDate`       | string (ISO 8601) | yes      | Must be after startDate                       |
+| `startDate`     | string (ISO 8601) | yes      | Must be in the future and before `endDate`    |
+| `endDate`       | string (ISO 8601) | yes      | Must be after `startDate`                     |
 
-Response (201 Created):
+**Response (201 Created):**
 
 ```json
 {
@@ -361,55 +373,84 @@ Response (201 Created):
 }
 ```
 
-Error responses:
+**Error responses:**
 
 | Status | Code                    | Message                                                                            |
 | ------ | ----------------------- | ---------------------------------------------------------------------------------- |
 | 400    | `VALIDATION_ERROR`      | `"All fields are required: title, description, targetRegions, startDate, endDate"` |
+| 400    | `VALIDATION_ERROR`      | `"Start date cannot be in the past. Please set a future start date."`              |
 | 400    | `VALIDATION_ERROR`      | `"Start date must be before end date"`                                             |
-| 403    | `FORBIDDEN`             | `"Access denied. Insufficient permissions." (if role not planner/admin)`           |
+| 403    | `FORBIDDEN`             | `"Access denied. Insufficient permissions."` (if role not planner/admin)           |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Unable to generate a unique policy code. Please try again."`                     |
 
 ### 3.4 Update policy
 
 **`PUT /policies/:id`**
 
-Roles: creator planner or admin
-Conditions: Policy must be in draft status
+**Roles:** creator planner or admin  
+**Conditions:** Policy must be in `draft` status
 
-Request body (all fields optional):
+**Request body** (all fields optional):
 
-| Field           | Type   | Description        |
-| --------------- | ------ | ------------------ |
-| `title`         | string | New title          |
-| `description`   | string | New description    |
-| `targetRegions` | array  | New target regions |
-| `startDate`     | string | New start date     |
-| `endDate`       | string | New end date       |
+| Field           | Type   | Description                                        |
+| --------------- | ------ | -------------------------------------------------- |
+| `title`         | string | New title                                          |
+| `description`   | string | New description                                    |
+| `targetRegions` | array  | New target regions                                 |
+| `startDate`     | string | New start date (must be future and before endDate) |
+| `endDate`       | string | New end date (must be after startDate)             |
 
-Response (200 OK): returns the updated policy object (same shape as GET /policies/:id).
+**Response (200 OK):** returns the updated policy object (same shape as `GET /policies/:id`).
 
-Error responses:
+**Error responses:**
 
-| Status | Code        | Message                                                          |
-| ------ | ----------- | ---------------------------------------------------------------- |
-| 403    | `FORBIDDEN` | `"Only draft policies can be edited..."`                         |
-| 403    | `FORBIDDEN` | `"You do not have permission to edit this policy" (not creator)` |
-| 404    | `NOT_FOUND` | `"Policy not found"`                                             |
+| Status | Code               | Message                                                                                         |
+| ------ | ------------------ | ----------------------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Start date cannot be in the past."`                                                           |
+| 400    | `VALIDATION_ERROR` | `"Start date must be before end date."`                                                         |
+| 400    | `VALIDATION_ERROR` | `"End date must be after start date."`                                                          |
+| 403    | `FORBIDDEN`        | `"Only draft policies can be edited. Activate or close the policy to prevent further changes."` |
+| 403    | `FORBIDDEN`        | `"You do not have permission to edit this policy"` (not creator)                                |
+| 404    | `NOT_FOUND`        | `"Policy not found"`                                                                            |
 
-### 3.5 Delete or close policy
+### 3.5 Close policy
+
+**`POST /policies/:id/close`**
+
+**Roles:** creator planner or admin  
+**Conditions:** Policy status must be `active` or `paused`.  
+**Behaviour:** Changes status to `closed`. No more votes accepted.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "...",
+    "status": "closed"
+  },
+  "message": "Policy closed successfully. No more votes will be accepted.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+| Status | Code | Message |
+| ------ | ---------------- | ----------------------------------------------------------------------- |
+| 400 | `VALIDATION_ERROR` | `"Only active or paused policies can be closed. Current status: draft"` |
+| 403 | `FORBIDDEN` | `"You do not have permission to close this policy"` (not creator) |
+| 404 | `NOT_FOUND` | `"Policy not found"` |
+
+### 3.6 Delete draft policy
 
 **`DELETE /policies/:id`**
 
-Roles: creator planner or admin
+**Roles:** creator planner or admin  
+**Condition:** Policy must be in `draft` status.  
+**Behaviour:** Permanently removes the policy document.
 
-Behaviour:
-
--If status = "draft" → permanently delete.
--If status = "active" → change to closed (no more votes accepted).
--If status = "closed" → error.
-
-Response (200 OK) – draft deletion:
+**Response (200 OK):**
 
 ```json
 {
@@ -420,24 +461,13 @@ Response (200 OK) – draft deletion:
 }
 ```
 
-Response (200 OK) – close active policy:
+**Error responses:**
 
-```json
-{
-  "status": "success",
-  "data": { "id": "...", "status": "closed" },
-  "message": "Policy closed successfully. No more votes will be accepted.",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code        | Message                                              |
-| ------ | ----------- | ---------------------------------------------------- |
-| 403    | `FORBIDDEN` | `"Policy is already closed and cannot be modified"`  |
-| 403    | `FORBIDDEN` | `"You do not have permission to modify this policy"` |
-| 404    | `NOT_FOUND` | `"Policy not found"`                                 |
+| Status | Code        | Message                                                                                        |
+| ------ | ----------- | ---------------------------------------------------------------------------------------------- |
+| 403    | `FORBIDDEN` | `"Only draft policies can be deleted. For active or paused policies, use the close endpoint."` |
+| 403    | `FORBIDDEN` | `"You do not have permission to delete this policy"` (not creator)                             |
+| 404    | `NOT_FOUND` | `"Policy not found"`                                                                           |
 
 ## 4. Feedback Endpoints
 
@@ -445,9 +475,9 @@ Error responses:
 
 **`POST /feedback`**
 
-Role: citizen (verified)
+**Role:** citizen (must be authenticated and verified)
 
-Request body:
+**Request body:**
 
 | Field      | Type    | Required | Description            |
 | ---------- | ------- | -------- | ---------------------- |
@@ -455,7 +485,7 @@ Request body:
 | `rating`   | integer | yes      | 1 to 5 stars           |
 | `comment`  | string  | no       | Max 500 characters     |
 
-Response (201 Created):
+**Response (201 Created):**
 
 ```json
 {
@@ -470,18 +500,21 @@ Response (201 Created):
 }
 ```
 
-Error responses:
+**Error responses:**
 
-| Status | Code                    | Message                                                                  |
-| ------ | ----------------------- | ------------------------------------------------------------------------ |
-| 400    | `VALIDATION_ERROR`      | `"policyId and rating are required"`                                     |
-| 400    | `VALIDATION_ERROR`      | `"Rating must be between 1 and 5"`                                       |
-| 400    | `VALIDATION_ERROR`      | `"Comment too long (max 500 characters)"`                                |
-| 400    | `VOTING_CLOSED`         | `"Voting is not allowed for this policy at this time..."`                |
-| 403    | `NOT_VERIFIED`          | `"Please verify your phone number before submitting feedback"`           |
-| 404    | `NOT_FOUND`             | `"Policy not found or not active"`                                       |
-| 409    | `ALREADY_VOTED`         | `"You have already voted on this policy. Each user can vote only once."` |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to submit feedback. Please try again later."`                   |
+| Status | Code                    | Message                                                                                |
+| ------ | ----------------------- | -------------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"policyId and rating are required"`                                                   |
+| 400    | `VALIDATION_ERROR`      | `"Rating must be between 1 and 5"`                                                     |
+| 400    | `VALIDATION_ERROR`      | `"Comment too long (max 500 characters)"`                                              |
+| 400    | `VOTING_CLOSED`         | `"Voting is not allowed for this policy at this time. Please check the policy dates."` |
+| 403    | `NOT_VERIFIED`          | `"Please verify your phone number before submitting feedback"`                         |
+| 403    | `FORBIDDEN`             | `"This policy has not been published yet"` (policy status = draft)                     |
+| 403    | `FORBIDDEN`             | `"Voting is temporarily paused for this policy"` (policy status = paused)              |
+| 403    | `FORBIDDEN`             | `"This policy is closed for voting"` (policy status = closed)                          |
+| 404    | `NOT_FOUND`             | `"Policy not found"` (invalid policy ID)                                               |
+| 409    | `ALREADY_VOTED`         | `"You have already voted on this policy. Each user can vote only once."`               |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to submit feedback. Please try again later."`                                 |
 
 ## 5. Analytics Endpoints
 

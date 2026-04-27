@@ -30,7 +30,7 @@ const Policy = require("../src/models/Policy");
 const Feedback = require("../src/models/Feedback");
 
 const MONGO_URI =
-  process.env.MONGO_URI || "mongodb://localhost:27017/civic_engagement";
+  process.env.MONGO_URI || "mongodb://localhost:27017/communityinsight";
 
 // Parse command line arguments
 const args = process.argv.slice(2);
