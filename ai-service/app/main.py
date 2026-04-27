@@ -9,8 +9,11 @@ from .utils.language_detector import detect_language, detect_language_full
 from .utils.preprocess import normalize_text
 from .models.sentiment import ModelManager
 from .models.keywords import KeywordManager
+from .middleware.authMiddleware import InternalAPIKeyMiddleware
 
 app = FastAPI(title="AI Service for Multilingual Sentiment Analysis")
+
+app.add_middleware(InternalAPIKeyMiddleware)
 
 # ------------------- Request/Response Models -------------------
 
