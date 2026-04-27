@@ -1,3 +1,5 @@
+require("dotenv").config(); // Ensure environment variables are loaded
+
 const Feedback = require("../models/Feedback");
 const axios = require("axios");
 
@@ -25,7 +27,12 @@ const processComment = async (feedback) => {
     const response = await axios.post(
       AI_SERVICE_URL,
       { text: feedback.comment, language: "am" },
-      { timeout: 5000 },
+      {
+        timeout: 5000,
+        headers: {
+          "X-Internal-API-Key": process.env.INTERNAL_API_KEY,
+        },
+      },
     );
 
     // AI service responded, check if it can analyze
