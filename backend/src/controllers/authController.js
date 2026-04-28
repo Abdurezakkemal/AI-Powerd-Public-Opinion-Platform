@@ -1,9 +1,10 @@
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const client = require("../config/redis");
-const nodemailer = require("nodemailer");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
+const { sendOtpEmail, sendPasswordResetEmail } = require("../utils/email");
 const {
   hashPassword,
   comparePassword,
@@ -17,27 +18,7 @@ const {
   ErrorCodes,
 } = require("../utils/responseHelper");
 
-// Email transporter (configure once)
-const transporter = nodemailer.createTransport({
-  host: process.env.EMAIL_HOST,
-  port: parseInt(process.env.EMAIL_PORT),
-  secure: process.env.EMAIL_PORT === "465", // true for 465, false for other
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS,
-  },
-});
-
-// Helper to send OTP email
-const sendOtpEmail = async (toEmail, otp) => {
-  await transporter.sendMail({
-    from: process.env.EMAIL_USER,
-    to: toEmail,
-    subject: "Your OTP Code - Civic Engagement Platform",
-    text: `Your verification code is: ${otp}\nIt expires in 5 minutes.`,
-    html: `<p>Your verification code is: <strong>${otp}</strong></p><p>It expires in 5 minutes.</p>`,
-  });
-};
+// ==================== REGISTRATION & OTP ====================
 
 exports.register = async (req, res) => {
   try {
@@ -80,17 +61,14 @@ exports.register = async (req, res) => {
     });
     await user.save();
 
-    // Generate and store OTP in Redis (keyed by email)
     const otp = generateOTP();
-    const key = `otp:email:${email}`;
+    const otpKey = `otp:email:${email}`;
     const attemptsKey = `otp:verify:${email}`;
-    await client.setEx(key, 300, otp);
-    await client.del(attemptsKey); // reset attempts
+    await client.setEx(otpKey, 300, otp);
+    await client.del(attemptsKey);
 
-    // Send OTP via email
     await sendOtpEmail(email, otp);
 
-    // Audit: account registration
     await createAuditLog({
       userId: user._id,
       userRole: "citizen",
@@ -100,7 +78,6 @@ exports.register = async (req, res) => {
     });
 
     logger.info(`User registered: ${email} (${user._id})`);
-
     return sendSuccess(
       res,
       { userId: user._id },
@@ -147,13 +124,12 @@ exports.sendOtp = async (req, res) => {
       );
     }
 
-    const key = `otp:email:${email}`;
+    const otpKey = `otp:email:${email}`;
     const attemptsKey = `otp:verify:${email}`;
 
-    // Check if an OTP already exists and is still valid
-    const existingOtp = await client.get(key);
+    const existingOtp = await client.get(otpKey);
     if (existingOtp) {
-      const ttl = await client.ttl(key);
+      const ttl = await client.ttl(otpKey);
       logger.warn(`OTP already active for ${email}, expires in ${ttl}s`);
       return sendError(
         res,
@@ -164,7 +140,6 @@ exports.sendOtp = async (req, res) => {
       );
     }
 
-    // Rate limit for requesting new OTPs
     const attempts = await client.get(attemptsKey);
     if (attempts && parseInt(attempts) >= 3) {
       logger.warn(`OTP request rate limit exceeded for ${email}`);
@@ -178,7 +153,7 @@ exports.sendOtp = async (req, res) => {
     }
 
     const otp = generateOTP();
-    await client.setEx(key, 300, otp);
+    await client.setEx(otpKey, 300, otp);
     await client.incr(attemptsKey);
     await client.expire(attemptsKey, 300);
 
@@ -188,7 +163,6 @@ exports.sendOtp = async (req, res) => {
     if (process.env.NODE_ENV !== "production") {
       logger.debug(`[DEV] OTP for ${email}: ${otp}`);
     }
-
     return sendSuccess(
       res,
       null,
@@ -219,7 +193,7 @@ exports.verifyOtp = async (req, res) => {
       );
     }
 
-    const key = `otp:email:${email}`;
+    const otpKey = `otp:email:${email}`;
     const attemptsKey = `otp:verify:${email}`;
     const attempts = await client.incr(attemptsKey);
     if (attempts > 3) {
@@ -234,7 +208,7 @@ exports.verifyOtp = async (req, res) => {
     }
     await client.expire(attemptsKey, 300);
 
-    const stored = await client.get(key);
+    const stored = await client.get(otpKey);
     if (!stored || stored !== code) {
       logger.warn(`Failed OTP verification for ${email}`);
       return sendError(
@@ -246,7 +220,7 @@ exports.verifyOtp = async (req, res) => {
       );
     }
 
-    await client.del(key);
+    await client.del(otpKey);
     await client.del(attemptsKey);
 
     const user = await User.findOne({ email });
@@ -263,7 +237,6 @@ exports.verifyOtp = async (req, res) => {
     user.verified = true;
     await user.save();
 
-    // Audit: email verified
     await createAuditLog({
       userId: user._id,
       userRole: user.role,
@@ -289,7 +262,6 @@ exports.verifyOtp = async (req, res) => {
       res,
       { token, role: user.role },
       "Email verified successfully. You can now log in.",
-      200,
     );
   } catch (err) {
     logger.error(
@@ -375,7 +347,6 @@ exports.login = async (req, res) => {
       { expiresIn: "7d" },
     );
 
-    // Audit: successful login
     await createAuditLog({
       userId: user._id,
       userRole: user.role,
@@ -385,12 +356,10 @@ exports.login = async (req, res) => {
     });
 
     logger.info(`User logged in: ${email} (${user._id})`);
-
     return sendSuccess(
       res,
       { token, role: user.role, userId: user._id },
       "Login successful.",
-      200,
     );
   } catch (err) {
     logger.error({ error: err.message, stack: err.stack }, "Login error");
@@ -398,6 +367,164 @@ exports.login = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Login failed. Please try again later.",
+      null,
+      500,
+    );
+  }
+};
+
+// ==================== PASSWORD RESET ====================
+
+// POST /auth/forgot-password
+exports.forgotPassword = async (req, res) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Email is required",
+        null,
+        400,
+      );
+    }
+
+    const rateKey = `reset:rate:${email}`;
+    const attempts = await client.get(rateKey);
+    if (attempts && parseInt(attempts) >= 3) {
+      logger.warn(`Password reset rate limit exceeded for ${email}`);
+      return sendError(
+        res,
+        ErrorCodes.RATE_LIMIT,
+        "Too many password reset requests. Please try again later.",
+        null,
+        429,
+      );
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      logger.warn(`Password reset requested for non-existent email: ${email}`);
+      return sendSuccess(
+        res,
+        null,
+        "If an account with that email exists, a password reset link has been sent.",
+        200,
+      );
+    }
+
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenKey = `reset:token:${token}`;
+    await client.setEx(tokenKey, 3600, user._id.toString());
+
+    await client.incr(rateKey);
+    await client.expire(rateKey, 3600);
+
+    await sendPasswordResetEmail(email, token);
+    logger.info(`Password reset email sent to ${email}`);
+
+    return sendSuccess(
+      res,
+      null,
+      "If an account with that email exists, a password reset link has been sent.",
+      200,
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Forgot password error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to process password reset request",
+      null,
+      500,
+    );
+  }
+};
+
+// POST /auth/reset-password
+exports.resetPassword = async (req, res) => {
+  try {
+    const { token, newPassword } = req.body;
+    if (!token || !newPassword) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Token and new password are required",
+        null,
+        400,
+      );
+    }
+
+    if (newPassword.length < 8) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Password must be at least 8 characters long",
+        null,
+        400,
+      );
+    }
+
+    const tokenKey = `reset:token:${token}`;
+    const userId = await client.get(tokenKey);
+    if (!userId) {
+      logger.warn(`Invalid or expired password reset token used`);
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid or expired reset token. Please request a new one.",
+        null,
+        400,
+      );
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+    }
+
+    const isSame = await comparePassword(newPassword, user.passwordHash);
+    if (isSame) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "New password must be different from current password",
+        null,
+        400,
+      );
+    }
+
+    user.passwordHash = await hashPassword(newPassword);
+    await user.save();
+
+    await client.del(tokenKey);
+
+    await createAuditLog({
+      userId: user._id,
+      userRole: user.role,
+      action: "PASSWORD_RESET",
+      details: { method: "token" },
+      req,
+    });
+
+    logger.info(`Password reset successful for ${user.email}`);
+    return sendSuccess(
+      res,
+      null,
+      "Password has been reset successfully. You can now log in with your new password.",
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Reset password error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to reset password",
       null,
       500,
     );

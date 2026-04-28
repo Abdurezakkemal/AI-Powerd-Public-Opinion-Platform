@@ -217,20 +217,22 @@ uvicorn app.main:app --reload --port 8000
 
 ### Backend (`.env` in `backend/`)
 
-| Variable         | Description                   | Default                                      |
-| ---------------- | ----------------------------- | -------------------------------------------- |
-| `PORT`           | Backend port                  | `5000`                                       |
-| `MONGO_URI`      | MongoDB connection string     | `mongodb://localhost:27017/communityinsight` |
-| `JWT_SECRET`     | Secret for signing tokens     | `change this`                                |
-| `REDIS_URL`      | Redis connection URL          | `redis://localhost:6379`                     |
-| `AI_SERVICE_URL` | URL of AI service             | `http://localhost:8000`                      |
-| `EMAIL_HOST`     | SMTP server for OTP           | `smtp.gmail.com`                             |
-| `EMAIL_PORT`     | SMTP port                     | `587`                                        |
-| `EMAIL_USER`     | Email account for sending OTP | –                                            |
-| `EMAIL_PASS`     | App password or SMTP password | –                                            |
+| Variable           | Description                              | Default                                      |
+| ------------------ | ---------------------------------------- | -------------------------------------------- |
+| `PORT`             | Backend port                             | `5000`                                       |
+| `MONGO_URI`        | MongoDB connection string                | `mongodb://localhost:27017/communityinsight` |
+| `JWT_SECRET`       | Secret for signing tokens                | `change this`                                |
+| `REDIS_URL`        | Redis connection URL                     | `redis://localhost:6379`                     |
+| `AI_SERVICE_URL`   | URL of AI service                        | `http://localhost:8000`                      |
+| `EMAIL_HOST`       | SMTP server for OTP                      | `smtp.gmail.com`                             |
+| `EMAIL_PORT`       | SMTP port                                | `587`                                        |
+| `EMAIL_USER`       | Email account for sending OTP            | –                                            |
+| `EMAIL_PASS`       | App password or SMTP password            | –                                            |
+| `INTERNAL_API_KEY` | Secret key for AI service authentication | – (required)                                 |
 
 ### AI Service (`.env` in `ai-service/`)
 
-| Variable              | Description                                        | Default |
-| --------------------- | -------------------------------------------------- | ------- |
-| `FASTTEXT_MODEL_PATH` | Path to `lid.176.bin` (auto‑downloaded if not set) | –       |
+| Variable              | Description                                        | Default      |
+| --------------------- | -------------------------------------------------- | ------------ |
+| `FASTTEXT_MODEL_PATH` | Path to `lid.176.bin` (auto‑downloaded if not set) | –            |
+| `INTERNAL_API_KEY`    | Secret key for AI service authentication           | – (required) |
