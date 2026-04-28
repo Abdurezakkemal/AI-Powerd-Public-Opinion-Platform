@@ -90,31 +90,62 @@ const getSentimentObject = (label) => {
   return { label, confidence };
 };
 
-async function loginAndSaveTokens(users, filename) {
+// Wait for backend to be ready
+async function waitForBackend(retries = 10, delayMs = 2000) {
+  const healthUrl = API_URL.replace("/api", "") + "/health";
+  for (let i = 0; i < retries; i++) {
+    try {
+      await axios.get(healthUrl, { timeout: 5000 });
+      console.log("Backend is ready.");
+      return true;
+    } catch (err) {
+      console.log(`Waiting for backend... (${i + 1}/${retries})`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+  console.warn("Backend not reachable after retries. Continuing anyway...");
+  return false;
+}
+
+async function loginAndSaveTokens(users, filename, retries = 3) {
   const tokens = [];
   for (const user of users) {
-    try {
-      const response = await axios.post(`${API_URL}/auth/login`, {
-        email: user.email,
-        password: DEFAULT_PASSWORD,
-      });
-      if (response.data.status === "success") {
-        tokens.push({
-          email: user.email,
-          token: response.data.data.token,
-          role: response.data.data.role,
-        });
-        console.log(`   Logged in: ${user.email}`);
-      } else {
+    let success = false;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+      try {
+        // Add small random delay to avoid hammering the server
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+        const response = await axios.post(
+          `${API_URL}/auth/login`,
+          {
+            email: user.email,
+            password: DEFAULT_PASSWORD,
+          },
+          { timeout: 10000 },
+        );
+        if (response.data.status === "success") {
+          tokens.push({
+            email: user.email,
+            token: response.data.data.token,
+            role: response.data.data.role,
+          });
+          console.log(`   Logged in: ${user.email}`);
+          success = true;
+          break;
+        } else {
+          console.warn(
+            `   Login failed for ${user.email} (attempt ${attempt}): ${response.data.message}`,
+          );
+        }
+      } catch (err) {
         console.warn(
-          `   Login failed for ${user.email}:`,
-          response.data.message,
+          `   Login error for ${user.email} (attempt ${attempt}): ${err.response?.data?.error?.message || err.message}`,
         );
       }
-    } catch (err) {
-      console.warn(
-        `   Login error for ${user.email}:`,
-        err.response?.data?.error?.message || err.message,
+    }
+    if (!success) {
+      console.error(
+        `   Could not log in ${user.email} after ${retries} attempts.`,
       );
     }
   }
@@ -372,16 +403,15 @@ async function seed() {
     console.log("\nObtaining JWT tokens for citizens and planners...");
     console.log("(Make sure your backend is running on port 5000)");
 
+    // Wait for backend to be ready
+    await waitForBackend();
+
     let citizenTokens = [];
     let plannerTokens = [];
 
     try {
-      await axios.get(`${API_URL.replace("/api", "")}/health`);
-      console.log("Backend is reachable, logging in users...\n");
-
       citizenTokens = await loginAndSaveTokens(citizens, "citizen_tokens.json");
       plannerTokens = await loginAndSaveTokens(planners, "planner_tokens.json");
-
       console.log("\nTokens saved to tokens/ directory.");
     } catch (err) {
       console.warn(
