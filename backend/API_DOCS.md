@@ -130,10 +130,11 @@ Error responses:
 
 **`POST /auth/send-otp`**
 
-Sends a new 6‑digit OTP to the user's registered email address.
-The email must already exist in the system. Rate‑limited to 3 requests per hour per email.
+Sends a 6‑digit OTP to the user's registered email address.  
+**Rate limit:** 3 requests per 5 minutes per email.  
+**Resend cooldown:** If an OTP already exists and has more than 30 seconds of life remaining (i.e., TTL > 270 seconds), the request is rejected with a `RATE_LIMIT_EXCEEDED` error. After 30 seconds, a new OTP can be sent (overwriting the previous one).
 
-Request body:
+**Request body:**
 
 ```json
 {
@@ -152,13 +153,12 @@ Response (200 OK):
 }
 ```
 
-Error responses:
+**Error responses (new/updated):**
 
-| Status | Code                  | Message                                           |
-| ------ | --------------------- | ------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`    | `"Email is required"`                             |
-| 404    | `NOT_FOUND`           | `"No account found with this email address."`     |
-| 429    | `RATE_LIMIT_EXCEEDED` | `"Too many OTP requests. Please wait 5 minutes."` |
+| Status | Code                  | Message                                                                                                                                     |
+| ------ | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| 429    | `RATE_LIMIT_EXCEEDED` | `"An OTP has already been sent and is valid for X more seconds. Please use that code or wait for it to expire."` (when resending too early) |
+| 429    | `RATE_LIMIT_EXCEEDED` | `"Too many OTP requests. Please wait 5 minutes."` (rate limit hit)                                                                          |
 
 ### 2.3 Verify OTP
 
@@ -1603,32 +1603,46 @@ Error responses:
 
 **`PUT /users/me`**
 
-Request body (fields optional):
-
-| Field  | Type   | Description                        |
-| ------ | ------ | ---------------------------------- |
-| email  | string | New email address (must be unique) |
-| region | string | New city/region name               |
-
-Response (200 OK): returns the updated user object (same shape as **`GET /users/me`**).
+Request body (only `region` allowed):
 
 ```json
 {
-"status": "success",
-"data": { ... },
-"message": "User profile updated successfully",
-"timestamp": "..."
+  "region": "Oromia"
 }
 ```
 
-Error responses:
+Response (200 OK): returns the updated user object (same shape as GET /users/me).
 
-| Status | Code                  | Message                                   |
-| ------ | --------------------- | ----------------------------------------- |
-| 400    | VALIDATION_ERROR      | "No valid fields provided for update"     |
-| 409    | DUPLICATE_ENTRY       | "Email already in use by another account" |
-| 404    | NOT_FOUND             | "User not found"                          |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to update user profile"           |
+**Error if `email` is provided:**
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "No valid fields provided for update (only region is allowed)"
+  }
+}
+```
+
+**Error if `email` is provided:**
+
+```json
+{
+  "status": "error",
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "No valid fields provided for update (only region is allowed)"
+  }
+}
+```
+
+**Error responses (other):**
+| Status | Code | Message |
+| ------ | --------------------- | ------------------------------------- |
+| 400 | VALIDATION_ERROR | "No valid fields provided for update" |
+| 404 | NOT_FOUND | "User not found" |
+| 500 | INTERNAL_SERVER_ERROR | "Failed to update user profile" |
 
 ### 7.3 Change password
 
@@ -1729,6 +1743,74 @@ Error responses:
 | ------ | --------------------- | -------------------------- |
 | 404    | NOT_FOUND             | "User not found"           |
 | 500    | INTERNAL_SERVER_ERROR | "Failed to delete account" |
+
+### 7.6 Request email change
+
+**`POST /users/me/email/request`**
+
+**Authentication required (citizen, planner, admin).**  
+Sends an OTP to the **new email address** to verify ownership. The old email remains unchanged until the OTP is verified.  
+**Rate limit:** 3 requests per hour per user.
+
+**Request body:**
+
+```json
+{
+  "newEmail": "newaddress@example.com"
+}
+```
+
+Response (200 OK):
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Verification code sent to the new email address. It expires in 5 minutes.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code                | Message                                                   |
+| ------ | ------------------- | --------------------------------------------------------- |
+| 400    | VALIDATION_ERROR    | "New email is required"                                   |
+| 409    | DUPLICATE_ENTRY     | "Email already in use by another account"                 |
+| 429    | RATE_LIMIT_EXCEEDED | "Too many email change requests. Please try again later." |
+
+### 7.7 Verify email change
+
+**`POST /users/me/email/verify`**
+
+**Authentication required.**  
+Verifies the OTP sent to the new email and updates the user's email address permanently.
+
+**Request body:**
+
+```json
+{
+  "code": "123456"
+}
+```
+
+Response (200 OK):
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Email address updated successfully.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+| Status | Code | Message |
+|--------|------|---------|
+| 400 | `VALIDATION_ERROR` | `"Verification code is required"` |
+| 400 | `VALIDATION_ERROR` | `"No pending email change request or code expired. Please request a new one."` |
+| 400 | `VALIDATION_ERROR` | `"Invalid verification code"` |
 
 ## 8. SMS Simulation (Public)
 
