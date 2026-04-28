@@ -18,6 +18,7 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 - Rate policies (1–5 stars) – optionally add a comment (can be added later via separate endpoint)
 - Add a comment to an existing vote (via `/api/comments/:voteId`)
 - Anonymous feedback (identity not exposed)
+- Self‑service password reset (via email token)
 
 ### For Basic Phone Users (Simulated SMS)
 
@@ -32,7 +33,7 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 - Export data as CSV
 - Manage planner accounts (admin only)
 - Moderate pending AI comments (admin only)
-- View platform dashboard stats, trends, audit logs, AI health (admin only)
+- Admin dashboard (statistics, trends, audit logs, AI health) and password reset (admin‑initiated)
 - Export audit logs (CSV) (admin only)
 
 ### AI Service (Background)
