@@ -2,6 +2,7 @@ const express = require("express");
 const router = express.Router();
 const adminController = require("../controllers/adminController");
 const auth = require("../middleware/authMiddleware");
+const reportController = require("../controllers/reportController");
 
 // Planner management
 router.get("/planners", auth(["admin"]), adminController.listPlanners);
@@ -13,7 +14,7 @@ router.put(
   adminController.updatePlannerStatus,
 );
 
-// ========== COMMENT MANAGEMENT ==========
+// Comment management
 router.get(
   "/comments/pending",
   auth(["admin"]),
@@ -30,13 +31,29 @@ router.post(
   auth(["admin"]),
   adminController.retryAllComments,
 );
+router.delete("/comments/:id", auth(["admin"]), adminController.deleteComment); // ← ADD THIS
 
-// ========== CITIZEN MANAGEMENT ==========
+// Citizen management
 router.get("/users/citizens", auth(["admin"]), adminController.listCitizens);
 router.put(
   "/users/:id/status",
   auth(["admin"]),
   adminController.updateCitizenStatus,
 );
+
+// Dashboard & reports (MUST be before module.exports)
+router.get(
+  "/dashboard/stats",
+  auth(["admin"]),
+  reportController.getDashboardStats,
+);
+router.get("/trends", auth(["admin"]), reportController.getTrends);
+router.get("/audit-logs", auth(["admin"]), reportController.getAuditLogs);
+router.get(
+  "/audit-logs/export",
+  auth(["admin"]),
+  reportController.exportAuditLogs,
+);
+router.get("/ai/health", auth(["admin"]), reportController.getAIHealth);
 
 module.exports = router;

@@ -21,17 +21,19 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 
 ### For Basic Phone Users (Simulated SMS)
 
-- Vote via SMS commands: `RATE ` <rating>`
-- Check current status: `STATUS ``
-- Get final results after policy closes: `RESULTS ``
+- Vote via SMS commands: `RATE <code> <rating>`
+- Check current status: `STATUS <code>`
+- Get final results after policy closes: `RESULTS <code>`
 
 ### For Planners & Admins (Web Dashboard)
 
-- Create, edit (draft), close policies
-- View analytics: average rating, sentiment counts, top keywords, geographic breakdown
+- Create, edit (draft), close, pause, resume policies
+- View analytics: average rating, sentiment counts, top keywords, geographic breakdown, trends
 - Export data as CSV
 - Manage planner accounts (admin only)
 - Moderate pending AI comments (admin only)
+- View platform dashboard stats, trends, audit logs, AI health (admin only)
+- Export audit logs (CSV) (admin only)
 
 ### AI Service (Background)
 

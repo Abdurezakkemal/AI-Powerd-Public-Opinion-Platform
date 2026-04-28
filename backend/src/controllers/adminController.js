@@ -544,3 +544,50 @@ exports.updatePlannerStatus = async (req, res) => {
     );
   }
 };
+
+// DELETE /admin/comments/:id
+exports.deleteComment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const comment = await Comment.findById(id);
+    if (!comment) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+    }
+
+    // Optional: also delete the associated vote? Probably not, keep vote for statistics.
+    // Just delete the comment.
+    await comment.deleteOne();
+
+    // Audit log
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "DELETE_COMMENT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { commentText: comment.comment?.substring(0, 100) },
+      req,
+    });
+
+    logger.info(`Admin ${req.user.id} deleted comment ${id}`);
+    return sendSuccess(res, null, "Comment deleted successfully");
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Delete comment error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to delete comment",
+      null,
+      500,
+    );
+  }
+};

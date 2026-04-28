@@ -1118,6 +1118,180 @@ Resets all comments with `status: "pending_review"` to `"processing"` so they wi
 | ------ | ----------------------- | -------------------------------------- |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Failed to queue comments for retry"` |
 
+### 6.3.5 Delete comment
+
+**`DELETE /admin/comments/:id`**
+
+Permanently removes a comment. The associated vote remains unchanged (the vote rating and channel stay).
+
+**Path parameter:**
+
+| Parameter | Type   | Description |
+| --------- | ------ | ----------- |
+| `id`      | string | Comment ID  |
+
+**Role required:** `admin`
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Comment deleted successfully",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code        | Message                      |
+| ------ | ----------- | ---------------------------- |
+| 404    | `NOT_FOUND` | `"Comment not found"`        |
+| 500    | `INTERNAL`  | `"Failed to delete comment"` |
+
+## 6.4 Admin Dashboard & Monitoring
+
+### 6.4.1 Dashboard statistics
+
+**`GET /admin/dashboard/stats`**
+
+Returns platform-wide counts and AI health.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "users": { "total": 22, "active": 22, "verified": 22 },
+    "planners": { "total": 2, "active": 2 },
+    "policies": { "total": 6, "draft": 0, "active": 5, "closed": 1 },
+    "votes": { "total": 123, "app": 98, "sms": 25, "averageRating": 4.2 },
+    "comments": { "total": 80, "pendingReview": 3, "processed": 77 },
+    "aiHealth": { "status": "ok", "pendingComments": 3, "failedComments": 0 }
+  },
+  "message": "Dashboard statistics retrieved successfully",
+  "timestamp": "..."
+}
+```
+
+**Notes:**
+
+- `aiHealth.status` is `"ok"` when AI service is reachable, otherwise `"unreachable"`.
+- `aiHealth.pendingComments` and `aiHealth.failedComments` are from your database, not the AI service.
+
+### 6.4.2 Platform trends
+
+**`GET /admin/trends`**
+
+Query parameters (all optional):
+
+| Parameter  | Type    | Default | Description                         |
+| ---------- | ------- | ------- | ----------------------------------- |
+| `interval` | string  | `day`   | Grouping: `day`, `week`, or `month` |
+| `days`     | integer | 30      | Number of days to look back         |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "interval": "day",
+    "data": [
+      { "date": "2026-04-27", "votes": 1, "avgRating": 4.0, "newUsers": 22 }
+    ]
+  },
+  "message": "Trends retrieved successfully",
+  "timestamp": "..."
+}
+```
+
+`date` format depends on `interval`:
+
+- `day`: `YYYY-MM-DD`
+- `week`: `YYYY-Www` (e.g., `2026-W17`)
+- `month`: `YYYY-MM`
+
+## 6.4.3 View audit logs
+
+**`GET /admin/audit-logs`**
+
+Query parameters (all optional):
+
+| Parameter   | Type    | Description                                        |
+| ----------- | ------- | -------------------------------------------------- |
+| `page`      | integer | Page number (default 1)                            |
+| `limit`     | integer | Items per page (default 20, max 100)               |
+| `action`    | string  | Filter by action (e.g., `LOGIN`, `CREATE_PLANNER`) |
+| `userId`    | string  | Filter by user ID (MongoDB ObjectId)               |
+| `startDate` | string  | ISO date (e.g., `2026-04-01T00:00:00Z`)            |
+| `endDate`   | string  | ISO date                                           |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "logs": [
+      {
+        "_id": "...",
+        "userId": { "_id": "...", "email": "admin@...", "role": "admin" },
+        "userRole": "admin",
+        "action": "CREATE_PLANNER",
+        "targetType": "User",
+        "targetId": "...",
+        "details": { "email": "planner@..." },
+        "ipAddress": "::1",
+        "userAgent": "PostmanRuntime/...",
+        "timestamp": "..."
+      }
+    ],
+    "total": 110,
+    "page": 1,
+    "pages": 11
+  },
+  "message": "Audit logs retrieved successfully",
+  "timestamp": "..."
+}
+```
+
+### 6.4.4 Export audit logs (CSV)
+
+**`GET /admin/audit-logs/export`**
+
+Same query parameters as `GET /admin/audit-logs` (page/limit ignored – exports all matching logs).
+
+**Response (200 OK):**
+
+- Content‑Type: `text/csv`
+- Content‑Disposition: `attachment; filename="audit-logs-<timestamp>.csv"`
+
+### 6.4.5 AI service health
+
+**`GET /admin/ai/health`**
+
+Returns the health status of the AI service plus comment queue statistics.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "status": "ok", // or "unreachable"
+    "pendingComments": 3,
+    "failedComments": 0
+  },
+  "message": "AI service health retrieved",
+  "timestamp": "..."
+}
+```
+
+If the AI service is unreachable, `status` is `"unreachable"` and an `error` field may be present (e.g., `"Request failed with status code 404"`).
+
 ## 7. User Profile Endpoints
 
 Role required: authenticated (citizen, planner, or admin) – all endpoints in this section
