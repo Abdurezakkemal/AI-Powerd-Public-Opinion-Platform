@@ -55,5 +55,25 @@ router.get(
   reportController.exportAuditLogs,
 );
 router.get("/ai/health", auth(["admin"]), reportController.getAIHealth);
+// Citizen management (already there)
+router.get("/users/citizens", auth(["admin"]), adminController.listCitizens);
+router.put(
+  "/users/:id/status",
+  auth(["admin"]),
+  adminController.updateCitizenStatus,
+);
 
+// ADD THIS:
+router.post(
+  "/users/:id/initiate-password-reset",
+  auth(["admin"]),
+  adminController.initiatePasswordReset,
+);
+
+// Dashboard & reports
+router.get(
+  "/dashboard/stats",
+  auth(["admin"]),
+  reportController.getDashboardStats,
+);
 module.exports = router;

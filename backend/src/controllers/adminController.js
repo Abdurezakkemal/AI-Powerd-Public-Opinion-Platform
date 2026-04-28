@@ -1,8 +1,11 @@
 const User = require("../models/User");
 const Comment = require("../models/Comment");
+const crypto = require("crypto");
 const { hashPassword } = require("../utils/helpers");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
+const client = require("../config/redis");
+const { sendAdminInitiatedResetEmail } = require("../utils/email");
 const {
   sendSuccess,
   sendError,
@@ -192,6 +195,69 @@ exports.updatePlanner = async (req, res) => {
   }
 };
 
+// PUT /admin/planners/:id/status
+exports.updatePlannerStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { active } = req.body;
+    if (active === undefined) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "active field is required (true/false)",
+        null,
+        400,
+      );
+    }
+
+    const planner = await User.findOne({ _id: id, role: "planner" });
+    if (!planner) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Planner not found",
+        null,
+        404,
+      );
+    }
+
+    planner.active = active;
+    await planner.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "UPDATE_PLANNER_STATUS",
+      targetType: "User",
+      targetId: planner._id,
+      details: { email: planner.email, active: planner.active },
+      req,
+    });
+
+    const statusText = active ? "activated" : "deactivated";
+    logger.info(
+      `Admin ${req.user.id} ${statusText} planner: ${planner.email} (${planner._id})`,
+    );
+    return sendSuccess(
+      res,
+      { plannerId: planner._id, active: planner.active },
+      `Planner account ${statusText} successfully`,
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Update planner status error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to update planner status",
+      null,
+      500,
+    );
+  }
+};
+
 // ========== COMMENT MANAGEMENT (formerly FEEDBACK) ==========
 
 // GET /admin/comments/pending
@@ -373,6 +439,50 @@ exports.retryAllComments = async (req, res) => {
   }
 };
 
+// DELETE /admin/comments/:id
+exports.deleteComment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const comment = await Comment.findById(id);
+    if (!comment) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+    }
+
+    await comment.deleteOne();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "DELETE_COMMENT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { commentText: comment.comment?.substring(0, 100) },
+      req,
+    });
+
+    logger.info(`Admin ${req.user.id} deleted comment ${id}`);
+    return sendSuccess(res, null, "Comment deleted successfully");
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Delete comment error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to delete comment",
+      null,
+      500,
+    );
+  }
+};
+
 // ========== CITIZEN MANAGEMENT ==========
 
 // GET /admin/users/citizens?active=true&page=1&limit=10
@@ -482,110 +592,61 @@ exports.updateCitizenStatus = async (req, res) => {
   }
 };
 
-// PUT /admin/planners/:id/status
-exports.updatePlannerStatus = async (req, res) => {
+// ========== PASSWORD RESET (ADMIN INITIATED) ==========
+
+// POST /admin/users/:id/initiate-password-reset
+exports.initiatePasswordReset = async (req, res) => {
   try {
     const { id } = req.params;
-    const { active } = req.body;
-    if (active === undefined) {
+    const user = await User.findById(id);
+    if (!user) {
+      return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+    }
+
+    if (user._id.toString() === req.user.id.toString()) {
       return sendError(
         res,
-        ErrorCodes.VALIDATION,
-        "active field is required (true/false)",
+        ErrorCodes.FORBIDDEN,
+        "Use /auth/forgot-password to reset your own password",
         null,
-        400,
+        403,
       );
     }
 
-    const planner = await User.findOne({ _id: id, role: "planner" });
-    if (!planner) {
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Planner not found",
-        null,
-        404,
-      );
-    }
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenKey = `reset:token:${token}`;
+    await client.setEx(tokenKey, 3600, user._id.toString());
 
-    planner.active = active;
-    await planner.save();
+    await sendAdminInitiatedResetEmail(user.email, token);
 
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
-      action: "UPDATE_PLANNER_STATUS",
+      action: "INITIATE_PASSWORD_RESET",
       targetType: "User",
-      targetId: planner._id,
-      details: { email: planner.email, active: planner.active },
+      targetId: user._id,
+      details: { email: user.email },
       req,
     });
 
-    const statusText = active ? "activated" : "deactivated";
     logger.info(
-      `Admin ${req.user.id} ${statusText} planner: ${planner.email} (${planner._id})`,
+      `Admin ${req.user.id} initiated password reset for user ${user.email}`,
     );
     return sendSuccess(
       res,
-      { plannerId: planner._id, active: planner.active },
-      `Planner account ${statusText} successfully`,
-    );
-  } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Update planner status error",
-    );
-    return sendError(
-      res,
-      ErrorCodes.INTERNAL,
-      "Failed to update planner status",
       null,
-      500,
+      `Password reset email sent to ${user.email}. The user will receive a link to set a new password.`,
+      200,
     );
-  }
-};
-
-// DELETE /admin/comments/:id
-exports.deleteComment = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const comment = await Comment.findById(id);
-    if (!comment) {
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Comment not found",
-        null,
-        404,
-      );
-    }
-
-    // Optional: also delete the associated vote? Probably not, keep vote for statistics.
-    // Just delete the comment.
-    await comment.deleteOne();
-
-    // Audit log
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "DELETE_COMMENT",
-      targetType: "Comment",
-      targetId: comment._id,
-      details: { commentText: comment.comment?.substring(0, 100) },
-      req,
-    });
-
-    logger.info(`Admin ${req.user.id} deleted comment ${id}`);
-    return sendSuccess(res, null, "Comment deleted successfully");
   } catch (err) {
     logger.error(
       { error: err.message, stack: err.stack },
-      "Delete comment error",
+      "Admin initiate password reset error",
     );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to delete comment",
+      "Failed to initiate password reset",
       null,
       500,
     );

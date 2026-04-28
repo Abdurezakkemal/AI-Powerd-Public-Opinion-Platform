@@ -18,6 +18,7 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 - Rate policies (1–5 stars) – optionally add a comment (can be added later via separate endpoint)
 - Add a comment to an existing vote (via `/api/comments/:voteId`)
 - Anonymous feedback (identity not exposed)
+- Self‑service password reset (via email token)
 
 ### For Basic Phone Users (Simulated SMS)
 
@@ -32,7 +33,7 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 - Export data as CSV
 - Manage planner accounts (admin only)
 - Moderate pending AI comments (admin only)
-- View platform dashboard stats, trends, audit logs, AI health (admin only)
+- Admin dashboard (statistics, trends, audit logs, AI health) and password reset (admin‑initiated)
 - Export audit logs (CSV) (admin only)
 
 ### AI Service (Background)
@@ -217,20 +218,22 @@ uvicorn app.main:app --reload --port 8000
 
 ### Backend (`.env` in `backend/`)
 
-| Variable         | Description                   | Default                                      |
-| ---------------- | ----------------------------- | -------------------------------------------- |
-| `PORT`           | Backend port                  | `5000`                                       |
-| `MONGO_URI`      | MongoDB connection string     | `mongodb://localhost:27017/communityinsight` |
-| `JWT_SECRET`     | Secret for signing tokens     | `change this`                                |
-| `REDIS_URL`      | Redis connection URL          | `redis://localhost:6379`                     |
-| `AI_SERVICE_URL` | URL of AI service             | `http://localhost:8000`                      |
-| `EMAIL_HOST`     | SMTP server for OTP           | `smtp.gmail.com`                             |
-| `EMAIL_PORT`     | SMTP port                     | `587`                                        |
-| `EMAIL_USER`     | Email account for sending OTP | –                                            |
-| `EMAIL_PASS`     | App password or SMTP password | –                                            |
+| Variable           | Description                              | Default                                      |
+| ------------------ | ---------------------------------------- | -------------------------------------------- |
+| `PORT`             | Backend port                             | `5000`                                       |
+| `MONGO_URI`        | MongoDB connection string                | `mongodb://localhost:27017/communityinsight` |
+| `JWT_SECRET`       | Secret for signing tokens                | `change this`                                |
+| `REDIS_URL`        | Redis connection URL                     | `redis://localhost:6379`                     |
+| `AI_SERVICE_URL`   | URL of AI service                        | `http://localhost:8000`                      |
+| `EMAIL_HOST`       | SMTP server for OTP                      | `smtp.gmail.com`                             |
+| `EMAIL_PORT`       | SMTP port                                | `587`                                        |
+| `EMAIL_USER`       | Email account for sending OTP            | –                                            |
+| `EMAIL_PASS`       | App password or SMTP password            | –                                            |
+| `INTERNAL_API_KEY` | Secret key for AI service authentication | – (required)                                 |
 
 ### AI Service (`.env` in `ai-service/`)
 
-| Variable              | Description                                        | Default |
-| --------------------- | -------------------------------------------------- | ------- |
-| `FASTTEXT_MODEL_PATH` | Path to `lid.176.bin` (auto‑downloaded if not set) | –       |
+| Variable              | Description                                        | Default      |
+| --------------------- | -------------------------------------------------- | ------------ |
+| `FASTTEXT_MODEL_PATH` | Path to `lid.176.bin` (auto‑downloaded if not set) | –            |
+| `INTERNAL_API_KEY`    | Secret key for AI service authentication           | – (required) |

@@ -209,7 +209,7 @@ Authenticates a user with email and password. Returns a JWT token valid for 7 da
 }
 ```
 
-Response (200 OK):
+**Response (200 OK):**
 
 ```json
 {
@@ -224,7 +224,7 @@ Response (200 OK):
 }
 ```
 
-Error responses:
+**Error responses:**
 
 | Status | Code                  | Message                                                                         |
 | ------ | --------------------- | ------------------------------------------------------------------------------- |
@@ -232,6 +232,116 @@ Error responses:
 | 401    | `INVALID_CREDENTIALS` | `"Invalid email or password."`                                                  |
 | 403    | `ACCOUNT_DISABLED`    | `"Your account has been deactivated. Please contact an administrator."`         |
 | 403    | `NOT_VERIFIED`        | `"Your email address is not verified. Please complete OTP verification first."` |
+
+## 2.5 Password Reset
+
+### 2.5.1 Request password reset (user self‑service)
+
+**`POST /auth/forgot-password`**
+
+Sends a secure reset token to the user’s registered email address. The token is valid for 1 hour and can be used with `/auth/reset-password`.  
+**Rate limit:** 3 requests per email per hour (to prevent abuse).
+
+**Request body:**
+
+```json
+{
+  "email": "user@example.com"
+}
+```
+
+Response (200 OK):  
+The same message is returned regardless of whether the email exists, to prevent user enumeration.
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "If an account with that email exists, a password reset link has been sent.",
+  "timestamp": "2026-04-28T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                                       |
+| ------ | ----------------------- | ------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Email is required"`                                         |
+| 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many password reset requests. Please try again later."` |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to process password reset request"`                  |
+
+---
+
+### 2.5.2 Reset password using token
+
+**`POST /auth/reset-password`**
+
+**Request body:**
+
+```json
+{
+  "token": "hex_token_from_email",
+  "newPassword": "NewSecurePass123"
+}
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Password has been reset successfully. You can now log in with your new password.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                                       |
+| ------ | ----------------------- | ------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Token and new password are required"`                       |
+| 400    | `VALIDATION_ERROR`      | `"Password must be at least 8 characters long"`               |
+| 400    | `VALIDATION_ERROR`      | `"New password must be different from current password"`      |
+| 400    | `VALIDATION_ERROR`      | `"Invalid or expired reset token. Please request a new one."` |
+| 404    | `NOT_FOUND`             | `"User not found"`                                            |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to reset password"`                                  |
+
+---
+
+### 2.5.3 Admin‑initiated password reset
+
+**`POST /admin/users/:id/initiate-password-reset`**
+
+**Role required:** `admin`
+
+Triggers a password reset email for the specified user (citizen or planner). The admin never sees or sets the password; the user receives a token and must use `/auth/reset-password` to choose a new password themselves.  
+The admin cannot reset their own password through this endpoint – they must use the normal forgot‑password flow.
+
+**Path parameter:**
+
+| Parameter | Type   | Description                                        |
+| --------- | ------ | -------------------------------------------------- |
+| `id`      | string | User ID (MongoDB ObjectId) of a citizen or planner |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Password reset email sent to user@example.com. The user will receive a link to set a new password.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                                  |
+| ------ | ----------------------- | -------------------------------------------------------- |
+| 403    | `FORBIDDEN`             | `"Use /auth/forgot-password to reset your own password"` |
+| 404    | `NOT_FOUND`             | `"User not found"`                                       |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to initiate password reset"`                    |
 
 ## 3. Policy Endpoints
 
@@ -442,7 +552,126 @@ Request body:
 | 403 | `FORBIDDEN` | `"You do not have permission to close this policy"` (not creator) |
 | 404 | `NOT_FOUND` | `"Policy not found"` |
 
-### 3.6 Delete draft policy
+### 3.6 Activate policy (draft → active)
+
+**`PATCH /policies/:id/activate`**
+
+**Roles:** creator planner or admin  
+**Condition:** Policy status must be `draft`.  
+**Behaviour:** Changes status to `active` so citizens can vote. Voting will be allowed only if the current date is within `startDate` and `endDate` (the policy's own date range still applies).
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "...",
+    "status": "active"
+  },
+  "message": "Policy activated successfully. Citizens can now vote.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code               | Message                                                        |
+| ------ | ------------------ | -------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only draft policies can be activated. Current status: ..."`  |
+| 400    | `VALIDATION_ERROR` | `"Cannot activate a policy whose end date has already passed"` |
+| 403    | `FORBIDDEN`        | `"You do not have permission to activate this policy"`         |
+| 404    | `NOT_FOUND`        | `"Policy not found"`                                           |
+
+### 3.7 Pause policy (active → paused)
+
+**`PATCH /policies/:id/pause`**
+
+**Roles:** creator planner or admin  
+**Condition:** Policy status must be `active`.  
+**Behaviour:** Temporarily suspends voting (status becomes `paused`). Citizens will see the policy but cannot vote until it is resumed.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "...",
+    "status": "paused"
+  },
+  "message": "Policy paused. Voting is now disabled until resumed.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code               | Message                                                     |
+| ------ | ------------------ | ----------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only active policies can be paused. Current status: ..."` |
+| 403    | `FORBIDDEN`        | `"You do not have permission to pause this policy"`         |
+| 404    | `NOT_FOUND`        | `"Policy not found"`                                        |
+
+### 3.8 Resume policy (paused → active)
+
+**`PATCH /policies/:id/resume`**
+
+**Roles:** creator planner or admin  
+**Condition:** Policy status must be `paused`.  
+**Behaviour:** Reactivates voting (status becomes `active`). The current date must still be within the policy’s `startDate` and `endDate`; otherwise an error is returned.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "...",
+    "status": "active"
+  },
+  "message": "Policy resumed. Voting is now active.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code               | Message                                                       |
+| ------ | ------------------ | ------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only paused policies can be resumed. Current status: ..."`  |
+| 400    | `VALIDATION_ERROR` | `"Cannot resume policy because the voting period has ended."` |
+| 403    | `FORBIDDEN`        | `"You do not have permission to resume this policy"`          |
+| 404    | `NOT_FOUND`        | `"Policy not found"`                                          |
+
+### 3.9 Extend policy end date
+
+**`PATCH /policies/:id/extend`**
+
+**Roles:** creator planner or admin  
+**Condition:** Policy status must be `active` or `paused`.  
+**Behaviour:** Changes the `endDate` of the policy. You can extend the deadline (make it later) or shorten it (make it earlier), as long as the new date is after the `startDate` and not in the past.
+
+**Request body:**
+
+```json
+{
+  "newEndDate": "2026-07-31T23:59:59Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code               | Message                                                |
+| ------ | ------------------ | ------------------------------------------------------ |
+| 400    | `VALIDATION_ERROR` | `"Policy must be active or paused to modify end date"` |
+| 400    | `VALIDATION_ERROR` | `"newEndDate must be a valid ISO date string"`         |
+| 400    | `VALIDATION_ERROR` | `"New end date must be after start date"`              |
+| 400    | `VALIDATION_ERROR` | `"New end date cannot be in the past"`                 |
+| 403    | `FORBIDDEN`        | `"You do not have permission to modify this policy"`   |
+| 404    | `NOT_FOUND`        | `"Policy not found"`                                   |
+
+### 3.10 Delete draft policy
 
 **`DELETE /policies/:id`**
 
@@ -1291,6 +1520,43 @@ Returns the health status of the AI service plus comment queue statistics.
 ```
 
 If the AI service is unreachable, `status` is `"unreachable"` and an `error` field may be present (e.g., `"Request failed with status code 404"`).
+
+## 6.5 Password Reset (Admin) – Admin‑initiated
+
+### 6.5.1 Initiate password reset for a user
+
+**`POST /admin/users/:id/initiate-password-reset`**
+
+**Role required:** `admin`
+
+Sends a password reset email to the target user (citizen or planner). The email contains a secure token that the user can use with `POST /auth/reset-password` to set a new password. The admin never sees the password.
+
+**Path parameter:**
+
+| Parameter | Type   | Description                  |
+| --------- | ------ | ---------------------------- |
+| `id`      | string | User ID (citizen or planner) |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Password reset email sent to user@example.com. The user will receive a link to set a new password.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                                  |
+| ------ | ----------------------- | -------------------------------------------------------- |
+| 403    | `FORBIDDEN`             | `"Use /auth/forgot-password to reset your own password"` |
+| 404    | `NOT_FOUND`             | `"User not found"`                                       |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to initiate password reset"`                    |
+
+**Note:** This endpoint does not return a token to the admin. The reset link is sent directly to the user’s email.
 
 ## 7. User Profile Endpoints
 
