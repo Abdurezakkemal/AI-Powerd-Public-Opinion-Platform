@@ -1,9 +1,15 @@
 const User = require("../models/User");
 const Vote = require("../models/Vote");
 const Comment = require("../models/Comment");
-const { hashPassword, comparePassword } = require("../utils/helpers");
+const client = require("../config/redis");
+const {
+  hashPassword,
+  comparePassword,
+  generateOTP,
+} = require("../utils/helpers");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
+const { sendOtpEmail } = require("../utils/email");
 const {
   sendSuccess,
   sendError,
@@ -33,38 +39,21 @@ exports.getMe = async (req, res) => {
   }
 };
 
-// PUT /users/me
+// PUT /users/me – now only region can be updated (email removed for security)
 exports.updateMe = async (req, res) => {
   try {
-    const { email, region } = req.body;
+    const { region } = req.body;
     const updates = {};
-    if (email) updates.email = email;
     if (region) updates.region = region;
 
     if (Object.keys(updates).length === 0) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "No valid fields provided for update",
+        "No valid fields provided for update (only region is allowed)",
         null,
         400,
       );
-    }
-
-    if (email) {
-      const existing = await User.findOne({ email });
-      if (existing && existing._id.toString() !== req.user.id) {
-        logger.warn(
-          `User ${req.user.id} attempted to use existing email ${email}`,
-        );
-        return sendError(
-          res,
-          ErrorCodes.DUPLICATE,
-          "Email already in use by another account",
-          null,
-          409,
-        );
-      }
     }
 
     const user = await User.findByIdAndUpdate(req.user.id, updates, {
@@ -162,13 +151,11 @@ exports.changePassword = async (req, res) => {
 // GET /users/me/history
 exports.getHistory = async (req, res) => {
   try {
-    // Get all votes by the user
     const votes = await Vote.find({ userId: req.user.id })
       .populate("policyId", "title policyCode")
       .sort({ createdAt: -1 })
       .lean();
 
-    // For each vote, find the associated comment (if any)
     const formatted = [];
     for (const vote of votes) {
       const comment = await Comment.findOne({ voteId: vote._id }).lean();
@@ -220,7 +207,6 @@ exports.deleteMe = async (req, res) => {
 
     const originalEmail = user.email;
 
-    // Anonymize user account
     user.email = `deleted_${user._id}@deleted.com`;
     user.passwordHash = "deleted";
     user.phoneHash = null;
@@ -228,9 +214,7 @@ exports.deleteMe = async (req, res) => {
     user.verified = false;
     await user.save();
 
-    // Remove user reference from votes (set userId to null) instead of deleting
     await Vote.updateMany({ userId: userId }, { $unset: { userId: "" } });
-    // Remove user reference from comments
     await Comment.updateMany({ userId: userId }, { $unset: { userId: "" } });
 
     await createAuditLog({
@@ -256,6 +240,155 @@ exports.deleteMe = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to delete account",
+      null,
+      500,
+    );
+  }
+};
+
+// ==================== EMAIL CHANGE (with verification) ====================
+
+// POST /users/me/email/request
+exports.requestEmailChange = async (req, res) => {
+  try {
+    const { newEmail } = req.body;
+    const userId = req.user.id;
+
+    if (!newEmail) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "New email is required",
+        null,
+        400,
+      );
+    }
+
+    // Check if new email already used
+    const existing = await User.findOne({ email: newEmail });
+    if (existing && existing._id.toString() !== userId) {
+      return sendError(
+        res,
+        ErrorCodes.DUPLICATE,
+        "Email already in use by another account",
+        null,
+        409,
+      );
+    }
+
+    // Rate limit (3 requests per hour)
+    const rateKey = `email_change:rate:${userId}`;
+    const rateAttempts = await client.incr(rateKey);
+    if (rateAttempts === 1) await client.expire(rateKey, 3600);
+    if (rateAttempts > 3) {
+      logger.warn(`Email change rate limit exceeded for user ${userId}`);
+      return sendError(
+        res,
+        ErrorCodes.RATE_LIMIT,
+        "Too many email change requests. Please try again later.",
+        null,
+        429,
+      );
+    }
+
+    const otp = generateOTP();
+    const otpKey = `email_change:otp:${userId}`;
+    await client.setEx(otpKey, 300, JSON.stringify({ otp, newEmail }));
+
+    await sendOtpEmail(newEmail, otp);
+
+    logger.info(`Email change OTP sent to ${newEmail} for user ${userId}`);
+    return sendSuccess(
+      res,
+      null,
+      "Verification code sent to the new email address. It expires in 5 minutes.",
+      200,
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Request email change error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to request email change",
+      null,
+      500,
+    );
+  }
+};
+
+// POST /users/me/email/verify
+exports.verifyEmailChange = async (req, res) => {
+  try {
+    const { code } = req.body;
+    const userId = req.user.id;
+
+    if (!code) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Verification code is required",
+        null,
+        400,
+      );
+    }
+
+    const otpKey = `email_change:otp:${userId}`;
+    const data = await client.get(otpKey);
+    if (!data) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "No pending email change request or code expired. Please request a new one.",
+        null,
+        400,
+      );
+    }
+
+    const { otp, newEmail } = JSON.parse(data);
+    if (otp !== code) {
+      logger.warn(`Invalid email change OTP for user ${userId}`);
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid verification code",
+        null,
+        400,
+      );
+    }
+
+    const user = await User.findById(userId);
+    if (!user) {
+      return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+    }
+
+    const oldEmail = user.email;
+    user.email = newEmail;
+    await user.save();
+
+    await client.del(otpKey);
+
+    await createAuditLog({
+      userId: user._id,
+      userRole: user.role,
+      action: "CHANGE_EMAIL",
+      details: { oldEmail, newEmail },
+      req,
+    });
+
+    logger.info(`User ${userId} changed email from ${oldEmail} to ${newEmail}`);
+    return sendSuccess(res, null, "Email address updated successfully.", 200);
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Verify email change error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to verify email change",
       null,
       500,
     );
