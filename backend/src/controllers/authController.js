@@ -127,19 +127,7 @@ exports.sendOtp = async (req, res) => {
     const otpKey = `otp:email:${email}`;
     const attemptsKey = `otp:verify:${email}`;
 
-    const existingOtp = await client.get(otpKey);
-    if (existingOtp) {
-      const ttl = await client.ttl(otpKey);
-      logger.warn(`OTP already active for ${email}, expires in ${ttl}s`);
-      return sendError(
-        res,
-        ErrorCodes.RATE_LIMIT,
-        `An OTP has already been sent and is valid for ${ttl} more seconds. Please use that code or wait until it expires.`,
-        null,
-        429,
-      );
-    }
-
+    // Check rate limit (max 3 requests per 5 minutes)
     const attempts = await client.get(attemptsKey);
     if (attempts && parseInt(attempts) >= 3) {
       logger.warn(`OTP request rate limit exceeded for ${email}`);
@@ -150,6 +138,27 @@ exports.sendOtp = async (req, res) => {
         null,
         429,
       );
+    }
+
+    // IMPROVED: allow resend after 30 seconds (if OTP exists and has > 4.5 min left -> reject, else allow overwrite)
+    const existingOtp = await client.get(otpKey);
+    if (existingOtp) {
+      const ttl = await client.ttl(otpKey);
+      // if more than 270 seconds remain (4.5 min), reject to prevent abuse
+      if (ttl > 270) {
+        logger.warn(
+          `OTP still valid for ${email}, reject resend (ttl ${ttl}s)`,
+        );
+        return sendError(
+          res,
+          ErrorCodes.RATE_LIMIT,
+          `An OTP has already been sent and is valid for ${ttl} more seconds. Please use that code or wait for it to expire.`,
+          null,
+          429,
+        );
+      } else {
+        logger.info(`Resending OTP to ${email}, old OTP expires in ${ttl}s`);
+      }
     }
 
     const otp = generateOTP();
@@ -375,7 +384,6 @@ exports.login = async (req, res) => {
 
 // ==================== PASSWORD RESET ====================
 
-// POST /auth/forgot-password
 exports.forgotPassword = async (req, res) => {
   try {
     const { email } = req.body;
@@ -444,7 +452,6 @@ exports.forgotPassword = async (req, res) => {
   }
 };
 
-// POST /auth/reset-password
 exports.resetPassword = async (req, res) => {
   try {
     const { token, newPassword } = req.body;

@@ -10,7 +10,6 @@ const comparePassword = async (password, hash) => {
 };
 
 const normalizePhone = (phone) => {
-  // Remove all non-digit characters, then strip leading +251 or 0
   const digits = phone.replace(/\D/g, "");
   if (digits.startsWith("251")) {
     return digits.slice(3);
