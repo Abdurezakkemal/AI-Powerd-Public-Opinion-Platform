@@ -11,16 +11,16 @@ const {
 const logger = require("../utils/logger");
 const axios = require("axios");
 
-// Helper to get AI service health
+const AI_BASE = process.env.AI_SERVICE_URL;
+const base = AI_BASE;
+const AI_HEALTH_URL = `${base}/health`;
+
 const getAIHealth = async () => {
   try {
-    const response = await axios.get(
-      `${process.env.AI_SERVICE_URL.replace("/analyze", "/health")}`,
-      {
-        timeout: 5000,
-        headers: { "X-Internal-API-Key": process.env.INTERNAL_API_KEY },
-      },
-    );
+    const response = await axios.get(AI_HEALTH_URL, {
+      timeout: 5000,
+      headers: { "X-Internal-API-Key": process.env.INTERNAL_API_KEY },
+    });
     return response.data;
   } catch (err) {
     return { status: "unreachable", error: err.message };
@@ -60,7 +60,7 @@ exports.getDashboardStats = async (req, res) => {
       Vote.countDocuments({ channel: "app" }),
       Vote.countDocuments({ channel: "sms" }),
       Comment.countDocuments(),
-      Comment.countDocuments({ status: "pending review" }),
+      Comment.countDocuments({ status: "pending_review" }), // corrected from "pending review"
       Comment.countDocuments({ status: "processed" }),
     ]);
 
@@ -310,7 +310,7 @@ exports.getAIHealth = async (req, res) => {
     const health = await getAIHealth();
     // Also get pending comment count from our own DB
     const pendingComments = await Comment.countDocuments({
-      status: "pending review",
+      status: "pending_review",
     });
     const failedComments = await Comment.countDocuments({
       processed: false,

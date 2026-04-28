@@ -2,9 +2,9 @@ require("dotenv").config();
 
 const Comment = require("../models/Comment");
 const axios = require("axios");
-
-const AI_SERVICE_URL =
-  process.env.AI_SERVICE_URL || "http://localhost:8000/analyze";
+const AI_BASE = process.env.AI_SERVICE_URL || "http://localhost:8000";
+const base = AI_BASE;
+const AI_ANALYZE_URL = `${base}/analyze`;
 const POLL_INTERVAL = 10000; // 10 seconds
 const MAX_AGE_HOURS = 24;
 const MAX_BACKOFF_MS = 60 * 60 * 1000; // 1 hour
@@ -22,7 +22,7 @@ const isTooOld = (comment) => {
 const processComment = async (comment) => {
   try {
     const response = await axios.post(
-      AI_SERVICE_URL,
+      AI_ANALYZE_URL,
       { text: comment.comment, language: "am" },
       {
         timeout: 5000,
