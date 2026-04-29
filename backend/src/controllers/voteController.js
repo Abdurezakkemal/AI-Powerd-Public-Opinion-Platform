@@ -58,11 +58,19 @@ exports.submitAppVote = async (req, res) => {
         404,
       );
     }
+    if (policy.status === "draft" || policy.status === "published") {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
 
     if (policy.status !== "active") {
       let msg = "Policy not open for voting";
-      if (policy.status === "draft") msg = "Policy has not been published yet";
-      else if (policy.status === "paused") msg = "Voting is temporarily paused";
+      if (policy.status === "paused") msg = "Voting is temporarily paused";
       else if (policy.status === "closed") msg = "Policy is closed for voting";
       return sendError(res, ErrorCodes.FORBIDDEN, msg, null, 403);
     }

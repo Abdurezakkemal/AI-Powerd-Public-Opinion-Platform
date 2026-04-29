@@ -347,11 +347,21 @@ The admin cannot reset their own password through this endpoint – they must us
 
 All policy endpoints require authentication. Role permissions:
 
-| Role    | View draft? | View active?     | View paused?     | View closed? | Create/Update/Delete (draft only) | Activate / Extend / Pause / Resume / Close |
-| ------- | ----------- | ---------------- | ---------------- | ------------ | --------------------------------- | ------------------------------------------ |
-| Citizen | No          | Yes (own region) | Yes (own region) | No           | No                                | No                                         |
-| Planner | Yes (all)   | Yes (all)        | Yes (all)        | Yes (all)    | Yes (own policies only)           | Yes (own policies only)                    |
-| Admin   | Yes (all)   | Yes (all)        | Yes (all)        | Yes (all)    | Yes (all policies)                | Yes (all policies)                         |
+| Role    | View draft? | View published? | View active?     | View paused?     | View closed? | Create / Update / Delete (draft & published) | Publish / Unpublish | Activate (published → active) | Extend / Pause / Resume / Close |
+| ------- | ----------- | --------------- | ---------------- | ---------------- | ------------ | -------------------------------------------- | ------------------- | ----------------------------- | ------------------------------- |
+| Citizen | No          | No              | Yes (own region) | Yes (own region) | No           | No                                           | No                  | No                            | No                              |
+| Planner | Yes (all)   | Yes (own only)  | Yes (all)        | Yes (all)        | Yes (all)    | Yes (own policies only)\*                    | Yes (own only)      | Yes (own only)                | Yes (own only)\*\*              |
+| Admin   | Yes (all)   | Yes (all)       | Yes (all)        | Yes (all)        | Yes (all)    | Yes (all policies)\*                         | Yes (all)           | Yes (all)                     | Yes (all)                       |
+
+**Notes:**
+
+- Citizens cannot see `published` policies; they only become visible when `active`.
+- Planners see their own `draft` and `published` policies, plus other planners' `active`, `paused`, and `closed` policies (others' `draft` and `published` are hidden).
+- `*` Delete allowed only for `draft` or `published` policies. `Update` only for `draft` policies.
+- `**` `Extend` works on `active` or `paused` policies. `Pause` works on `active`, `Resume` on `paused`. `Close` works on `active` or `paused`.
+- `Activate` moves a `published` policy to `active` (if within voting window). Auto‑activation also does this on startDate.
+- `Publish` moves a `draft` policy to `published` (or directly to `active` if startDate already passed).
+- `Unpublish` moves a `published` policy back to `draft`.
 
 ### 3.1 List policies
 
@@ -359,13 +369,13 @@ All policy endpoints require authentication. Role permissions:
 
 Query parameters (all optional):
 
-| Parameter | Type    | Default | Description                                                                                                                                                                                                  |
-| --------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `status`  | string  | none    | Filter by `draft`, `active`, `paused`, or `closed`. Citizens cannot see `draft` or `closed`; they see only `active` and `paused`.                                                                            |
-| `region`  | string  | none    | Filter by target region (planners/admins only)                                                                                                                                                               |
-| `owner`   | string  | none    | **Planners only.** Use `owner=me` to see only policies owned by the logged‑in planner (any status). Without this, planners see their own policies + others' active/paused/closed (excluding others' drafts). |
-| `page`    | integer | 1       | Page number (1‑based)                                                                                                                                                                                        |
-| `limit`   | integer | 20      | Items per page (max 100)                                                                                                                                                                                     |
+| Parameter | Type    | Default | Description                                                                                                                                                                                                                                                              |
+| --------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --- |
+| `status`  | string  | none    | Filter by `draft`, `published`, `active`, `paused`, or `closed`. Citizens cannot see `draft`, `published`, or `closed`; they see only `active` and `paused`.                                                                                                             |
+| `region`  | string  | none    | Filter by target region (planners/admins only)                                                                                                                                                                                                                           |
+| `owner`   | string  | none    | **Planners only.** Use `owner=me` to see only policies owned by the logged‑in planner (any status, including `draft` and `published`). Without this, planners see their own policies + others' `active`, `paused`, `closed` (excluding others' `draft` and `published`). |
+| `page`    | integer | 1       | Page number (1‑based)                                                                                                                                                                                                                                                    |
+| `limit`   | integer | 20      | Items per page (max 100)                                                                                                                                                                                                                                                 |     |
 
 **Response (200 OK):**
 
@@ -515,16 +525,84 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                                                         |
-| ------ | ------------------ | ----------------------------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Start date cannot be in the past."`                                                           |
-| 400    | `VALIDATION_ERROR` | `"Start date must be before end date."`                                                         |
-| 400    | `VALIDATION_ERROR` | `"End date must be after start date."`                                                          |
-| 403    | `FORBIDDEN`        | `"Only draft policies can be edited. Activate or close the policy to prevent further changes."` |
-| 403    | `FORBIDDEN`        | `"You do not have permission to edit this policy"` (not creator)                                |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                                                            |
+| Status | Code               | Message                                                                                                  |
+| ------ | ------------------ | -------------------------------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Start date cannot be in the past."`                                                                    |
+| 400    | `VALIDATION_ERROR` | `"Start date must be before end date."`                                                                  |
+| 400    | `VALIDATION_ERROR` | `"End date must be after start date."`                                                                   |
+| 403    | `FORBIDDEN`        | `"Only draft policies can be edited. Published, active, paused, or closed policies cannot be modified."` |
+| 403    | `FORBIDDEN`        | `"You do not have permission to edit this policy"` (not creator)                                         |
+| 404    | `NOT_FOUND`        | `"Policy not found"`                                                                                     |
 
-### 3.5 Close policy
+### 3.5 Publish policy (draft → published/active)
+
+**`PATCH /policies/:id/publish`**
+
+**Roles:** planner, admin  
+**Condition:** Policy status must be `draft`.  
+**Behaviour:**
+
+- If the current date is within the policy's `startDate` and `endDate`, the policy becomes **active** immediately.
+- If the current date is before `startDate`, the policy becomes **published** (will be auto-activated by the worker when `startDate` is reached).
+- If the current date is after `endDate`, an error is returned.
+
+**Request body:** none
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "...",
+    "status": "active" // or "published"
+  },
+  "message": "Policy activated immediately because its start date has already passed." // or "Policy published. It will be automatically activated on its start date."
+}
+```
+
+**Error responses:**
+
+| Status | Code               | Message                                                       |
+| ------ | ------------------ | ------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only draft policies can be published. Current status: ..."` |
+| 400    | `VALIDATION_ERROR` | `"Cannot publish a policy that has already ended."`           |
+| 403    | `FORBIDDEN`        | `"You do not have permission to publish this policy"`         |
+| 404    | `NOT_FOUND`        | `"Policy not found"`                                          |
+
+### 3.6 Unpublish policy (published → draft)
+
+**`PATCH /policies/:id/unpublish`**
+
+**Roles:** planner, admin  
+**Condition:** Policy status must be `published`.  
+**Behaviour:** Moves the policy back to `draft` status. This allows the planner to edit or delete the policy.
+
+**Request body:** none
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "...",
+    "status": "draft"
+  },
+  "message": "Policy unpublished and moved back to draft.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code               | Message                                                             |
+| ------ | ------------------ | ------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only published policies can be unpublished. Current status: ..."` |
+| 403    | `FORBIDDEN`        | `"You do not have permission to unpublish this policy"`             |
+| 404    | `NOT_FOUND`        | `"Policy not found"`                                                |
+
+### 3.7 Close policy
 
 **`POST /policies/:id/close`**
 
@@ -553,13 +631,13 @@ Request body:
 | 403 | `FORBIDDEN` | `"You do not have permission to close this policy"` (not creator) |
 | 404 | `NOT_FOUND` | `"Policy not found"` |
 
-### 3.6 Activate policy (draft → active)
+### 3.8 Activate policy (draft → active)
 
 **`PATCH /policies/:id/activate`**
 
 **Roles:** creator planner or admin  
-**Condition:** Policy status must be `draft`.  
-**Behaviour:** Changes status to `active` so citizens can vote. Voting will be allowed only if the current date is within `startDate` and `endDate` (the policy's own date range still applies).
+**Condition:** Policy status must be `published`.  
+**Behaviour:** Manually activates a published policy before its start date (if needed). Voting will be allowed only if the current date is within `startDate` and `endDate`. Auto‑activation also turns `published` → `active` on the start date.
 
 **Response (200 OK):**
 
@@ -584,7 +662,7 @@ Request body:
 | 403    | `FORBIDDEN`        | `"You do not have permission to activate this policy"`         |
 | 404    | `NOT_FOUND`        | `"Policy not found"`                                           |
 
-### 3.7 Pause policy (active → paused)
+### 3.9 Pause policy (active → paused)
 
 **`PATCH /policies/:id/pause`**
 
@@ -614,7 +692,7 @@ Request body:
 | 403    | `FORBIDDEN`        | `"You do not have permission to pause this policy"`         |
 | 404    | `NOT_FOUND`        | `"Policy not found"`                                        |
 
-### 3.8 Resume policy (paused → active)
+### 3.10 Resume policy (paused → active)
 
 **`PATCH /policies/:id/resume`**
 
@@ -645,7 +723,7 @@ Request body:
 | 403    | `FORBIDDEN`        | `"You do not have permission to resume this policy"`          |
 | 404    | `NOT_FOUND`        | `"Policy not found"`                                          |
 
-### 3.9 Extend policy end date
+### 3.11 Extend policy end date
 
 **`PATCH /policies/:id/extend`**
 
@@ -672,13 +750,13 @@ Request body:
 | 403    | `FORBIDDEN`        | `"You do not have permission to modify this policy"`   |
 | 404    | `NOT_FOUND`        | `"Policy not found"`                                   |
 
-### 3.10 Delete draft policy
+### 3.12 Delete draft policy (draft or published)
 
 **`DELETE /policies/:id`**
 
 **Roles:** creator planner or admin  
-**Condition:** Policy must be in `draft` status.  
-**Behaviour:** Permanently removes the policy document.
+**Condition:** Policy status must be `draft` or `published`.  
+**Behaviour:** Permanently removes the policy document. For `active` or `paused` policies, use the close endpoint instead. `Closed` policies cannot be deleted.
 
 **Response (200 OK):**
 
@@ -693,13 +771,13 @@ Request body:
 
 **Error responses:**
 
-| Status | Code        | Message                                                                                        |
-| ------ | ----------- | ---------------------------------------------------------------------------------------------- |
-| 403    | `FORBIDDEN` | `"Only draft policies can be deleted. For active or paused policies, use the close endpoint."` |
-| 403    | `FORBIDDEN` | `"You do not have permission to delete this policy"` (not creator)                             |
-| 404    | `NOT_FOUND` | `"Policy not found"`                                                                           |
+| Status | Code        | Message                                                                                                     |
+| ------ | ----------- | ----------------------------------------------------------------------------------------------------------- |
+| 403    | `FORBIDDEN` | `"Only draft or published policies can be deleted. For active or paused policies, use the close endpoint."` |
+| 403    | `FORBIDDEN` | `"You do not have permission to delete this policy"` (not creator)                                          |
+| 404    | `NOT_FOUND` | `"Policy not found"`                                                                                        |
 
-### 3.11 Clone policy
+### 3.13 Clone policy
 
 **`POST /policies/:id/clone`**
 
@@ -741,7 +819,7 @@ Creates a new draft policy as a copy of an existing one.
 | 404    | `NOT_FOUND`             | `"Original policy not found"` or `"Invalid policy ID format"` |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Failed to clone policy"`                                    |
 
-### 3.12 Policy history
+### 3.14 Policy history
 
 **`GET /policies/:id/history`**
 
@@ -839,10 +917,9 @@ Records a user’s rating for a policy. If the `comment` field is provided, a `C
 | 400    | `VALIDATION_ERROR`      | `"Comment too long (max 500 characters)"`                                              |
 | 400    | `VOTING_CLOSED`         | `"Voting is not allowed for this policy at this time. Please check the policy dates."` |
 | 403    | `NOT_VERIFIED`          | `"Please verify your phone number before voting"`                                      |
-| 403    | `FORBIDDEN`             | `"This policy has not been published yet"` (status = `draft`)                          |
 | 403    | `FORBIDDEN`             | `"Voting is temporarily paused for this policy"` (status = `paused`)                   |
 | 403    | `FORBIDDEN`             | `"This policy is closed for voting"` (status = `closed`)                               |
-| 404    | `NOT_FOUND`             | `"Policy not found"`                                                                   |
+| 404    | `NOT_FOUND`             | `"Policy not found"` (also for `draft` or `published` policies)                        |
 | 409    | `ALREADY_VOTED`         | `"You have already voted on this policy. Each user can vote only once."`               |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Failed to submit vote"`                                                              |
 
