@@ -9,7 +9,7 @@ const policySchema = new mongoose.Schema({
   endDate: { type: Date, required: true },
   status: {
     type: String,
-    enum: ["draft", "active", "paused", "closed"],
+    enum: ["draft", "published", "active", "paused", "closed"],
     default: "draft",
   },
   createdBy: {
