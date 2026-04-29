@@ -62,6 +62,7 @@ const sendAdminInitiatedResetEmail = async (to, token) => {
 };
 
 module.exports = {
+  sendEmail,
   sendOtpEmail,
   sendPasswordResetEmail,
   sendAdminInitiatedResetEmail,

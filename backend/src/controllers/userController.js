@@ -10,7 +10,7 @@ const {
 } = require("../utils/helpers");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
-const { sendOtpEmail } = require("../utils/email");
+const { sendEmail, sendOtpEmail } = require("../utils/email");
 const {
   sendSuccess,
   sendError,
@@ -265,7 +265,14 @@ exports.requestEmailChange = async (req, res) => {
       );
     }
 
-    // Check if new email already used
+    // Fetch current user to get old email
+    const user = await User.findById(userId);
+    if (!user) {
+      return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+    }
+    const oldEmail = user.email;
+
+    // Check if new email already used by another account
     const existing = await User.findOne({ email: newEmail });
     if (existing && existing._id.toString() !== userId) {
       return sendError(
@@ -296,13 +303,24 @@ exports.requestEmailChange = async (req, res) => {
     const otpKey = `email_change:otp:${userId}`;
     await client.setEx(otpKey, 300, JSON.stringify({ otp, newEmail }));
 
+    // Send OTP to the new email address
     await sendOtpEmail(newEmail, otp);
+
+    // Security: Send alert to the OLD email address
+    await sendEmail(
+      oldEmail,
+      "Security Alert: Email change requested",
+      `We received a request to change your email address from ${oldEmail} to ${newEmail}. If you did not make this request, please contact support immediately. No changes have been made yet.`,
+      `<p>We received a request to change your email address from <strong>${oldEmail}</strong> to <strong>${newEmail}</strong>.</p>
+       <p>If you did not make this request, please contact support immediately.</p>
+       <p>No changes have been made yet.</p>`,
+    );
 
     logger.info(`Email change OTP sent to ${newEmail} for user ${userId}`);
     return sendSuccess(
       res,
       null,
-      "Verification code sent to the new email address. It expires in 5 minutes.",
+      "Verification code sent to the new email address. It expires in 5 minutes. A security alert was also sent to your original email.",
       200,
     );
   } catch (err) {
@@ -319,7 +337,6 @@ exports.requestEmailChange = async (req, res) => {
     );
   }
 };
-
 // POST /users/me/email/verify
 exports.verifyEmailChange = async (req, res) => {
   try {
@@ -333,6 +350,21 @@ exports.verifyEmailChange = async (req, res) => {
         "Verification code is required",
         null,
         400,
+      );
+    }
+
+    // Rate limiting for verification attempts (max 5 per 15 minutes)
+    const verifyRateKey = `email_change:verify_rate:${userId}`;
+    const verifyAttempts = await client.incr(verifyRateKey);
+    if (verifyAttempts === 1) await client.expire(verifyRateKey, 900); // 15 minutes
+    if (verifyAttempts > 5) {
+      logger.warn(`Email change OTP brute force attempt for user ${userId}`);
+      return sendError(
+        res,
+        ErrorCodes.RATE_LIMIT,
+        "Too many verification attempts. Please request a new code.",
+        null,
+        429,
       );
     }
 
@@ -369,7 +401,9 @@ exports.verifyEmailChange = async (req, res) => {
     user.email = newEmail;
     await user.save();
 
+    // Clean up Redis keys
     await client.del(otpKey);
+    await client.del(verifyRateKey);
 
     await createAuditLog({
       userId: user._id,
@@ -395,7 +429,6 @@ exports.verifyEmailChange = async (req, res) => {
     );
   }
 };
-
 // ==================== NOTIFICATIONS ====================
 
 // GET /users/me/notifications
