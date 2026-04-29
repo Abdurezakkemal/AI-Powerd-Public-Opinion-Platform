@@ -32,10 +32,10 @@ router.patch(
   policyController.resume,
 );
 
-// NEW: Clone a policy
+// Clone a policy
 router.post("/:id/clone", auth(["planner", "admin"]), policyController.clone);
 
-// NEW: Policy status history
+// Policy status history
 router.get(
   "/:id/history",
   auth(["planner", "admin"]),

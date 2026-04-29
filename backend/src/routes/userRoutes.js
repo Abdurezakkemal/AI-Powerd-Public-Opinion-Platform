@@ -19,4 +19,12 @@ router.get("/me/history", userController.getHistory);
 router.post("/me/email/request", userController.requestEmailChange);
 router.post("/me/email/verify", userController.verifyEmailChange);
 
+// Notifications
+router.get("/me/notifications", userController.getNotifications);
+router.patch("/me/notifications/:id/read", userController.markNotificationRead);
+router.patch(
+  "/me/notifications/read-all",
+  userController.markAllNotificationsRead,
+);
+
 module.exports = router;
