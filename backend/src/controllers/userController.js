@@ -1,6 +1,7 @@
 const User = require("../models/User");
 const Vote = require("../models/Vote");
 const Comment = require("../models/Comment");
+const Notification = require("../models/Notification");
 const client = require("../config/redis");
 const {
   hashPassword,
@@ -39,7 +40,7 @@ exports.getMe = async (req, res) => {
   }
 };
 
-// PUT /users/me – now only region can be updated (email removed for security)
+// PUT /users/me – only region can be updated (email removed for security)
 exports.updateMe = async (req, res) => {
   try {
     const { region } = req.body;
@@ -389,6 +390,116 @@ exports.verifyEmailChange = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to verify email change",
+      null,
+      500,
+    );
+  }
+};
+
+// ==================== NOTIFICATIONS ====================
+
+// GET /users/me/notifications
+exports.getNotifications = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, unreadOnly = false } = req.query;
+    const filter = { userId: req.user.id };
+    if (unreadOnly === "true") filter.read = false;
+
+    const skip = (page - 1) * limit;
+    const [notifications, total] = await Promise.all([
+      Notification.find(filter)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(Number(limit))
+        .lean(),
+      Notification.countDocuments(filter),
+    ]);
+
+    logger.info(
+      `User ${req.user.id} retrieved notifications (page ${page}, total ${total})`,
+    );
+    return sendSuccess(
+      res,
+      { notifications, total, page: Number(page) },
+      "Notifications retrieved successfully",
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Get notifications error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve notifications",
+      null,
+      500,
+    );
+  }
+};
+
+// PATCH /users/me/notifications/:id/read
+exports.markNotificationRead = async (req, res) => {
+  try {
+    const notification = await Notification.findOneAndUpdate(
+      { _id: req.params.id, userId: req.user.id },
+      { read: true },
+      { new: true },
+    );
+    if (!notification) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Notification not found",
+        null,
+        404,
+      );
+    }
+
+    logger.info(
+      `User ${req.user.id} marked notification ${req.params.id} as read`,
+    );
+    return sendSuccess(res, notification, "Notification marked as read");
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Mark notification read error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to mark notification as read",
+      null,
+      500,
+    );
+  }
+};
+
+// PATCH /users/me/notifications/read-all
+exports.markAllNotificationsRead = async (req, res) => {
+  try {
+    const result = await Notification.updateMany(
+      { userId: req.user.id, read: false },
+      { read: true },
+    );
+
+    logger.info(
+      `User ${req.user.id} marked all notifications as read (${result.modifiedCount} updated)`,
+    );
+    return sendSuccess(
+      res,
+      { modifiedCount: result.modifiedCount },
+      "All notifications marked as read",
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Mark all notifications read error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to mark notifications as read",
       null,
       500,
     );

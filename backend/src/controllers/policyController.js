@@ -1,5 +1,7 @@
 const Policy = require("../models/Policy");
 const AuditLog = require("../models/AuditLog");
+const Notification = require("../models/Notification");
+const Vote = require("../models/Vote");
 const mongoose = require("mongoose");
 const { customAlphabet } = require("nanoid");
 const logger = require("../utils/logger");
@@ -77,10 +79,7 @@ exports.getAll = async (req, res) => {
       "Policies retrieved successfully",
     );
   } catch (err) {
-    logger.error(`Get all policies error: ${err.message}`, {
-      error: err,
-      filter: req.query,
-    });
+    logger.error(`Get all policies error: ${err.message}`, { error: err });
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -413,7 +412,7 @@ exports.update = async (req, res) => {
 exports.activate = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
-    if (!policy)
+    if (!policy) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -421,6 +420,7 @@ exports.activate = async (req, res) => {
         null,
         404,
       );
+    }
     if (policy.status !== "draft") {
       return sendError(
         res,
@@ -462,6 +462,26 @@ exports.activate = async (req, res) => {
     policy.status = "active";
     await policy.save();
 
+    // Send notification to the policy creator (planner)
+    try {
+      await Notification.create({
+        userId: policy.createdBy,
+        userRole: "planner",
+        type: "POLICY_ACTIVATED",
+        title: `Policy activated: ${policy.title}`,
+        message: `Your policy "${policy.title}" is now active and accepting votes.`,
+        data: { policyId: policy._id },
+      });
+      logger.info(
+        `Activation notification sent to planner ${policy.createdBy}`,
+      );
+    } catch (notifErr) {
+      logger.error(
+        { error: notifErr.message },
+        "Failed to create activation notification",
+      );
+    }
+
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
@@ -471,6 +491,7 @@ exports.activate = async (req, res) => {
       details: { policyCode: policy.policyCode, title: policy.title },
       req,
     });
+
     logger.info(
       `Policy ${policy._id} (${policy.policyCode}) activated by ${req.user.id}`,
     );
@@ -496,7 +517,7 @@ exports.activate = async (req, res) => {
 exports.extendEndDate = async (req, res) => {
   try {
     const { newEndDate } = req.body;
-    if (!newEndDate)
+    if (!newEndDate) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -504,9 +525,10 @@ exports.extendEndDate = async (req, res) => {
         null,
         400,
       );
+    }
 
     const policy = await Policy.findById(req.params.id);
-    if (!policy)
+    if (!policy) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -514,6 +536,7 @@ exports.extendEndDate = async (req, res) => {
         null,
         404,
       );
+    }
 
     if (!["active", "paused"].includes(policy.status)) {
       return sendError(
@@ -530,7 +553,7 @@ exports.extendEndDate = async (req, res) => {
     const now = new Date();
     const currentEnd = new Date(policy.endDate);
 
-    if (isNaN(newEnd.getTime()))
+    if (isNaN(newEnd.getTime())) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -538,7 +561,8 @@ exports.extendEndDate = async (req, res) => {
         null,
         400,
       );
-    if (newEnd <= start)
+    }
+    if (newEnd <= start) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -546,7 +570,8 @@ exports.extendEndDate = async (req, res) => {
         null,
         400,
       );
-    if (policy.status === "active" && newEnd <= now)
+    }
+    if (policy.status === "active" && newEnd <= now) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -554,7 +579,8 @@ exports.extendEndDate = async (req, res) => {
         null,
         400,
       );
-    if (newEnd.getTime() === currentEnd.getTime())
+    }
+    if (newEnd.getTime() === currentEnd.getTime()) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -562,6 +588,7 @@ exports.extendEndDate = async (req, res) => {
         null,
         400,
       );
+    }
 
     const ownerId = policy.createdBy.toString();
     const userId = req.user.id.toString();
@@ -588,6 +615,7 @@ exports.extendEndDate = async (req, res) => {
       details: { policyCode: policy.policyCode, oldEndDate, newEndDate },
       req,
     });
+
     logger.info(
       `Policy ${policy._id} end date changed from ${oldEndDate} to ${newEndDate} by ${req.user.id}`,
     );
@@ -613,7 +641,7 @@ exports.extendEndDate = async (req, res) => {
 exports.pause = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
-    if (!policy)
+    if (!policy) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -621,7 +649,8 @@ exports.pause = async (req, res) => {
         null,
         404,
       );
-    if (policy.status !== "active")
+    }
+    if (policy.status !== "active") {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -629,6 +658,7 @@ exports.pause = async (req, res) => {
         null,
         400,
       );
+    }
 
     const ownerId = policy.createdBy.toString();
     const userId = req.user.id.toString();
@@ -654,6 +684,7 @@ exports.pause = async (req, res) => {
       details: { policyCode: policy.policyCode, title: policy.title },
       req,
     });
+
     logger.info(`Policy ${policy._id} paused by ${req.user.id}`);
     return sendSuccess(
       res,
@@ -677,7 +708,7 @@ exports.pause = async (req, res) => {
 exports.resume = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
-    if (!policy)
+    if (!policy) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -685,7 +716,8 @@ exports.resume = async (req, res) => {
         null,
         404,
       );
-    if (policy.status !== "paused")
+    }
+    if (policy.status !== "paused") {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -693,6 +725,7 @@ exports.resume = async (req, res) => {
         null,
         400,
       );
+    }
 
     const now = new Date();
     const start = new Date(policy.startDate);
@@ -731,6 +764,7 @@ exports.resume = async (req, res) => {
       details: { policyCode: policy.policyCode, title: policy.title },
       req,
     });
+
     logger.info(`Policy ${policy._id} resumed by ${req.user.id}`);
     return sendSuccess(
       res,
@@ -791,6 +825,41 @@ exports.close = async (req, res) => {
 
     policy.status = "closed";
     await policy.save();
+
+    // Send notifications to all citizens who voted
+    try {
+      const votes = await Vote.find({ policyId: policy._id }).lean();
+      const uniqueUserIds = [
+        ...new Set(votes.map((v) => v.userId).filter((id) => id)),
+      ];
+      const totalVotes = uniqueUserIds.length;
+
+      let avgRating = 0;
+      if (totalVotes > 0) {
+        const ratings = votes.map((v) => v.rating);
+        const sum = ratings.reduce((a, b) => a + b, 0);
+        avgRating = (sum / totalVotes).toFixed(2);
+      }
+
+      for (const citizenId of uniqueUserIds) {
+        await Notification.create({
+          userId: citizenId,
+          userRole: "citizen",
+          type: "POLICY_CLOSED",
+          title: `Policy closed: ${policy.title}`,
+          message: `The policy "${policy.title}" has closed. Final average rating: ${avgRating} stars (${totalVotes} votes).`,
+          data: { policyId: policy._id, avgRating, totalVotes },
+        });
+      }
+      logger.info(
+        `Sent ${uniqueUserIds.length} closure notifications for policy ${policy._id}`,
+      );
+    } catch (notifErr) {
+      logger.error(
+        { error: notifErr.message },
+        "Failed to create closure notifications",
+      );
+    }
 
     await createAuditLog({
       userId: req.user.id,
@@ -894,7 +963,7 @@ exports.delete = async (req, res) => {
   }
 };
 
-// ==================== NEW FEATURES ====================
+// ==================== ADDITIONAL FEATURES ====================
 
 // POST /api/policies/:id/clone
 exports.clone = async (req, res) => {
