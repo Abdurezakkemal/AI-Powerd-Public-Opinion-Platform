@@ -21,6 +21,11 @@ router.patch(
   policyController.publish,
 );
 router.patch(
+  "/:id/unpublish",
+  auth(["planner", "admin"]),
+  policyController.unpublish,
+);
+router.patch(
   "/:id/activate",
   auth(["planner", "admin"]),
   policyController.activate,

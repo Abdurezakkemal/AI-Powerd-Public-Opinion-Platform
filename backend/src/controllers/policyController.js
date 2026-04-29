@@ -517,6 +517,75 @@ exports.publish = async (req, res) => {
   }
 };
 
+// PATCH /api/policies/:id/unpublish
+exports.unpublish = async (req, res) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+    if (policy.status !== "published") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only published policies can be unpublished. Current status: ${policy.status}`,
+        null,
+        400,
+      );
+    }
+
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission to unpublish this policy",
+        null,
+        403,
+      );
+    }
+
+    policy.status = "draft";
+    await policy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "UNPUBLISH_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { policyCode: policy.policyCode, title: policy.title },
+      req,
+    });
+
+    logger.info(
+      `Policy ${policy._id} (${policy.policyCode}) unpublished by ${req.user.id}`,
+    );
+    return sendSuccess(
+      res,
+      { id: policy._id, status: policy.status },
+      "Policy unpublished and moved back to draft.",
+      200,
+    );
+  } catch (err) {
+    logger.error(`Unpublish policy error: ${err.message}`, { error: err });
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to unpublish policy",
+      null,
+      500,
+    );
+  }
+};
+
 // PATCH /api/policies/:id/activate (manual activation for published policies? keeping as is)
 exports.activate = async (req, res) => {
   try {
@@ -959,16 +1028,15 @@ exports.delete = async (req, res) => {
       );
     }
 
-    if (policy.status !== "draft") {
+    if (policy.status !== "draft" && policy.status !== "published") {
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
-        "Only draft policies can be deleted. For active or paused policies, use the close endpoint.",
+        "Only draft or published policies can be deleted. For active or paused policies, use the close endpoint.",
         null,
         403,
       );
     }
-
     const ownerId = policy.createdBy.toString();
     const userId = req.user.id.toString();
     if (req.user.role !== "admin" && ownerId !== userId) {
