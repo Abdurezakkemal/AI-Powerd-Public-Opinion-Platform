@@ -29,17 +29,29 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 
 ### For Planners & Admins (Web Dashboard)
 
-- Create, edit (draft), close, pause, resume policies
+- Create, edit (draft), **publish**, **unpublish**, close, pause, resume policies
+- **Auto‑activation**: published policies become active on their start date
+- **Auto‑closure**: active/paused policies close when end date passes
+- **In‑app notifications**: planners receive alerts when their policies are activated; **voters receive notifications** when a policy closes (with final results)
 - View analytics: average rating, sentiment counts, top keywords, geographic breakdown, trends
 - Export data as CSV
 - Manage planner accounts (admin only)
 - Moderate pending AI comments (admin only)
-- Admin dashboard (statistics, trends, audit logs, AI health) and password reset (admin‑initiated)
+- Admin dashboard (statistics, trends, audit logs, AI health) and admin‑initiated password reset
 - Clone any existing policy (creates a new draft owned by the cloner)
-- View policy history (audit trail of status changes, e.g., creation, activation, pause, resume, close)
-- Export audit logs (CSV) (admin only)
-- **In-app notifications** – planners receive notifications when their policies are activated
-- **Comment moderation** (admin only) – view pending AI comments, manually set sentiment/keywords, retry failed comments, delete inappropriate comments
+- View policy history (audit trail of status changes: creation, activation, pause, resume, close, clone)
+- Export audit logs as CSV (admin only)
+- Comment moderation (admin only) – view pending AI comments, manually set sentiment/keywords, retry failed comments, delete inappropriate comments
+
+### Policy Lifecycle
+
+- **`draft`** – editable, not visible to citizens
+- **`published`** – ready for auto‑activation, invisible to citizens, can be unpublished or deleted
+- **`active`** – visible, voting open (subject to date range), can be paused or closed
+- **`paused`** – temporarily suspended, can be resumed or closed
+- **`closed`** – final, no voting, visible only for results
+
+Auto‑activation and auto‑close workers run every minute (using `node-cron`) to transition `published → active` on start date and `active/paused → closed` on end date. Planners receive in‑app notifications when their policies are activated; voters receive notifications when a policy closes (with final average rating and vote count).
 
 ### AI Service (Background)
 
