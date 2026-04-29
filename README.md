@@ -34,6 +34,8 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 - Manage planner accounts (admin only)
 - Moderate pending AI comments (admin only)
 - Admin dashboard (statistics, trends, audit logs, AI health) and password reset (admin‑initiated)
+- Clone any existing policy (creates a new draft owned by the cloner)
+- View policy history (audit trail of status changes, e.g., creation, activation, pause, resume, close)
 - Export audit logs (CSV) (admin only)
 
 ### AI Service (Background)
