@@ -298,14 +298,15 @@ The same message is returned regardless of whether the email exists, to prevent 
 
 **Error responses:**
 
-| Status | Code                    | Message                                                       |
-| ------ | ----------------------- | ------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`      | `"Token and new password are required"`                       |
-| 400    | `VALIDATION_ERROR`      | `"Password must be at least 8 characters long"`               |
-| 400    | `VALIDATION_ERROR`      | `"New password must be different from current password"`      |
-| 400    | `VALIDATION_ERROR`      | `"Invalid or expired reset token. Please request a new one."` |
-| 404    | `NOT_FOUND`             | `"User not found"`                                            |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to reset password"`                                  |
+| Status | Code                    | Message                                                           |
+| ------ | ----------------------- | ----------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Token and new password are required"`                           |
+| 400    | `VALIDATION_ERROR`      | `"Password must be at least 8 characters long"`                   |
+| 400    | `VALIDATION_ERROR`      | `"New password must be different from current password"`          |
+| 400    | `VALIDATION_ERROR`      | `"Invalid or expired reset token. Please request a new one."`     |
+| 404    | `NOT_FOUND`             | `"User not found"`                                                |
+| 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many password reset attempts. Please request a new token."` |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to reset password"`                                      |
 
 ---
 
@@ -1988,6 +1989,7 @@ Response (200 OK):
 | 400 | `VALIDATION_ERROR` | `"Verification code is required"` |
 | 400 | `VALIDATION_ERROR` | `"No pending email change request or code expired. Please request a new one."` |
 | 400 | `VALIDATION_ERROR` | `"Invalid verification code"` |
+| 429 | `RATE_LIMIT_EXCEEDED` | `"Too many verification attempts. Please request a new code."` |
 
 ### 7.8 Get notifications
 
