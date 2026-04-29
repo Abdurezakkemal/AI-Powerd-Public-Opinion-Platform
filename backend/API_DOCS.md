@@ -1912,6 +1912,95 @@ Response (200 OK):
 | 400 | `VALIDATION_ERROR` | `"No pending email change request or code expired. Please request a new one."` |
 | 400 | `VALIDATION_ERROR` | `"Invalid verification code"` |
 
+### 7.8 Get notifications
+
+**`GET /users/me/notifications`**
+
+**Authentication required** (citizen, planner, admin).
+
+Query parameters (all optional):
+
+| Parameter    | Type    | Default | Description                                |
+| ------------ | ------- | ------- | ------------------------------------------ |
+| `page`       | integer | 1       | Page number (1‑based)                      |
+| `limit`      | integer | 20      | Items per page (max 100)                   |
+| `unreadOnly` | boolean | false   | If true, returns only unread notifications |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "notifications": [
+      {
+        "_id": "67f1a2b3...",
+        "type": "POLICY_CLOSED",
+        "title": "Policy closed: Clean Water Initiative",
+        "message": "The policy \"Clean Water Initiative\" has closed. Final average rating: 4.2 stars (87 votes).",
+        "data": { "policyId": "...", "avgRating": 4.2, "totalVotes": 87 },
+        "read": false,
+        "createdAt": "2026-04-29T12:00:00Z"
+      }
+    ],
+    "total": 1,
+    "page": 1
+  },
+  "message": "Notifications retrieved successfully",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+| Status | Code | Message |
+| ------ | ----------------------- | ------------------------------- |
+| 401 | `UNAUTHORIZED` | Missing or invalid token |
+| 500 | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve notifications"` |
+
+### 7.9 Mark a single notification as read
+
+**`PATCH /users/me/notifications/:id/read`**
+
+**Authentication required.**
+
+**Path parameter:**
+
+| Parameter | Type   | Description     |
+| --------- | ------ | --------------- |
+| `id`      | string | Notification ID |
+
+**Response (200 OK):** returns the updated notification object with `"read": true`.
+
+**Error responses:**
+
+| Status | Code        | Message                                 |
+| ------ | ----------- | --------------------------------------- |
+| 404    | `NOT_FOUND` | `"Notification not found"`              |
+| 500    | `INTERNAL`  | `"Failed to mark notification as read"` |
+
+### 7.10 Mark all notifications as read
+
+**`PATCH /users/me/notifications/read-all`**
+
+**Authentication required.**
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": { "modifiedCount": 5 },
+  "message": "All notifications marked as read",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code       | Message                                  |
+| ------ | ---------- | ---------------------------------------- |
+| 500    | `INTERNAL` | `"Failed to mark notifications as read"` |
+
 ## 8. SMS Simulation (Public)
 
 These endpoints simulate an SMS gateway. They return plain text, not JSON. They are rate-limited per phone number (3 votes per 24 hours).

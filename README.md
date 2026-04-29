@@ -19,6 +19,7 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 - Add a comment to an existing vote (via `/api/comments/:voteId`)
 - Anonymous feedback (identity not exposed)
 - Self‑service password reset (via email token)
+- **In-app notifications** – planners receive notifications when their policies are activated
 
 ### For Basic Phone Users (Simulated SMS)
 
@@ -37,6 +38,8 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 - Clone any existing policy (creates a new draft owned by the cloner)
 - View policy history (audit trail of status changes, e.g., creation, activation, pause, resume, close)
 - Export audit logs (CSV) (admin only)
+- **In-app notifications** – planners receive notifications when their policies are activated
+- **Comment moderation** (admin only) – view pending AI comments, manually set sentiment/keywords, retry failed comments, delete inappropriate comments
 
 ### AI Service (Background)
 
