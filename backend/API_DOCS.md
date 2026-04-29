@@ -359,12 +359,13 @@ All policy endpoints require authentication. Role permissions:
 
 Query parameters (all optional):
 
-| Parameter | Type    | Default | Description                                                                                                                       |
-| --------- | ------- | ------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `status`  | string  | none    | Filter by `draft`, `active`, `paused`, or `closed`. Citizens cannot see `draft` or `closed`; they see only `active` and `paused`. |
-| `region`  | string  | none    | Filter by target region (planners/admins only)                                                                                    |
-| `page`    | integer | 1       | Page number (1‑based)                                                                                                             |
-| `limit`   | integer | 20      | Items per page (max 100)                                                                                                          |
+| Parameter | Type    | Default | Description                                                                                                                                                                                                  |
+| --------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `status`  | string  | none    | Filter by `draft`, `active`, `paused`, or `closed`. Citizens cannot see `draft` or `closed`; they see only `active` and `paused`.                                                                            |
+| `region`  | string  | none    | Filter by target region (planners/admins only)                                                                                                                                                               |
+| `owner`   | string  | none    | **Planners only.** Use `owner=me` to see only policies owned by the logged‑in planner (any status). Without this, planners see their own policies + others' active/paused/closed (excluding others' drafts). |
+| `page`    | integer | 1       | Page number (1‑based)                                                                                                                                                                                        |
+| `limit`   | integer | 20      | Items per page (max 100)                                                                                                                                                                                     |
 
 **Response (200 OK):**
 
@@ -697,6 +698,105 @@ Request body:
 | 403    | `FORBIDDEN` | `"Only draft policies can be deleted. For active or paused policies, use the close endpoint."` |
 | 403    | `FORBIDDEN` | `"You do not have permission to delete this policy"` (not creator)                             |
 | 404    | `NOT_FOUND` | `"Policy not found"`                                                                           |
+
+### 3.11 Clone policy
+
+**`POST /policies/:id/clone`**
+
+**Roles:** planner or admin (any policy they can view)
+
+**Behaviour:**  
+Creates a new draft policy as a copy of an existing one.
+
+- Title becomes `original.title + " (Copy)"` (truncated to 200 chars if needed).
+- A fresh, unique policy code is generated.
+- The logged‑in user becomes the `createdBy` owner.
+- Status is set to `draft`.
+- An audit log entry with action `CLONE_POLICY` is recorded.
+
+**Path parameter:**
+
+| Parameter | Type   | Description               |
+| --------- | ------ | ------------------------- |
+| `id`      | string | ID of the original policy |
+
+**Response (201 Created):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "67f1a2b3c4d5e6f7a8b9c0d1",
+    "policyCode": "NEWCODE"
+  },
+  "message": "Policy cloned successfully. Edit the copy before activating.",
+  "timestamp": "2026-04-29T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                                       |
+| ------ | ----------------------- | ------------------------------------------------------------- |
+| 404    | `NOT_FOUND`             | `"Original policy not found"` or `"Invalid policy ID format"` |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to clone policy"`                                    |
+
+### 3.12 Policy history
+
+**`GET /policies/:id/history`**
+
+**Roles:** planner (only for policies they own) or admin (any policy)
+
+**Behaviour:**  
+Returns a chronological list of audit events for the policy (creation, activation, pause, resume, close, clone, deletion, etc.) based on the `auditlogs` collection.
+
+**Path parameter:**
+
+| Parameter | Type   | Description |
+| --------- | ------ | ----------- |
+| `id`      | string | Policy ID   |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "events": [
+      {
+        "action": "CREATE_POLICY",
+        "userId": "67f1a2b3...",
+        "userRole": "planner",
+        "details": {
+          "title": "Clean Water Initiative",
+          "policyCode": "CLEAN123"
+        },
+        "timestamp": "2026-04-01T10:00:00Z"
+      },
+      {
+        "action": "ACTIVATE_POLICY",
+        "userId": "67f1a2b3...",
+        "userRole": "planner",
+        "details": {
+          "policyCode": "CLEAN123",
+          "title": "Clean Water Initiative"
+        },
+        "timestamp": "2026-04-02T11:00:00Z"
+      }
+    ]
+  },
+  "message": "Policy history retrieved successfully",
+  "timestamp": "2026-04-29T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                                       |
+| ------ | ----------------------- | ------------------------------------------------------------- |
+| 403    | `FORBIDDEN`             | `"You do not have permission to view history of this policy"` |
+| 404    | `NOT_FOUND`             | `"Policy not found"` or `"Invalid policy ID format"`          |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve policy history"`                         |
 
 ## 4. Voting & Comment Endpoints
 

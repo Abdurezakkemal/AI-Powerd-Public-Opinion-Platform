@@ -1,4 +1,6 @@
 const Policy = require("../models/Policy");
+const AuditLog = require("../models/AuditLog");
+const mongoose = require("mongoose");
 const { customAlphabet } = require("nanoid");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
@@ -19,10 +21,10 @@ const generatePolicyCode = (title) => {
   return `${prefix}${id}`;
 };
 
-// GET /api/policies?status=&region=&page=1&limit=20
+// GET /api/policies?status=&region=&page=1&limit=20&owner=me
 exports.getAll = async (req, res) => {
   try {
-    const { status, region, page = 1, limit = 20 } = req.query;
+    const { status, region, page = 1, limit = 20, owner } = req.query;
     const filter = {};
 
     if (status) filter.status = status;
@@ -30,6 +32,15 @@ exports.getAll = async (req, res) => {
     if (req.user.role === "citizen") {
       filter.status = "active";
       filter.targetRegions = req.user.region;
+    } else if (req.user.role === "planner") {
+      if (owner === "me") {
+        filter.createdBy = new mongoose.Types.ObjectId(req.user.id);
+      } else {
+        filter.$or = [
+          { createdBy: new mongoose.Types.ObjectId(req.user.id) },
+          { status: { $in: ["active", "paused", "closed"] } },
+        ];
+      }
     } else if (region) {
       filter.targetRegions = region;
     }
@@ -66,10 +77,10 @@ exports.getAll = async (req, res) => {
       "Policies retrieved successfully",
     );
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Get all policies error",
-    );
+    logger.error(`Get all policies error: ${err.message}`, {
+      error: err,
+      filter: req.query,
+    });
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -132,7 +143,7 @@ exports.getOne = async (req, res) => {
       "Policy retrieved successfully",
     );
   } catch (err) {
-    logger.error({ error: err.message, stack: err.stack }, "Get policy error");
+    logger.error(`Get policy error: ${err.message}`, { error: err });
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -232,10 +243,7 @@ exports.create = async (req, res) => {
       201,
     );
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Policy creation error",
-    );
+    logger.error(`Policy creation error: ${err.message}`, { error: err });
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -288,7 +296,6 @@ exports.update = async (req, res) => {
     const changes = {};
     const now = new Date();
 
-    // Update simple fields
     if (title) {
       policy.title = title;
       changes.title = title;
@@ -302,7 +309,6 @@ exports.update = async (req, res) => {
       changes.targetRegions = targetRegions;
     }
 
-    // Update startDate with validations
     if (startDate !== undefined) {
       const newStart = new Date(startDate);
       if (newStart < now) {
@@ -314,17 +320,12 @@ exports.update = async (req, res) => {
           400,
         );
       }
-      // If endDate is also being updated in this request, we need to validate against the new endDate.
-      // We'll handle that after we have the final endDate value.
-      // For now, store the tentative start; final check will be done after processing endDate.
       policy.startDate = newStart;
       changes.startDate = newStart;
     }
 
-    // Update endDate with validations
     if (endDate !== undefined) {
       const newEnd = new Date(endDate);
-      // Use the (possibly updated) startDate for comparison
       const effectiveStart = startDate ? new Date(startDate) : policy.startDate;
       if (newEnd <= effectiveStart) {
         return sendError(
@@ -338,7 +339,6 @@ exports.update = async (req, res) => {
       policy.endDate = newEnd;
       changes.endDate = newEnd;
     } else if (startDate !== undefined) {
-      // Only startDate was updated, need to ensure it is before existing endDate
       const newStart = new Date(startDate);
       if (newStart >= policy.endDate) {
         return sendError(
@@ -351,7 +351,6 @@ exports.update = async (req, res) => {
       }
     }
 
-    // Additional check if both were provided (redundant but safe)
     if (startDate !== undefined && endDate !== undefined) {
       const newStart = new Date(startDate);
       const newEnd = new Date(endDate);
@@ -397,10 +396,7 @@ exports.update = async (req, res) => {
       "Policy updated successfully",
     );
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Policy update error",
-    );
+    logger.error(`Policy update error: ${err.message}`, { error: err });
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -413,7 +409,7 @@ exports.update = async (req, res) => {
 
 // ==================== POLICY LIFECYCLE METHODS ====================
 
-// PATCH /api/policies/:id/activate (draft -> active, only if within date window)
+// PATCH /api/policies/:id/activate
 exports.activate = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
@@ -485,10 +481,7 @@ exports.activate = async (req, res) => {
       200,
     );
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Policy activation error",
-    );
+    logger.error(`Policy activation error: ${err.message}`, { error: err });
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -499,7 +492,7 @@ exports.activate = async (req, res) => {
   }
 };
 
-// PATCH /api/policies/:id/extend (change endDate for active or paused policies)
+// PATCH /api/policies/:id/extend
 exports.extendEndDate = async (req, res) => {
   try {
     const { newEndDate } = req.body;
@@ -605,10 +598,7 @@ exports.extendEndDate = async (req, res) => {
       200,
     );
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Change end date error",
-    );
+    logger.error(`Change end date error: ${err.message}`, { error: err });
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -619,7 +609,7 @@ exports.extendEndDate = async (req, res) => {
   }
 };
 
-// PATCH /api/policies/:id/pause (active -> paused)
+// PATCH /api/policies/:id/pause
 exports.pause = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
@@ -672,7 +662,7 @@ exports.pause = async (req, res) => {
       200,
     );
   } catch (err) {
-    logger.error({ error: err.message, stack: err.stack }, "Pause error");
+    logger.error(`Pause error: ${err.message}`, { error: err });
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -683,7 +673,7 @@ exports.pause = async (req, res) => {
   }
 };
 
-// PATCH /api/policies/:id/resume (paused -> active, must still be within date range)
+// PATCH /api/policies/:id/resume
 exports.resume = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
@@ -749,7 +739,7 @@ exports.resume = async (req, res) => {
       200,
     );
   } catch (err) {
-    logger.error({ error: err.message, stack: err.stack }, "Resume error");
+    logger.error(`Resume error: ${err.message}`, { error: err });
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -760,7 +750,7 @@ exports.resume = async (req, res) => {
   }
 };
 
-// POST /api/policies/:id/close (active or paused -> closed)
+// POST /api/policies/:id/close
 exports.close = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
@@ -826,10 +816,7 @@ exports.close = async (req, res) => {
       200,
     );
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Close policy error",
-    );
+    logger.error(`Close policy error: ${err.message}`, { error: err });
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -839,6 +826,7 @@ exports.close = async (req, res) => {
     );
   }
 };
+
 // DELETE /api/policies/:id (only for draft policies)
 exports.delete = async (req, res) => {
   try {
@@ -895,14 +883,196 @@ exports.delete = async (req, res) => {
     );
     return sendSuccess(res, null, "Policy deleted successfully", 200);
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Delete policy error",
-    );
+    logger.error(`Delete policy error: ${err.message}`, { error: err });
     return sendError(
       res,
       ErrorCodes.INTERNAL,
       "Failed to delete policy",
+      null,
+      500,
+    );
+  }
+};
+
+// ==================== NEW FEATURES ====================
+
+// POST /api/policies/:id/clone
+exports.clone = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Invalid policy ID format",
+        null,
+        404,
+      );
+    }
+    const original = await Policy.findById(req.params.id);
+    if (!original) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Original policy not found",
+        null,
+        404,
+      );
+    }
+
+    let newTitle = `${original.title} (Copy)`;
+    if (newTitle.length > 200) {
+      newTitle = newTitle.substring(0, 197) + "...";
+    }
+
+    let policyCode;
+    let exists;
+    let attempts = 0;
+    do {
+      policyCode = generatePolicyCode(newTitle);
+      exists = await Policy.findOne({ policyCode });
+      attempts++;
+      if (attempts > 10) {
+        logger.error(
+          `Failed to generate unique policy code for cloned title: ${newTitle}`,
+        );
+        return sendError(
+          res,
+          ErrorCodes.INTERNAL,
+          "Unable to generate a unique policy code. Please try again.",
+          null,
+          500,
+        );
+      }
+    } while (exists);
+
+    const newPolicy = new Policy({
+      title: newTitle,
+      description: original.description,
+      targetRegions: original.targetRegions,
+      policyCode,
+      startDate: original.startDate,
+      endDate: original.endDate,
+      status: "draft",
+      createdBy: req.user.id,
+    });
+    await newPolicy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "CLONE_POLICY",
+      targetType: "Policy",
+      targetId: newPolicy._id,
+      details: {
+        originalPolicyId: original._id,
+        originalTitle: original.title,
+      },
+      req,
+    });
+
+    logger.info(
+      `User ${req.user.id} cloned policy ${original._id} to new policy ${newPolicy._id}`,
+    );
+    return sendSuccess(
+      res,
+      { id: newPolicy._id, policyCode: newPolicy.policyCode },
+      "Policy cloned successfully. Edit the copy before activating.",
+      201,
+    );
+  } catch (err) {
+    if (err.name === "CastError") {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Invalid policy ID format",
+        null,
+        404,
+      );
+    }
+    logger.error(`Clone policy error: ${err.message}`, { error: err });
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to clone policy",
+      null,
+      500,
+    );
+  }
+};
+
+// GET /api/policies/:id/history
+exports.getHistory = async (req, res) => {
+  try {
+    if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Invalid policy ID format",
+        null,
+        404,
+      );
+    }
+    const policy = await Policy.findById(req.params.id);
+    if (!policy) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
+    const userId = req.user.id.toString();
+    const policyOwnerId = policy.createdBy.toString();
+    if (req.user.role !== "admin" && userId !== policyOwnerId) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission to view history of this policy",
+        null,
+        403,
+      );
+    }
+
+    const events = await AuditLog.find({
+      targetType: "Policy",
+      targetId: policy._id,
+    })
+      .sort({ timestamp: 1 })
+      .lean();
+
+    const filtered = events.map((e) => ({
+      action: e.action,
+      userId: e.userId,
+      userRole: e.userRole,
+      details: e.details,
+      timestamp: e.timestamp,
+    }));
+
+    logger.info(
+      `User ${req.user.id} retrieved history for policy ${policy._id}`,
+    );
+    return sendSuccess(
+      res,
+      { events: filtered },
+      "Policy history retrieved successfully",
+    );
+  } catch (err) {
+    if (err.name === "CastError") {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Invalid policy ID format",
+        null,
+        404,
+      );
+    }
+    logger.error(`Get policy history error: ${err.message}`, { error: err });
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve policy history",
       null,
       500,
     );

@@ -13,7 +13,8 @@ router.post("/", auth(["planner", "admin"]), policyController.create);
 router.put("/:id", auth(["planner", "admin"]), policyController.update);
 router.delete("/:id", auth(["planner", "admin"]), policyController.delete);
 router.post("/:id/close", auth(["planner", "admin"]), policyController.close);
-// New lifecycle endpoints
+
+// Lifecycle endpoints
 router.patch(
   "/:id/activate",
   auth(["planner", "admin"]),
@@ -29,6 +30,16 @@ router.patch(
   "/:id/resume",
   auth(["planner", "admin"]),
   policyController.resume,
+);
+
+// NEW: Clone a policy
+router.post("/:id/clone", auth(["planner", "admin"]), policyController.clone);
+
+// NEW: Policy status history
+router.get(
+  "/:id/history",
+  auth(["planner", "admin"]),
+  policyController.getHistory,
 );
 
 module.exports = router;
