@@ -223,7 +223,6 @@ exports.getComments = async (req, res) => {
       confidence: c.sentiment?.confidence || null,
       keywords: c.keywords || [],
       createdAt: c.createdAt,
-      userEmail: c.userId?.email || "anonymous",
     }));
 
     logger.info(
