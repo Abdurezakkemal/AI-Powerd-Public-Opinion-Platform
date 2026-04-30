@@ -109,6 +109,23 @@ exports.getOne = async (req, res) => {
       );
     }
 
+    // Planner visibility: can see own policies (any status) and others' active/paused/closed
+    if (req.user.role === "planner") {
+      const isOwner = policy.createdBy._id.toString() === req.user.id;
+      const isVisibleStatus = ["active", "paused", "closed"].includes(
+        policy.status,
+      );
+      if (!isOwner && !isVisibleStatus) {
+        return sendError(
+          res,
+          ErrorCodes.NOT_FOUND,
+          "Policy not found",
+          null,
+          404,
+        );
+      }
+    }
+
     if (req.user.role === "citizen") {
       if (
         policy.status !== "active" ||
@@ -154,7 +171,6 @@ exports.getOne = async (req, res) => {
     );
   }
 };
-
 // POST /api/policies
 exports.create = async (req, res) => {
   try {
