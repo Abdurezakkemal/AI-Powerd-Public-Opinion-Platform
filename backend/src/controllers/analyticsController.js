@@ -274,35 +274,135 @@ exports.getGeographicAnalytics = async (req, res) => {
     }
 
     // Only consider app votes that have comments (same as original logic)
-    const geographicData = await Comment.aggregate([
-      { $match: { policyId: policy._id } },
-      {
-        $lookup: {
-          from: "users",
-          localField: "userId",
-          foreignField: "_id",
-          as: "user",
-        },
-      },
-      { $unwind: "$user" },
-      {
-        $group: {
-          _id: "$user.region",
-          totalVotes: { $sum: 1 },
-          averageRating: { $avg: "$rating" },
-          positive: {
-            $sum: { $cond: [{ $eq: ["$sentiment.label", "positive"] }, 1, 0] },
+    exports.getGeographicAnalytics = async (req, res) => {
+      try {
+        const { policyId } = req.params;
+        const policy = await Policy.findById(policyId);
+        if (!policy) {
+          logger.warn(
+            `Geographic analytics requested for non-existent policy: ${policyId}`,
+          );
+          return sendError(
+            res,
+            ErrorCodes.NOT_FOUND,
+            "Policy not found",
+            null,
+            404,
+          );
+        }
+        if (req.user.role !== "planner" && req.user.role !== "admin") {
+          logger.warn(
+            `Access denied to geographic analytics for policy ${policyId} by user ${req.user.id}`,
+          );
+          return sendError(
+            res,
+            ErrorCodes.FORBIDDEN,
+            "Access denied",
+            null,
+            403,
+          );
+        }
+
+        // 1. Aggregate votes (all app votes) by region (snapshot on Vote)
+        const voteAgg = await Vote.aggregate([
+          {
+            $match: {
+              policyId: policy._id,
+              channel: "app",
+              region: { $ne: null },
+            },
           },
-          negative: {
-            $sum: { $cond: [{ $eq: ["$sentiment.label", "negative"] }, 1, 0] },
+          {
+            $group: {
+              _id: "$region",
+              totalVotes: { $sum: 1 },
+              averageRating: { $avg: "$rating" },
+            },
           },
-          neutral: {
-            $sum: { $cond: [{ $eq: ["$sentiment.label", "neutral"] }, 1, 0] },
+          { $sort: { totalVotes: -1 } },
+        ]);
+
+        // 2. Aggregate sentiment counts per region by joining Comment -> Vote
+        const sentimentAgg = await Comment.aggregate([
+          { $match: { policyId: policy._id } },
+          {
+            $lookup: {
+              from: "votes",
+              localField: "voteId",
+              foreignField: "_id",
+              as: "vote",
+            },
           },
-        },
-      },
-      { $sort: { totalVotes: -1 } },
-    ]);
+          { $unwind: "$vote" },
+          {
+            $group: {
+              _id: "$vote.region",
+              positive: {
+                $sum: {
+                  $cond: [{ $eq: ["$sentiment.label", "positive"] }, 1, 0],
+                },
+              },
+              negative: {
+                $sum: {
+                  $cond: [{ $eq: ["$sentiment.label", "negative"] }, 1, 0],
+                },
+              },
+              neutral: {
+                $sum: {
+                  $cond: [{ $eq: ["$sentiment.label", "neutral"] }, 1, 0],
+                },
+              },
+            },
+          },
+        ]);
+
+        // Merge results
+        const sentimentMap = new Map();
+        sentimentAgg.forEach((s) => {
+          sentimentMap.set(s._id, {
+            positive: s.positive,
+            negative: s.negative,
+            neutral: s.neutral,
+          });
+        });
+
+        const result = voteAgg.map((item) => {
+          const region = item._id;
+          const sentiment = sentimentMap.get(region) || {
+            positive: 0,
+            negative: 0,
+            neutral: 0,
+          };
+          return {
+            region,
+            totalVotes: item.totalVotes,
+            averageRating: parseFloat(item.averageRating.toFixed(2)),
+            sentimentCounts: sentiment,
+          };
+        });
+
+        logger.info(
+          `Geographic analytics delivered for policy ${policyId} to user ${req.user.id} (${result.length} regions)`,
+        );
+        return sendSuccess(
+          res,
+          { policyId, regions: result },
+          "Geographic analytics retrieved successfully",
+        );
+      } catch (err) {
+        logger.error(
+          { error: err.message, stack: err.stack },
+          "Geographic analytics error",
+        );
+        return sendError(
+          res,
+          ErrorCodes.INTERNAL,
+          "Failed to retrieve geographic analytics",
+          null,
+          500,
+        );
+      }
+    };
 
     const result = geographicData.map((item) => ({
       region: item._id || "Unknown",

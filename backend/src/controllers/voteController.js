@@ -113,6 +113,7 @@ exports.submitAppVote = async (req, res) => {
       phoneHash: user.phoneHash,
       channel: "app",
       rating,
+      region: user.region,
     });
     await vote.save();
 
