@@ -53,6 +53,11 @@ const validateDateParam = (dateStr, paramName) => {
   return date;
 };
 
+// Helper to check if a policy is eligible for analytics (must be active/paused/closed)
+const isPolicyEligibleForAnalytics = (policy) => {
+  return ["active", "paused", "closed"].includes(policy.status);
+};
+
 // GET /analytics/:policyId
 exports.getAnalytics = async (req, res) => {
   try {
@@ -76,6 +81,20 @@ exports.getAnalytics = async (req, res) => {
         "Policy not found",
         null,
         404,
+      );
+    }
+
+    // Block draft and published policies
+    if (!isPolicyEligibleForAnalytics(policy)) {
+      logger.warn(
+        `Analytics requested for ineligible policy: ${policyId} (status: ${policy.status})`,
+      );
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Policy is not active yet (no analytics available)",
+        null,
+        400,
       );
     }
 
@@ -173,6 +192,21 @@ exports.exportAnalytics = async (req, res) => {
         404,
       );
     }
+
+    // Block draft and published policies
+    if (!isPolicyEligibleForAnalytics(policy)) {
+      logger.warn(
+        `CSV export requested for ineligible policy: ${policyId} (status: ${policy.status})`,
+      );
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Policy is not active yet (no analytics available)",
+        null,
+        400,
+      );
+    }
+
     if (req.user.role !== "planner" && req.user.role !== "admin") {
       logger.warn(
         `Access denied to CSV export for policy ${policyId} by user ${req.user.id}`,
@@ -247,6 +281,21 @@ exports.getComments = async (req, res) => {
         404,
       );
     }
+
+    // Block draft and published policies
+    if (!isPolicyEligibleForAnalytics(policy)) {
+      logger.warn(
+        `Comments requested for ineligible policy: ${policyId} (status: ${policy.status})`,
+      );
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Policy is not active yet (no analytics available)",
+        null,
+        400,
+      );
+    }
+
     if (req.user.role !== "planner" && req.user.role !== "admin") {
       logger.warn(
         `Access denied to comments for policy ${policyId} by user ${req.user.id}`,
