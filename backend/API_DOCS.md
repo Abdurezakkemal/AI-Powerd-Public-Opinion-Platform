@@ -348,11 +348,18 @@ The admin cannot reset their own password through this endpoint – they must us
 
 All policy endpoints require authentication. Role permissions:
 
-| Role    | View draft? | View published? | View active?     | View paused?     | View closed? | Create / Update / Delete (draft & published) | Publish / Unpublish | Activate (published → active) | Extend / Pause / Resume / Close |
-| ------- | ----------- | --------------- | ---------------- | ---------------- | ------------ | -------------------------------------------- | ------------------- | ----------------------------- | ------------------------------- |
-| Citizen | No          | No              | Yes (own region) | Yes (own region) | No           | No                                           | No                  | No                            | No                              |
-| Planner | Yes (all)   | Yes (own only)  | Yes (all)        | Yes (all)        | Yes (all)    | Yes (own policies only)\*                    | Yes (own only)      | Yes (own only)                | Yes (own only)\*\*              |
-| Admin   | Yes (all)   | Yes (all)       | Yes (all)        | Yes (all)        | Yes (all)    | Yes (all policies)\*                         | Yes (all)           | Yes (all)                     | Yes (all)                       |
+| Role    | View own draft/published? | View others' draft/published? | View others' active/paused/closed? | Create / Update / Delete (own) | Publish / Unpublish (own) | Activate / Pause / Resume / Close / Extend (own)      |
+| ------- | ------------------------- | ----------------------------- | ---------------------------------- | ------------------------------ | ------------------------- | ----------------------------------------------------- |
+| Citizen | No                        | No                            | Yes (only `active`, own region)    | No                             | No                        | No                                                    |
+| Planner | Yes (all statuses)        | **No (404)**                  | Yes                                | Yes (draft/published only)     | Yes (draft → published)   | Yes (published → active, active/paused → close, etc.) |
+| Admin   | Yes (all)                 | Yes (all)                     | Yes                                | Yes (any policy)               | Yes (any policy)          | Yes (any policy)                                      |
+
+**Important visibility rule for planners:**
+
+- A planner can see **their own** policies regardless of status (draft, published, active, paused, closed).
+- For **other planners' policies**: only `active`, `paused`, and `closed` are visible.
+- **Draft and published** policies belonging to another planner are **completely hidden** – any endpoint (GET, PUT, PATCH, POST, DELETE) that targets such a policy will return **`404 Not Found`**, as if the policy does not exist.
+- This applies to **all policy‑specific endpoints**: `GET /policies/:id`, `PUT /policies/:id`, `PATCH /policies/:id/publish`, `PATCH /policies/:id/unpublish`, `PATCH /policies/:id/activate`, `PATCH /policies/:id/pause`, `PATCH /policies/:id/resume`, `PATCH /policies/:id/extend`, `POST /policies/:id/close`, `DELETE /policies/:id`, `POST /policies/:id/clone`, `GET /policies/:id/history`.
 
 **Notes:**
 
@@ -370,13 +377,13 @@ All policy endpoints require authentication. Role permissions:
 
 Query parameters (all optional):
 
-| Parameter | Type    | Default | Description                                                                                                                                                                                                                                                              |
-| --------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --- |
-| `status`  | string  | none    | Filter by `draft`, `published`, `active`, `paused`, or `closed`. Citizens cannot see `draft`, `published`, or `closed`; they see only `active` and `paused`.                                                                                                             |
-| `region`  | string  | none    | Filter by target region (planners/admins only)                                                                                                                                                                                                                           |
-| `owner`   | string  | none    | **Planners only.** Use `owner=me` to see only policies owned by the logged‑in planner (any status, including `draft` and `published`). Without this, planners see their own policies + others' `active`, `paused`, `closed` (excluding others' `draft` and `published`). |
-| `page`    | integer | 1       | Page number (1‑based)                                                                                                                                                                                                                                                    |
-| `limit`   | integer | 20      | Items per page (max 100)                                                                                                                                                                                                                                                 |     |
+| Parameter | Type    | Default | Description                                                                                                                                                                                                                                                                                                                          |
+| --------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `status`  | string  | none    | Filter by `draft`, `published`, `active`, `paused`, or `closed`. Citizens cannot see `draft`, `published`, or `closed`; they see only `active` and `paused`.                                                                                                                                                                         |
+| `region`  | string  | none    | Filter by target region (planners/admins only).                                                                                                                                                                                                                                                                                      |
+| `owner`   | string  | none    | **Planners only.** Use `owner=me` to see only policies owned by the logged‑in planner (any status). Without this, planners see their own policies (all statuses) **plus** other planners' `active`, `paused`, and `closed` policies. **Other planners' draft and published policies are excluded** – they do not appear in the list. |
+| `page`    | integer | 1       | Page number (1‑based).                                                                                                                                                                                                                                                                                                               |
+| `limit`   | integer | 20      | Items per page (max 100).                                                                                                                                                                                                                                                                                                            |
 
 **Response (200 OK):**
 
@@ -435,6 +442,15 @@ Path parameter:
 | --------- | ------ | ---------------------------- |
 | `id`      | string | Policy ID (MongoDB ObjectId) |
 
+**Access rules:**
+
+- Citizens can only view `active` policies in their own region.
+- Planners can view:
+  - Their own policies (any status)
+  - Other planners' `active`, `paused`, `closed` policies
+- Other planners' `draft` or `published` policies return **`404 Not Found`**.
+- Admins can view any policy.
+
 **Response (200 OK):**
 
 ```json
@@ -459,11 +475,11 @@ Path parameter:
 
 **Error responses:**
 
-| Status | Code           | Message                                                  |
-| ------ | -------------- | -------------------------------------------------------- |
-| 401    | `UNAUTHORIZED` | `"Access denied. No token provided."`                    |
-| 403    | `FORBIDDEN`    | `"You do not have access to this policy" (citizen only)` |
-| 404    | `NOT_FOUND`    | `"Policy not found"`                                     |
+| Status | Code           | Message                                                                                                 |
+| ------ | -------------- | ------------------------------------------------------------------------------------------------------- |
+| 401    | `UNAUTHORIZED` | `"Access denied. No token provided."`                                                                   |
+| 403    | `FORBIDDEN`    | `"You do not have access to this policy" (citizen only)`                                                |
+| 404    | `NOT_FOUND`    | `"Policy not found"` (policy ID invalid, or planner trying to access another planner's draft/published) |
 
 ### 3.3 Create policy
 
@@ -533,7 +549,7 @@ Request body:
 | 400    | `VALIDATION_ERROR` | `"End date must be after start date."`                                                                   |
 | 403    | `FORBIDDEN`        | `"Only draft policies can be edited. Published, active, paused, or closed policies cannot be modified."` |
 | 403    | `FORBIDDEN`        | `"You do not have permission to edit this policy"` (not creator)                                         |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                                                                     |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or the policy is draft/published and you are not the owner)     |
 
 ### 3.5 Publish policy (draft → published/active)
 
@@ -564,12 +580,12 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                       |
-| ------ | ------------------ | ------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only draft policies can be published. Current status: ..."` |
-| 400    | `VALIDATION_ERROR` | `"Cannot publish a policy that has already ended."`           |
-| 403    | `FORBIDDEN`        | `"You do not have permission to publish this policy"`         |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                          |
+| Status | Code               | Message                                                                                              |
+| ------ | ------------------ | ---------------------------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only draft policies can be published. Current status: ..."`                                        |
+| 400    | `VALIDATION_ERROR` | `"Cannot publish a policy that has already ended."`                                                  |
+| 403    | `FORBIDDEN`        | `"You do not have permission to publish this policy"`                                                |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or the policy is draft/published and you are not the owner) |
 
 ### 3.6 Unpublish policy (published → draft)
 
@@ -597,11 +613,11 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                             |
-| ------ | ------------------ | ------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only published policies can be unpublished. Current status: ..."` |
-| 403    | `FORBIDDEN`        | `"You do not have permission to unpublish this policy"`             |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                                |
+| Status | Code               | Message                                                                                              |
+| ------ | ------------------ | ---------------------------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only published policies can be unpublished. Current status: ..."`                                  |
+| 403    | `FORBIDDEN`        | `"You do not have permission to unpublish this policy"`                                              |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or the policy is draft/published and you are not the owner) |
 
 ### 3.7 Close policy
 
@@ -626,11 +642,12 @@ Request body:
 ```
 
 **Error responses:**
-| Status | Code | Message |
-| ------ | ---------------- | ----------------------------------------------------------------------- |
-| 400 | `VALIDATION_ERROR` | `"Only active or paused policies can be closed. Current status: draft"` |
-| 403 | `FORBIDDEN` | `"You do not have permission to close this policy"` (not creator) |
-| 404 | `NOT_FOUND` | `"Policy not found"` |
+
+| Status | Code               | Message                                                                    |
+| ------ | ------------------ | -------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only active or paused policies can be closed. Current status: draft"`    |
+| 403    | `FORBIDDEN`        | `"You do not have permission to close this policy"` (not creator)          |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
 
 ### 3.8 Activate policy (draft → active)
 
@@ -656,12 +673,12 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                        |
-| ------ | ------------------ | -------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only draft policies can be activated. Current status: ..."`  |
-| 400    | `VALIDATION_ERROR` | `"Cannot activate a policy whose end date has already passed"` |
-| 403    | `FORBIDDEN`        | `"You do not have permission to activate this policy"`         |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                           |
+| Status | Code               | Message                                                                    |
+| ------ | ------------------ | -------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only draft policies can be activated. Current status: ..."`              |
+| 400    | `VALIDATION_ERROR` | `"Cannot activate a policy whose end date has already passed"`             |
+| 403    | `FORBIDDEN`        | `"You do not have permission to activate this policy"`                     |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
 
 ### 3.9 Pause policy (active → paused)
 
@@ -687,11 +704,11 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                     |
-| ------ | ------------------ | ----------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only active policies can be paused. Current status: ..."` |
-| 403    | `FORBIDDEN`        | `"You do not have permission to pause this policy"`         |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                        |
+| Status | Code               | Message                                                                    |
+| ------ | ------------------ | -------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only active policies can be paused. Current status: ..."`                |
+| 403    | `FORBIDDEN`        | `"You do not have permission to pause this policy"`                        |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
 
 ### 3.10 Resume policy (paused → active)
 
@@ -717,12 +734,12 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                       |
-| ------ | ------------------ | ------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only paused policies can be resumed. Current status: ..."`  |
-| 400    | `VALIDATION_ERROR` | `"Cannot resume policy because the voting period has ended."` |
-| 403    | `FORBIDDEN`        | `"You do not have permission to resume this policy"`          |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                          |
+| Status | Code               | Message                                                                    |
+| ------ | ------------------ | -------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only paused policies can be resumed. Current status: ..."`               |
+| 400    | `VALIDATION_ERROR` | `"Cannot resume policy because the voting period has ended."`              |
+| 403    | `FORBIDDEN`        | `"You do not have permission to resume this policy"`                       |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
 
 ### 3.11 Extend policy end date
 
@@ -742,14 +759,14 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                |
-| ------ | ------------------ | ------------------------------------------------------ |
-| 400    | `VALIDATION_ERROR` | `"Policy must be active or paused to modify end date"` |
-| 400    | `VALIDATION_ERROR` | `"newEndDate must be a valid ISO date string"`         |
-| 400    | `VALIDATION_ERROR` | `"New end date must be after start date"`              |
-| 400    | `VALIDATION_ERROR` | `"New end date cannot be in the past"`                 |
-| 403    | `FORBIDDEN`        | `"You do not have permission to modify this policy"`   |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                   |
+| Status | Code               | Message                                                                    |
+| ------ | ------------------ | -------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Policy must be active or paused to modify end date"`                     |
+| 400    | `VALIDATION_ERROR` | `"newEndDate must be a valid ISO date string"`                             |
+| 400    | `VALIDATION_ERROR` | `"New end date must be after start date"`                                  |
+| 400    | `VALIDATION_ERROR` | `"New end date cannot be in the past"`                                     |
+| 403    | `FORBIDDEN`        | `"You do not have permission to modify this policy"`                       |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
 
 ### 3.12 Delete draft policy (draft or published)
 
@@ -776,7 +793,7 @@ Request body:
 | ------ | ----------- | ----------------------------------------------------------------------------------------------------------- |
 | 403    | `FORBIDDEN` | `"Only draft or published policies can be deleted. For active or paused policies, use the close endpoint."` |
 | 403    | `FORBIDDEN` | `"You do not have permission to delete this policy"` (not creator)                                          |
-| 404    | `NOT_FOUND` | `"Policy not found"`                                                                                        |
+| 404    | `NOT_FOUND` | `"Policy not found"` (policy ID invalid, or hidden draft/published policy)                                  |
 
 ### 3.13 Clone policy
 
@@ -799,6 +816,8 @@ Creates a new draft policy as a copy of an existing one.
 | --------- | ------ | ------------------------- |
 | `id`      | string | ID of the original policy |
 
+**Visibility note:** A planner can only clone policies they are allowed to see. Attempting to clone another planner's draft/published policy returns **`404 Not Found`**.
+
 **Response (201 Created):**
 
 ```json
@@ -815,17 +834,17 @@ Creates a new draft policy as a copy of an existing one.
 
 **Error responses:**
 
-| Status | Code                    | Message                                                       |
-| ------ | ----------------------- | ------------------------------------------------------------- |
-| 404    | `NOT_FOUND`             | `"Original policy not found"` or `"Invalid policy ID format"` |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to clone policy"`                                    |
+| Status | Code                    | Message                                                                                          |
+| ------ | ----------------------- | ------------------------------------------------------------------------------------------------ |
+| 404    | `NOT_FOUND`             | `"Original policy not found"` or `"Invalid policy ID format"` (or hidden draft/published policy) |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to clone policy"`                                                                       |
 
 ### 3.14 Policy history
 
 **`GET /policies/:id/history`**
 
 **Roles:** planner (only for policies they own) or admin (any policy)
-
+**Visibility note:** A planner can only view history of policies they own. Attempting to view history of another planner's draft/published policy returns **`404 Not Found`**.
 **Behaviour:**  
 Returns a chronological list of audit events for the policy (creation, activation, pause, resume, close, clone, deletion, etc.) based on the `auditlogs` collection.
 
@@ -871,11 +890,11 @@ Returns a chronological list of audit events for the policy (creation, activatio
 
 **Error responses:**
 
-| Status | Code                    | Message                                                       |
-| ------ | ----------------------- | ------------------------------------------------------------- |
-| 403    | `FORBIDDEN`             | `"You do not have permission to view history of this policy"` |
-| 404    | `NOT_FOUND`             | `"Policy not found"` or `"Invalid policy ID format"`          |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve policy history"`                         |
+| Status | Code                    | Message                                                                                 |
+| ------ | ----------------------- | --------------------------------------------------------------------------------------- |
+| 403    | `FORBIDDEN`             | `"You do not have permission to view history of this policy"`                           |
+| 404    | `NOT_FOUND`             | `"Policy not found"` or `"Invalid policy ID format"` (or hidden draft/published policy) |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve policy history"`                                                   |
 
 ## 4. Voting & Comment Endpoints
 
