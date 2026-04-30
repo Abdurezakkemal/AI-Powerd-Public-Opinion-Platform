@@ -75,7 +75,7 @@ const checkPolicyAnalyticsAccess = (policy, user) => {
   // For draft/published policies
   if (policy.status === "draft" || policy.status === "published") {
     // Creator gets a validation error (policy not active yet)
-    if (policy.createdBy.toString() === user.id) {
+    if (policy.createdBy.toString() === user.id.toString()) {
       return {
         allowed: false,
         errorCode: "VALIDATION_ERROR",
@@ -372,18 +372,74 @@ exports.getHeatmap = async (req, res) => {
       );
     }
 
-    // Build match stage for votes (app only, with region)
+    // -------- 1. Validate and parse date parameters ----------
+    const parseDate = (dateStr, paramName) => {
+      if (!dateStr) return null;
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) {
+        throw new Error(`Invalid ${paramName}: ${dateStr}`);
+      }
+      return d;
+    };
+
+    let start, end;
+    try {
+      start = parseDate(startDate, "startDate");
+      end = parseDate(endDate, "endDate");
+    } catch (err) {
+      return sendError(res, ErrorCodes.VALIDATION, err.message, null, 400);
+    }
+
+    // -------- 2. Validate policyId and check access ----------
+    let policy = null;
+    if (policyId) {
+      if (!mongoose.Types.ObjectId.isValid(policyId)) {
+        return sendError(
+          res,
+          ErrorCodes.VALIDATION,
+          "Invalid policyId format",
+          null,
+          400,
+        );
+      }
+      policy = await Policy.findById(policyId);
+      if (!policy) {
+        return sendError(
+          res,
+          ErrorCodes.NOT_FOUND,
+          "Policy not found",
+          null,
+          404,
+        );
+      }
+
+      const access = checkPolicyAnalyticsAccess(policy, req.user);
+      console.log("access object:", access);
+      const { allowed, errorCode, errorMessage, statusCode } =
+        checkPolicyAnalyticsAccess(policy, req.user);
+      if (!allowed) {
+        return sendError(res, errorCode, errorMessage, null, statusCode);
+      }
+    }
+
+    // -------- 3. Build vote match (app votes with region) ----------
     const voteMatch = { channel: "app", region: { $ne: null } };
     if (policyId) voteMatch.policyId = new mongoose.Types.ObjectId(policyId);
-    if (startDate) voteMatch.createdAt = { $gte: new Date(startDate) };
-    if (endDate)
-      voteMatch.createdAt = { ...voteMatch.createdAt, $lte: new Date(endDate) };
+    if (start) voteMatch.createdAt = { $gte: start };
+    if (end) voteMatch.createdAt = { ...voteMatch.createdAt, $lte: end };
     if (regions) {
       const regionList = regions.split(",").map((r) => r.trim());
       voteMatch.region = { $in: regionList };
     }
 
-    // Date formatting based on interval
+    // -------- 4. Build comment match (for sentiment) ----------
+    const commentMatch = {};
+    if (policyId) commentMatch.policyId = new mongoose.Types.ObjectId(policyId);
+    if (start) commentMatch.createdAt = { $gte: start };
+    if (end) commentMatch.createdAt = { ...commentMatch.createdAt, $lte: end };
+    // Note: comments themselves do not have a region field; we will join with votes later
+
+    // -------- 5. Date format based on interval ----------
     let dateFormat;
     switch (interval) {
       case "day":
@@ -399,19 +455,10 @@ exports.getHeatmap = async (req, res) => {
         dateFormat = "%Y-%V";
     }
 
-    // Build comment match (needed in both branches)
-    const commentMatch = {};
-    if (policyId) commentMatch.policyId = new mongoose.Types.ObjectId(policyId);
-    if (startDate) commentMatch.createdAt = { $gte: new Date(startDate) };
-    if (endDate)
-      commentMatch.createdAt = {
-        ...commentMatch.createdAt,
-        $lte: new Date(endDate),
-      };
-
     let results;
+
     if (byRegionFlag) {
-      // Group by time bucket AND region
+      // -------- 5a. Vote aggregation (time + region) ----------
       const voteAgg = await Vote.aggregate([
         { $match: voteMatch },
         {
@@ -429,8 +476,9 @@ exports.getHeatmap = async (req, res) => {
         { $sort: { "_id.period": 1, "_id.region": 1 } },
       ]);
 
-      // Sentiment aggregation from comments, joining to vote to get region
-      const sentimentAgg = await Comment.aggregate([
+      // -------- 5b. Sentiment aggregation (comments → votes) ----------
+      // First, build the pipeline steps
+      const sentimentPipeline = [
         { $match: commentMatch },
         {
           $lookup: {
@@ -441,7 +489,17 @@ exports.getHeatmap = async (req, res) => {
           },
         },
         { $unwind: "$vote" },
+        // Only keep comments whose vote has a region (app votes)
         { $match: { "vote.region": { $ne: null } } },
+      ];
+      // Apply region filter if provided (to sentiment aggregation as well)
+      if (regions) {
+        const regionList = regions.split(",").map((r) => r.trim());
+        sentimentPipeline.push({
+          $match: { "vote.region": { $in: regionList } },
+        });
+      }
+      sentimentPipeline.push(
         {
           $group: {
             _id: {
@@ -466,9 +524,11 @@ exports.getHeatmap = async (req, res) => {
           },
         },
         { $sort: { "_id.period": 1, "_id.region": 1 } },
-      ]);
+      );
 
-      // Merge voteAgg and sentimentAgg into periodsMap
+      const sentimentAgg = await Comment.aggregate(sentimentPipeline);
+
+      // -------- 5c. Merge voteAgg and sentimentAgg ----------
       const periodsMap = new Map();
       voteAgg.forEach((v) => {
         const period = v._id.period;
@@ -499,7 +559,7 @@ exports.getHeatmap = async (req, res) => {
         data.sentiment.neutral += c.neutral;
       });
 
-      // Build response array
+      // Build final response array
       const periods = Array.from(periodsMap.keys()).sort();
       results = periods.map((period) => {
         const regionMap = periodsMap.get(period);
@@ -511,10 +571,12 @@ exports.getHeatmap = async (req, res) => {
             sentimentCounts: data.sentiment,
           }),
         );
+        // human‑readable date range (optional)
         let startDateStr = "",
           endDateStr = "";
-        if (interval === "day") startDateStr = period;
-        else if (interval === "week") {
+        if (interval === "day") {
+          startDateStr = period;
+        } else if (interval === "week") {
           const [year, week] = period.split("-");
           const firstDay = new Date(year, 0, 1 + (week - 1) * 7);
           startDateStr = firstDay.toISOString().split("T")[0];
@@ -539,7 +601,7 @@ exports.getHeatmap = async (req, res) => {
         };
       });
     } else {
-      // Without region grouping: global time series (no region breakdown)
+      // -------- Without region grouping (global time series) ----------
       const voteAgg = await Vote.aggregate([
         { $match: voteMatch },
         {
@@ -551,6 +613,9 @@ exports.getHeatmap = async (req, res) => {
         },
         { $sort: { _id: 1 } },
       ]);
+
+      // For global sentiment, we still need to join comments with votes to get region? Actually global sentiment counts should be per period, not per region. The existing code uses commentMatch without region, which is fine because comments are linked to votes, but we only care about sentiment totals overall. However, we must still filter by date and policy. The commentMatch already includes date and policy. No need to join with votes for global sentiment because the comment has its own createdAt and sentiment. So we can simply aggregate comments directly.
+
       const sentimentAgg = await Comment.aggregate([
         { $match: commentMatch },
         {
