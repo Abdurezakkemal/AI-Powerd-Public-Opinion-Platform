@@ -54,17 +54,46 @@ const validateDateParam = (dateStr, paramName) => {
 };
 
 // Helper to check if user can view policy analytics
-const canViewPolicyAnalytics = (policy, user) => {
-  if (user.role === "admin") return true;
-  if (user.role !== "planner") return false;
-
-  // For draft/published: only creator can view
-  if (policy.status === "draft" || policy.status === "published") {
-    return policy.createdBy.toString() === user.id;
+// Returns: { allowed: boolean, errorCode?: string, errorMessage?: string, statusCode?: number }
+const checkPolicyAnalyticsAccess = (policy, user) => {
+  // Admin always gets access (but will be handled by status check later)
+  if (user.role === "admin") {
+    return { allowed: true };
   }
 
-  // For active/paused/closed: any planner can view
-  return true;
+  // Only planners can view analytics (citizens cannot)
+  if (user.role !== "planner") {
+    return {
+      allowed: false,
+      errorCode: "FORBIDDEN",
+      errorMessage:
+        "Access denied. Only planners and admins can view analytics.",
+      statusCode: 403,
+    };
+  }
+
+  // For draft/published policies
+  if (policy.status === "draft" || policy.status === "published") {
+    // Creator gets a validation error (policy not active yet)
+    if (policy.createdBy.toString() === user.id) {
+      return {
+        allowed: false,
+        errorCode: "VALIDATION_ERROR",
+        errorMessage: "Policy is not active yet (no analytics available)",
+        statusCode: 400,
+      };
+    }
+    // Other planners get 404 (policy hidden)
+    return {
+      allowed: false,
+      errorCode: "NOT_FOUND",
+      errorMessage: "Policy not found",
+      statusCode: 404,
+    };
+  }
+
+  // For active/paused/closed policies: any planner can view
+  return { allowed: true };
 };
 
 // GET /analytics/:policyId
@@ -93,31 +122,14 @@ exports.getAnalytics = async (req, res) => {
       );
     }
 
-    // Check permission (admin, creator, or viewable status)
-    if (!canViewPolicyAnalytics(policy, req.user)) {
+    // Check permission
+    const { allowed, errorCode, errorMessage, statusCode } =
+      checkPolicyAnalyticsAccess(policy, req.user);
+    if (!allowed) {
       logger.warn(
         `Access denied to analytics for policy ${policyId} by user ${req.user.id}`,
       );
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Policy not found",
-        null,
-        404,
-      );
-    }
-
-    if (req.user.role !== "planner" && req.user.role !== "admin") {
-      logger.warn(
-        `Access denied to analytics for policy ${policyId} by user ${req.user.id}`,
-      );
-      return sendError(
-        res,
-        ErrorCodes.FORBIDDEN,
-        "Access denied. Only planners and admins can view analytics.",
-        null,
-        403,
-      );
+      return sendError(res, errorCode, errorMessage, null, statusCode);
     }
 
     // Build date filters for votes and comments
@@ -203,24 +215,13 @@ exports.exportAnalytics = async (req, res) => {
     }
 
     // Check permission
-    if (!canViewPolicyAnalytics(policy, req.user)) {
+    const { allowed, errorCode, errorMessage, statusCode } =
+      checkPolicyAnalyticsAccess(policy, req.user);
+    if (!allowed) {
       logger.warn(
         `Access denied to CSV export for policy ${policyId} by user ${req.user.id}`,
       );
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Policy not found",
-        null,
-        404,
-      );
-    }
-
-    if (req.user.role !== "planner" && req.user.role !== "admin") {
-      logger.warn(
-        `Access denied to CSV export for policy ${policyId} by user ${req.user.id}`,
-      );
-      return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
+      return sendError(res, errorCode, errorMessage, null, statusCode);
     }
 
     const voteFilter = { policyId };
@@ -292,24 +293,13 @@ exports.getComments = async (req, res) => {
     }
 
     // Check permission
-    if (!canViewPolicyAnalytics(policy, req.user)) {
+    const { allowed, errorCode, errorMessage, statusCode } =
+      checkPolicyAnalyticsAccess(policy, req.user);
+    if (!allowed) {
       logger.warn(
         `Access denied to comments for policy ${policyId} by user ${req.user.id}`,
       );
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Policy not found",
-        null,
-        404,
-      );
-    }
-
-    if (req.user.role !== "planner" && req.user.role !== "admin") {
-      logger.warn(
-        `Access denied to comments for policy ${policyId} by user ${req.user.id}`,
-      );
-      return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
+      return sendError(res, errorCode, errorMessage, null, statusCode);
     }
 
     const filter = { policyId };
