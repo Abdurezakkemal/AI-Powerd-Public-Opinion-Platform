@@ -390,13 +390,13 @@ exports.getHeatmap = async (req, res) => {
         dateFormat = "%Y-%m-%d";
         break;
       case "week":
-        dateFormat = "%Y-%W";
-        break;
+        dateFormat = "%Y-%V";
+        break; // ISO week number
       case "month":
         dateFormat = "%Y-%m";
         break;
       default:
-        dateFormat = "%Y-%W";
+        dateFormat = "%Y-%V";
     }
 
     // Build comment match (needed in both branches)
