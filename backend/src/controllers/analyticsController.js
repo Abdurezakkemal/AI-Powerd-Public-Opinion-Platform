@@ -1,3 +1,4 @@
+const mongoose = require("mongoose");
 const Vote = require("../models/Vote");
 const Comment = require("../models/Comment");
 const Policy = require("../models/Policy");
@@ -42,10 +43,30 @@ const getTopKeywords = (comments, limit = 10) => {
     .map(([keyword, count]) => ({ keyword, count }));
 };
 
+// Helper to validate date parameters
+const validateDateParam = (dateStr, paramName) => {
+  if (!dateStr) return null;
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) {
+    throw new Error(`Invalid ${paramName}: ${dateStr}`);
+  }
+  return date;
+};
+
 // GET /analytics/:policyId
 exports.getAnalytics = async (req, res) => {
   try {
     const { policyId } = req.params;
+    const { startDate, endDate } = req.query;
+
+    let start, end;
+    try {
+      start = validateDateParam(startDate, "startDate");
+      end = validateDateParam(endDate, "endDate");
+    } catch (err) {
+      return sendError(res, ErrorCodes.VALIDATION, err.message, null, 400);
+    }
+
     const policy = await Policy.findById(policyId);
     if (!policy) {
       logger.warn(`Analytics requested for non-existent policy: ${policyId}`);
@@ -71,8 +92,16 @@ exports.getAnalytics = async (req, res) => {
       );
     }
 
-    // Get all votes for rating distribution and totals
-    const votes = await Vote.find({ policyId });
+    // Build date filters for votes and comments
+    const voteFilter = { policyId };
+    const commentFilter = { policyId };
+    if (start) voteFilter.createdAt = { $gte: start };
+    if (end) voteFilter.createdAt = { ...voteFilter.createdAt, $lte: end };
+    if (start) commentFilter.createdAt = { $gte: start };
+    if (end)
+      commentFilter.createdAt = { ...commentFilter.createdAt, $lte: end };
+
+    const votes = await Vote.find(voteFilter);
     const totalVotes = votes.length;
     const appVotes = votes.filter((v) => v.channel === "app").length;
     const smsVotes = votes.filter((v) => v.channel === "sms").length;
@@ -82,8 +111,7 @@ exports.getAnalytics = async (req, res) => {
       : 0;
     const ratingDistribution = getRatingDistribution(votes);
 
-    // Get comments for sentiment and keywords
-    const comments = await Comment.find({ policyId });
+    const comments = await Comment.find(commentFilter);
     const sentimentCounts = getSentimentCounts(comments);
     const topKeywords = getTopKeywords(comments);
 
@@ -124,6 +152,16 @@ exports.getAnalytics = async (req, res) => {
 exports.exportAnalytics = async (req, res) => {
   try {
     const { policyId } = req.params;
+    const { startDate, endDate } = req.query;
+
+    let start, end;
+    try {
+      start = validateDateParam(startDate, "startDate");
+      end = validateDateParam(endDate, "endDate");
+    } catch (err) {
+      return sendError(res, ErrorCodes.VALIDATION, err.message, null, 400);
+    }
+
     const policy = await Policy.findById(policyId);
     if (!policy) {
       logger.warn(`CSV export requested for non-existent policy: ${policyId}`);
@@ -142,8 +180,11 @@ exports.exportAnalytics = async (req, res) => {
       return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
-    // Get all votes and populate user region for app votes
-    const votes = await Vote.find({ policyId })
+    const voteFilter = { policyId };
+    if (start) voteFilter.createdAt = { $gte: start };
+    if (end) voteFilter.createdAt = { ...voteFilter.createdAt, $lte: end };
+
+    const votes = await Vote.find(voteFilter)
       .populate("userId", "region")
       .lean();
 
@@ -185,7 +226,16 @@ exports.exportAnalytics = async (req, res) => {
 exports.getComments = async (req, res) => {
   try {
     const { policyId } = req.params;
-    const { page = 1, limit = 20, sentiment } = req.query;
+    const { page = 1, limit = 20, sentiment, startDate, endDate } = req.query;
+
+    let start, end;
+    try {
+      start = validateDateParam(startDate, "startDate");
+      end = validateDateParam(endDate, "endDate");
+    } catch (err) {
+      return sendError(res, ErrorCodes.VALIDATION, err.message, null, 400);
+    }
+
     const policy = await Policy.findById(policyId);
     if (!policy) {
       logger.warn(`Comments requested for non-existent policy: ${policyId}`);
@@ -206,6 +256,9 @@ exports.getComments = async (req, res) => {
 
     const filter = { policyId };
     if (sentiment) filter["sentiment.label"] = sentiment;
+    if (start) filter.createdAt = { $gte: start };
+    if (end) filter.createdAt = { ...filter.createdAt, $lte: end };
+
     const comments = await Comment.find(filter)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
