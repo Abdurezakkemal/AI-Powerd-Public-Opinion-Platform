@@ -22,6 +22,18 @@ const generatePolicyCode = (title) => {
   return `${prefix}${id}`;
 };
 
+// Helper: hide draft/published from non‑owner planners (return true if should be hidden)
+const shouldHideFromPlanner = (policy, user) => {
+  if (user.role === "admin") return false;
+  if (user.role !== "planner") return false;
+  const isOwner = policy.createdBy.toString() === user.id;
+  if (isOwner) return false;
+  const isVisibleStatus = ["active", "paused", "closed"].includes(
+    policy.status,
+  );
+  return !isVisibleStatus; // hide draft & published
+};
+
 // GET /api/policies?status=&region=&page=1&limit=20&owner=me
 exports.getAll = async (req, res) => {
   try {
@@ -109,21 +121,14 @@ exports.getOne = async (req, res) => {
       );
     }
 
-    // Planner visibility: can see own policies (any status) and others' active/paused/closed
-    if (req.user.role === "planner") {
-      const isOwner = policy.createdBy._id.toString() === req.user.id;
-      const isVisibleStatus = ["active", "paused", "closed"].includes(
-        policy.status,
+    if (shouldHideFromPlanner(policy, req.user)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
       );
-      if (!isOwner && !isVisibleStatus) {
-        return sendError(
-          res,
-          ErrorCodes.NOT_FOUND,
-          "Policy not found",
-          null,
-          404,
-        );
-      }
     }
 
     if (req.user.role === "citizen") {
@@ -171,6 +176,7 @@ exports.getOne = async (req, res) => {
     );
   }
 };
+
 // POST /api/policies
 exports.create = async (req, res) => {
   try {
@@ -284,6 +290,18 @@ exports.update = async (req, res) => {
         404,
       );
     }
+
+    // Hide draft/published from non‑owner planners
+    if (shouldHideFromPlanner(policy, req.user)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
     if (policy.status !== "draft") {
       return sendError(
         res,
@@ -424,9 +442,7 @@ exports.update = async (req, res) => {
   }
 };
 
-// ==================== POLICY LIFECYCLE METHODS ====================
-
-// PATCH /api/policies/:id/publish (NEW)
+// PATCH /api/policies/:id/publish
 exports.publish = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
@@ -439,6 +455,17 @@ exports.publish = async (req, res) => {
         404,
       );
     }
+
+    if (shouldHideFromPlanner(policy, req.user)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
     if (policy.status !== "draft") {
       return sendError(
         res,
@@ -546,6 +573,17 @@ exports.unpublish = async (req, res) => {
         404,
       );
     }
+
+    if (shouldHideFromPlanner(policy, req.user)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
     if (policy.status !== "published") {
       return sendError(
         res,
@@ -602,7 +640,7 @@ exports.unpublish = async (req, res) => {
   }
 };
 
-// PATCH /api/policies/:id/activate (manual activation for published policies? keeping as is)
+// PATCH /api/policies/:id/activate
 exports.activate = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
@@ -614,6 +652,17 @@ exports.activate = async (req, res) => {
         null,
         404,
       );
+
+    if (shouldHideFromPlanner(policy, req.user)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
     if (policy.status !== "published") {
       return sendError(
         res,
@@ -695,7 +744,257 @@ exports.activate = async (req, res) => {
   }
 };
 
-// PATCH /api/policies/:id/extend (unchanged)
+// POST /api/policies/:id/close
+exports.close = async (req, res) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
+    if (shouldHideFromPlanner(policy, req.user)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
+    if (!["active", "paused"].includes(policy.status)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only active or paused policies can be closed. Current status: ${policy.status}`,
+        null,
+        400,
+      );
+    }
+
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      logger.warn(
+        `User ${userId} attempted to close policy ${policy._id} not owned`,
+      );
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission to close this policy",
+        null,
+        403,
+      );
+    }
+
+    policy.status = "closed";
+    await policy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "CLOSE_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: {
+        policyCode: policy.policyCode,
+        title: policy.title,
+        previousStatus: policy.status,
+      },
+      req,
+    });
+
+    logger.info(
+      `Policy ${policy._id} (${policy.policyCode}) closed by ${req.user.id}`,
+    );
+    return sendSuccess(
+      res,
+      { id: policy._id, status: policy.status },
+      "Policy closed successfully. No more votes will be accepted.",
+      200,
+    );
+  } catch (err) {
+    logger.error(`Close policy error: ${err.message}`, { error: err });
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to close policy",
+      null,
+      500,
+    );
+  }
+};
+
+// PATCH /api/policies/:id/pause
+exports.pause = async (req, res) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+
+    if (shouldHideFromPlanner(policy, req.user)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
+    if (policy.status !== "active")
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only active policies can be paused. Current: ${policy.status}`,
+        null,
+        400,
+      );
+
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission",
+        null,
+        403,
+      );
+    }
+
+    policy.status = "paused";
+    await policy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "PAUSE_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { policyCode: policy.policyCode, title: policy.title },
+      req,
+    });
+    logger.info(`Policy ${policy._id} paused by ${req.user.id}`);
+    return sendSuccess(
+      res,
+      { id: policy._id, status: policy.status },
+      "Policy paused. Voting disabled.",
+      200,
+    );
+  } catch (err) {
+    logger.error(`Pause error: ${err.message}`, { error: err });
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to pause policy",
+      null,
+      500,
+    );
+  }
+};
+
+// PATCH /api/policies/:id/resume
+exports.resume = async (req, res) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+
+    if (shouldHideFromPlanner(policy, req.user)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
+    if (policy.status !== "paused")
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only paused policies can be resumed. Current: ${policy.status}`,
+        null,
+        400,
+      );
+
+    const now = new Date();
+    const start = new Date(policy.startDate);
+    const end = new Date(policy.endDate);
+    if (now < start || now > end) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Cannot resume policy outside its voting window. Consider extending end date first.",
+        null,
+        400,
+      );
+    }
+
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission",
+        null,
+        403,
+      );
+    }
+
+    policy.status = "active";
+    await policy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "RESUME_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { policyCode: policy.policyCode, title: policy.title },
+      req,
+    });
+    logger.info(`Policy ${policy._id} resumed by ${req.user.id}`);
+    return sendSuccess(
+      res,
+      { id: policy._id, status: policy.status },
+      "Policy resumed. Voting enabled.",
+      200,
+    );
+  } catch (err) {
+    logger.error(`Resume error: ${err.message}`, { error: err });
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to resume policy",
+      null,
+      500,
+    );
+  }
+};
+
+// PATCH /api/policies/:id/extend
 exports.extendEndDate = async (req, res) => {
   try {
     const { newEndDate } = req.body;
@@ -717,6 +1016,16 @@ exports.extendEndDate = async (req, res) => {
         null,
         404,
       );
+
+    if (shouldHideFromPlanner(policy, req.user)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
 
     if (!["active", "paused"].includes(policy.status)) {
       return sendError(
@@ -812,229 +1121,21 @@ exports.extendEndDate = async (req, res) => {
   }
 };
 
-// PATCH /api/policies/:id/pause (unchanged)
-exports.pause = async (req, res) => {
-  try {
-    const policy = await Policy.findById(req.params.id);
-    if (!policy)
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Policy not found",
-        null,
-        404,
-      );
-    if (policy.status !== "active")
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        `Only active policies can be paused. Current: ${policy.status}`,
-        null,
-        400,
-      );
-
-    const ownerId = policy.createdBy.toString();
-    const userId = req.user.id.toString();
-    if (req.user.role !== "admin" && ownerId !== userId) {
-      return sendError(
-        res,
-        ErrorCodes.FORBIDDEN,
-        "You do not have permission",
-        null,
-        403,
-      );
-    }
-
-    policy.status = "paused";
-    await policy.save();
-
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "PAUSE_POLICY",
-      targetType: "Policy",
-      targetId: policy._id,
-      details: { policyCode: policy.policyCode, title: policy.title },
-      req,
-    });
-    logger.info(`Policy ${policy._id} paused by ${req.user.id}`);
-    return sendSuccess(
-      res,
-      { id: policy._id, status: policy.status },
-      "Policy paused. Voting disabled.",
-      200,
-    );
-  } catch (err) {
-    logger.error(`Pause error: ${err.message}`, { error: err });
-    return sendError(
-      res,
-      ErrorCodes.INTERNAL,
-      "Failed to pause policy",
-      null,
-      500,
-    );
-  }
-};
-
-// PATCH /api/policies/:id/resume (unchanged)
-exports.resume = async (req, res) => {
-  try {
-    const policy = await Policy.findById(req.params.id);
-    if (!policy)
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Policy not found",
-        null,
-        404,
-      );
-    if (policy.status !== "paused")
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        `Only paused policies can be resumed. Current: ${policy.status}`,
-        null,
-        400,
-      );
-
-    const now = new Date();
-    const start = new Date(policy.startDate);
-    const end = new Date(policy.endDate);
-    if (now < start || now > end) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Cannot resume policy outside its voting window. Consider extending end date first.",
-        null,
-        400,
-      );
-    }
-
-    const ownerId = policy.createdBy.toString();
-    const userId = req.user.id.toString();
-    if (req.user.role !== "admin" && ownerId !== userId) {
-      return sendError(
-        res,
-        ErrorCodes.FORBIDDEN,
-        "You do not have permission",
-        null,
-        403,
-      );
-    }
-
-    policy.status = "active";
-    await policy.save();
-
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "RESUME_POLICY",
-      targetType: "Policy",
-      targetId: policy._id,
-      details: { policyCode: policy.policyCode, title: policy.title },
-      req,
-    });
-    logger.info(`Policy ${policy._id} resumed by ${req.user.id}`);
-    return sendSuccess(
-      res,
-      { id: policy._id, status: policy.status },
-      "Policy resumed. Voting enabled.",
-      200,
-    );
-  } catch (err) {
-    logger.error(`Resume error: ${err.message}`, { error: err });
-    return sendError(
-      res,
-      ErrorCodes.INTERNAL,
-      "Failed to resume policy",
-      null,
-      500,
-    );
-  }
-};
-
-// POST /api/policies/:id/close (unchanged)
-exports.close = async (req, res) => {
-  try {
-    const policy = await Policy.findById(req.params.id);
-    if (!policy) {
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Policy not found",
-        null,
-        404,
-      );
-    }
-
-    if (!["active", "paused"].includes(policy.status)) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        `Only active or paused policies can be closed. Current status: ${policy.status}`,
-        null,
-        400,
-      );
-    }
-
-    const ownerId = policy.createdBy.toString();
-    const userId = req.user.id.toString();
-    if (req.user.role !== "admin" && ownerId !== userId) {
-      logger.warn(
-        `User ${userId} attempted to close policy ${policy._id} not owned`,
-      );
-      return sendError(
-        res,
-        ErrorCodes.FORBIDDEN,
-        "You do not have permission to close this policy",
-        null,
-        403,
-      );
-    }
-
-    policy.status = "closed";
-    await policy.save();
-
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "CLOSE_POLICY",
-      targetType: "Policy",
-      targetId: policy._id,
-      details: {
-        policyCode: policy.policyCode,
-        title: policy.title,
-        previousStatus: policy.status,
-      },
-      req,
-    });
-
-    logger.info(
-      `Policy ${policy._id} (${policy.policyCode}) closed by ${req.user.id}`,
-    );
-    return sendSuccess(
-      res,
-      { id: policy._id, status: policy.status },
-      "Policy closed successfully. No more votes will be accepted.",
-      200,
-    );
-  } catch (err) {
-    logger.error(`Close policy error: ${err.message}`, { error: err });
-    return sendError(
-      res,
-      ErrorCodes.INTERNAL,
-      "Failed to close policy",
-      null,
-      500,
-    );
-  }
-};
-
-// DELETE /api/policies/:id (only for draft policies) – unchanged
+// DELETE /api/policies/:id
 exports.delete = async (req, res) => {
   try {
     const policy = await Policy.findById(req.params.id);
     if (!policy) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
+    if (shouldHideFromPlanner(policy, req.user)) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -1053,6 +1154,7 @@ exports.delete = async (req, res) => {
         403,
       );
     }
+
     const ownerId = policy.createdBy.toString();
     const userId = req.user.id.toString();
     if (req.user.role !== "admin" && ownerId !== userId) {
@@ -1096,9 +1198,7 @@ exports.delete = async (req, res) => {
   }
 };
 
-// ==================== ADDITIONAL FEATURES ====================
-
-// POST /api/policies/:id/clone (unchanged)
+// POST /api/policies/:id/clone
 exports.clone = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -1116,6 +1216,17 @@ exports.clone = async (req, res) => {
         res,
         ErrorCodes.NOT_FOUND,
         "Original policy not found",
+        null,
+        404,
+      );
+    }
+
+    // Hide draft/published from non‑owner planners
+    if (shouldHideFromPlanner(original, req.user)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
         null,
         404,
       );
@@ -1202,7 +1313,7 @@ exports.clone = async (req, res) => {
   }
 };
 
-// GET /api/policies/:id/history (unchanged)
+// GET /api/policies/:id/history
 exports.getHistory = async (req, res) => {
   try {
     if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
@@ -1216,6 +1327,16 @@ exports.getHistory = async (req, res) => {
     }
     const policy = await Policy.findById(req.params.id);
     if (!policy) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
+    if (shouldHideFromPlanner(policy, req.user)) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
