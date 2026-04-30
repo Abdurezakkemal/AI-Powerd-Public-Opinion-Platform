@@ -13,7 +13,9 @@
  *   --policies, -P      Delete all policies
  *   --sms-votes         Delete all SMS votes (channel: sms) from votes collection
  *   --app-votes         Delete all app votes (channel: app) from votes collection
- *   --all               Delete EVERYTHING (citizens, planners, votes, comments, policies, but NOT admins unless --admins also given)
+ *   --notifications, -N Delete all notification documents
+ *   --audit-logs, -L    Delete all audit log documents
+ *   --all               Delete EVERYTHING (citizens, planners, votes, comments, policies, notifications, audit logs, but NOT admins unless --admins also given)
  *   --dry-run           Show what would be deleted without actually deleting
  *   --help, -h          Show this help message
  *
@@ -31,6 +33,8 @@ const User = require("../src/models/User");
 const Policy = require("../src/models/Policy");
 const Vote = require("../src/models/Vote");
 const Comment = require("../src/models/Comment");
+const Notification = require("../src/models/Notification");
+const AuditLog = require("../src/models/AuditLog");
 
 const MONGO_URI =
   process.env.MONGO_URI || "mongodb://localhost:27017/communityinsight";
@@ -46,6 +50,8 @@ const flags = {
   policies: false,
   smsVotes: false,
   appVotes: false,
+  notifications: false,
+  auditLogs: false,
   all: false,
   dryRun: false,
   help: false,
@@ -84,6 +90,14 @@ for (let i = 0; i < args.length; i++) {
     case "--app-votes":
       flags.appVotes = true;
       break;
+    case "--notifications":
+    case "-N":
+      flags.notifications = true;
+      break;
+    case "--audit-logs":
+    case "-L":
+      flags.auditLogs = true;
+      break;
     case "--all":
       flags.all = true;
       break;
@@ -115,7 +129,9 @@ Options:
   --policies, -P      Delete all policies
   --sms-votes         Delete only SMS votes (channel: sms)
   --app-votes         Delete only app votes (channel: app)
-  --all               Delete EVERYTHING (citizens, planners, votes, comments, policies, but NOT admins unless --admins also given)
+  --notifications, -N Delete all notification documents
+  --audit-logs, -L    Delete all audit log documents
+  --all               Delete EVERYTHING (citizens, planners, votes, comments, policies, notifications, audit logs, but NOT admins unless --admins also given)
   --dry-run           Show what would be deleted without actually deleting
   --help, -h          Show this help
 
@@ -134,6 +150,8 @@ if (flags.all) {
   flags.votes = true;
   flags.comments = true;
   flags.policies = true;
+  flags.notifications = true;
+  flags.auditLogs = true;
   // admins remain false unless explicitly requested
 }
 
@@ -190,6 +208,27 @@ async function cleanup() {
     if (flags.policies) {
       const result = await Policy.deleteMany({});
       deletions.push(`Policies: ${result.deletedCount} deleted`);
+    }
+
+    // Notifications
+    if (flags.notifications) {
+      // Check if Notification model exists
+      if (Notification && Notification.deleteMany) {
+        const result = await Notification.deleteMany({});
+        deletions.push(`Notifications: ${result.deletedCount} deleted`);
+      } else {
+        deletions.push("Notifications: Model not found – skipping");
+      }
+    }
+
+    // Audit Logs
+    if (flags.auditLogs) {
+      if (AuditLog && AuditLog.deleteMany) {
+        const result = await AuditLog.deleteMany({});
+        deletions.push(`Audit Logs: ${result.deletedCount} deleted`);
+      } else {
+        deletions.push("Audit Logs: Model not found – skipping");
+      }
     }
 
     if (deletions.length === 0) {

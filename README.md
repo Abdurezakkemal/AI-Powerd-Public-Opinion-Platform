@@ -33,6 +33,7 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 - **Auto‑activation**: published policies become active on their start date
 - **Auto‑closure**: active/paused policies close when end date passes
 - **In‑app notifications**: planners receive alerts when their policies are activated; **voters receive notifications** when a policy closes (with final results)
+- Unified heatmap endpoint – visualise voting patterns over time (global time series or geographic heatmap with region breakdown)
 - View analytics: average rating, sentiment counts, top keywords, geographic breakdown, trends
 - Export data as CSV
 - Manage planner accounts (admin only)

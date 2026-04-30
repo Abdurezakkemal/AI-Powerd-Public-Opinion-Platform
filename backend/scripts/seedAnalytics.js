@@ -15,7 +15,7 @@ const MONGO_URI =
 const API_URL = process.env.API_URL || "http://localhost:5000/api";
 const DEFAULT_PASSWORD = "Pass123!";
 
-// All Ethiopian regions (for geographic coverage)
+// Ethiopian regions (for geographic coverage)
 const ALL_REGIONS = [
   "Addis Ababa",
   "Oromia",
@@ -33,8 +33,15 @@ const ALL_REGIONS = [
 const randomItem = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const randomInt = (min, max) =>
   Math.floor(Math.random() * (max - min + 1)) + min;
-const randomDate = (start, end) =>
-  new Date(start.getTime() + Math.random() * (end.getTime() - start.getTime()));
+
+// Generate a random date between 2026-02-01 and 2026-04-30
+const randomVoteDate = () => {
+  const start = new Date("2026-02-01T00:00:00Z");
+  const end = new Date("2026-04-30T23:59:59Z");
+  return new Date(
+    start.getTime() + Math.random() * (end.getTime() - start.getTime()),
+  );
+};
 
 const generateComment = (sentiment) => {
   const comments = {
@@ -113,7 +120,6 @@ async function loginAndSaveTokens(users, filename, retries = 3) {
     let success = false;
     for (let attempt = 1; attempt <= retries; attempt++) {
       try {
-        // Add small random delay to avoid hammering the server
         await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
         const response = await axios.post(
           `${API_URL}/auth/login`,
@@ -149,12 +155,8 @@ async function loginAndSaveTokens(users, filename, retries = 3) {
       );
     }
   }
-  // Create tokens directory if it doesn't exist
   const tokensDir = path.join(__dirname, "../tokens");
-  if (!fs.existsSync(tokensDir)) {
-    fs.mkdirSync(tokensDir);
-    console.log("Created tokens directory.");
-  }
+  if (!fs.existsSync(tokensDir)) fs.mkdirSync(tokensDir);
   const filePath = path.join(tokensDir, filename);
   fs.writeFileSync(filePath, JSON.stringify(tokens, null, 2));
   console.log(`   Tokens saved to ${filePath}`);
@@ -167,27 +169,7 @@ async function seed() {
     await mongoose.connect(MONGO_URI);
     console.log("Connected to MongoDB");
 
-    // Drop all indexes except _id_ for Vote and Comment collections
-    try {
-      const voteIndexes = await Vote.collection.getIndexes();
-      for (const name in voteIndexes) {
-        if (name !== "_id_") {
-          await Vote.collection.dropIndex(name);
-          console.log(`Dropped Vote index: ${name}`);
-        }
-      }
-      const commentIndexes = await Comment.collection.getIndexes();
-      for (const name in commentIndexes) {
-        if (name !== "_id_") {
-          await Comment.collection.dropIndex(name);
-          console.log(`Dropped Comment index: ${name}`);
-        }
-      }
-    } catch (err) {
-      console.log("No indexes to drop or error:", err.message);
-    }
-
-    // Clean database (keep admin users)
+    // Drop existing data (keep admin users)
     console.log("Cleaning database (keeping admin users)...");
     await Vote.deleteMany({});
     await Comment.deleteMany({});
@@ -195,31 +177,15 @@ async function seed() {
     await User.deleteMany({ role: { $ne: "admin" } });
     console.log("Cleaned.");
 
-    // Recreate the unique indexes for Vote (sparse as defined in model)
-    await Vote.collection.createIndex(
-      { policyId: 1, userId: 1 },
-      { unique: true, sparse: true, name: "policyId_1_userId_1" },
-    );
-    await Vote.collection.createIndex(
-      { policyId: 1, phoneHash: 1 },
-      { unique: true, sparse: true, name: "policyId_1_phoneHash_1" },
-    );
-    console.log("Recreated unique indexes for Vote");
-
-    // Comment index: unique on voteId (enforced in model), and index on policyId+userId
-    await Comment.collection.createIndex(
-      { voteId: 1 },
-      { unique: true, name: "voteId_1" },
-    );
-    await Comment.collection.createIndex(
-      { policyId: 1, userId: 1 },
-      { name: "policyId_1_userId_1" },
-    );
-    console.log("Recreated indexes for Comment");
+    // Recreate indexes (optional – your model defines them; we'll rely on syncIndexes)
+    // But we explicitly call syncIndexes for safety
+    await Vote.syncIndexes();
+    await Comment.syncIndexes();
+    console.log("Indexes synced");
 
     const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
-    // Create 2 planners
+    // ---- 1. Create 2 planners ----
     const planners = [];
     for (let i = 1; i <= 2; i++) {
       const email = `planner${i}@test.com`;
@@ -239,7 +205,7 @@ async function seed() {
       `Created ${planners.length} planners (password: ${DEFAULT_PASSWORD})`,
     );
 
-    // Create citizens – 2 per region (total 22)
+    // ---- 2. Create 2 citizens per region (total 22) ----
     const citizens = [];
     let citizenIndex = 1;
     for (const region of ALL_REGIONS) {
@@ -264,10 +230,11 @@ async function seed() {
       `Created ${citizens.length} citizens (2 per region, password: ${DEFAULT_PASSWORD})`,
     );
 
-    // Create 6 policies:
-    // - First policy (index 0): Geographic test policy that targets ALL regions
-    // - Next 4 policies (indices 1-4): active, random target regions
-    // - Last policy (index 5): closed (inactive)
+    // ---- 3. Create policies ----
+    // We want:
+    //   - One policy targeting all regions (for geographic & heatmap testing) – status "active"
+    //   - Four other active policies with random targets
+    //   - One closed policy (was active in the past) – again random targets
     const policyTitles = [
       "Geographic Test Policy (All Regions)",
       "Clean Water Access Initiative",
@@ -289,8 +256,10 @@ async function seed() {
           randomItem(ALL_REGIONS),
         ].slice(0, randomInt(1, 2));
       }
+      // For the closed policy (i=5), make its end date before today so that the auto‑worker would have closed it.
+      // But we create it as "closed" directly.
       const startDate = new Date("2026-02-01");
-      const endDate = new Date("2026-07-30");
+      const endDate = i === 5 ? new Date("2026-03-15") : new Date("2026-07-30");
       let status = "active";
       if (i === 5) status = "closed";
       const createdBy = randomItem(planners)._id;
@@ -311,35 +280,38 @@ async function seed() {
       policies.push({ ...policy.toObject(), _id: policy._id.toString() });
     }
     const activePolicies = policies.filter((p) => p.status === "active");
+    const closedPolicies = policies.filter((p) => p.status === "closed");
     console.log(
-      `Created ${policies.length} policies (active: ${activePolicies.length})`,
+      `Created ${policies.length} policies (${activePolicies.length} active, ${closedPolicies.length} closed)`,
     );
 
-    if (activePolicies.length === 0)
-      throw new Error("No active policies to seed feedback.");
-
-    // Generate votes and comments – only app votes
+    // ---- 4. Create votes & comments for all active AND closed policies ----
+    const policiesToSeed = [...activePolicies, ...closedPolicies];
     let voteCounter = 0;
 
-    for (const policy of activePolicies) {
+    for (const policy of policiesToSeed) {
       for (const citizen of citizens) {
+        // Only vote if the citizen's region is in the policy's target regions
+        if (!policy.targetRegions.includes(citizen.region)) continue;
+
         voteCounter++;
         const rating = randomInt(1, 5);
         const hasComment = Math.random() > 0.3;
-        const createdAt = randomDate(new Date("2026-02-01"), new Date());
+        const createdAt = randomVoteDate();
 
-        // Create the Vote (always)
+        // Create Vote with region snapshot
         const vote = new Vote({
           policyId: policy._id,
           userId: citizen._id,
           phoneHash: citizen.phoneHash,
           channel: "app",
           rating,
+          region: citizen.region, // ★ snapshot for historical accuracy
           createdAt,
         });
         await vote.save();
 
-        // If comment exists, create a Comment linked to this vote
+        // Create optional Comment (linked)
         if (hasComment) {
           const sentimentLabel =
             rating <= 2 ? "negative" : rating === 3 ? "neutral" : "positive";
@@ -355,7 +327,7 @@ async function seed() {
             sentimentObj.confidence = 0;
           }
           const commentDoc = new Comment({
-            voteId: vote._id, // link to the vote
+            voteId: vote._id,
             policyId: policy._id,
             userId: citizen._id,
             rating,
@@ -373,42 +345,61 @@ async function seed() {
       }
     }
 
+    // // ---- 5. Create some SMS votes (only for active policies; no region) ----
+    // // SMS votes are anonymous but we still need them to test global counts.
+    // const smsPhones = [
+    //   "+251911234567",
+    //   "+251922345678",
+    //   "+251933456789",
+    //   "+251944567890",
+    // ];
+    // for (const policy of activePolicies) {
+    //   for (let i = 0; i < 3; i++) {
+    //     const rating = randomInt(1, 5);
+    //     const createdAt = randomVoteDate();
+    //     const vote = new Vote({
+    //       policyId: policy._id,
+    //       userId: null,
+    //       phoneHash: smsPhones[i % smsPhones.length],
+    //       channel: "sms",
+    //       rating,
+    //       region: null, // SMS votes have no region
+    //       createdAt,
+    //     });
+    //     await vote.save();
+    //     // No comment for SMS votes
+    //   }
+    // }
+
     const totalVotes = await Vote.countDocuments();
     const totalComments = await Comment.countDocuments();
     console.log(
-      `Created ${totalVotes} votes (${citizens.length} citizens × ${activePolicies.length} policies)`,
+      `Created ${totalVotes} votes (${citizens.length * policiesToSeed.length} app votes + ~${activePolicies.length * 3} SMS votes)`,
     );
     console.log(`Created ${totalComments} comments (with AI processing)`);
 
     const geographicPolicy = activePolicies[0];
     if (geographicPolicy) {
       console.log(
-        `\nUse this policy ID for geographic heatmap testing: ${geographicPolicy._id}`,
+        `\n🔍 Use this policy ID for geographic / heatmap testing: ${geographicPolicy._id}`,
       );
       console.log(`   Policy title: ${geographicPolicy.title}`);
-      console.log(
-        `   Target regions: ${geographicPolicy.targetRegions.length} regions (all)`,
-      );
-    } else {
-      console.log("\nNo active policy found for geographic testing.");
+      console.log(`   Target regions: all ${ALL_REGIONS.length} regions`);
     }
 
-    if (activePolicies.length > 1) {
+    if (closedPolicies.length) {
       console.log(
-        `\nUse this policy ID for general analytics testing: ${activePolicies[1]._id}`,
+        `\n🔒 Use this policy ID for closed-policy analytics: ${closedPolicies[0]._id}`,
       );
-      console.log(`   Policy title: ${activePolicies[1].title}`);
+      console.log(`   Policy title: ${closedPolicies[0].title}`);
     }
 
+    // ---- 6. Obtain JWT tokens for manual API testing (optional) ----
     console.log("\nObtaining JWT tokens for citizens and planners...");
-    console.log("(Make sure your backend is running on port 5000)");
-
-    // Wait for backend to be ready
     await waitForBackend();
 
-    let citizenTokens = [];
-    let plannerTokens = [];
-
+    let citizenTokens = [],
+      plannerTokens = [];
     try {
       citizenTokens = await loginAndSaveTokens(citizens, "citizen_tokens.json");
       plannerTokens = await loginAndSaveTokens(planners, "planner_tokens.json");
@@ -420,20 +411,19 @@ async function seed() {
     }
 
     console.log("\n========== SEED COMPLETE ==========");
-    console.log(`Planners: ${planners.length} created`);
+    console.log(`Planners: ${planners.length}`);
     console.log(
-      `Citizens: ${citizens.length} created (2 per region, covering ${ALL_REGIONS.length} regions)`,
+      `Citizens: ${citizens.length} (2 per region, covering ${ALL_REGIONS.length} regions)`,
     );
     console.log(
-      `Policies: ${policies.length} (${activePolicies.length} active, ${policies.length - activePolicies.length} inactive)`,
+      `Policies: ${policies.length} (${activePolicies.length} active, ${closedPolicies.length} closed, 0 draft/published)`,
     );
     console.log(`Votes: ${totalVotes}`);
     console.log(`Comments: ${totalComments}`);
-    console.log(`Regions covered: ${ALL_REGIONS.join(", ")}`);
-    if (citizenTokens.length)
-      console.log(`Citizen tokens saved: ${citizenTokens.length}`);
-    if (plannerTokens.length)
-      console.log(`Planner tokens saved: ${plannerTokens.length}`);
+    console.log(`SMS votes: ${await Vote.countDocuments({ channel: "sms" })}`);
+    console.log(
+      `Region snapshots stored on Vote: ${await Vote.countDocuments({ region: { $ne: null } })}`,
+    );
     console.log("===================================\n");
 
     await mongoose.disconnect();
