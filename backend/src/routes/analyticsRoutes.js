@@ -19,14 +19,8 @@ router.get(
   analyticsController.getComments,
 );
 router.get(
-  "/:policyId/geographic",
+  "/heatmap",
   auth(["planner", "admin"]),
-  analyticsController.getGeographicAnalytics,
+  analyticsController.getHeatmap,
 );
-router.get(
-  "/:policyId/trends",
-  auth(["planner", "admin"]),
-  analyticsController.getTrends,
-);
-
 module.exports = router;

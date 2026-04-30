@@ -249,300 +249,279 @@ exports.getComments = async (req, res) => {
   }
 };
 
-// GET /analytics/:policyId/geographic
-exports.getGeographicAnalytics = async (req, res) => {
+// GET /analytics/heatmap
+exports.getHeatmap = async (req, res) => {
   try {
-    const { policyId } = req.params;
-    const policy = await Policy.findById(policyId);
-    if (!policy) {
-      logger.warn(
-        `Geographic analytics requested for non-existent policy: ${policyId}`,
-      );
+    const {
+      startDate,
+      endDate,
+      interval = "week",
+      policyId,
+      byRegion = "false",
+      regions,
+    } = req.query;
+    const byRegionFlag = byRegion === "true";
+
+    if (req.user.role !== "planner" && req.user.role !== "admin") {
       return sendError(
         res,
-        ErrorCodes.NOT_FOUND,
-        "Policy not found",
+        ErrorCodes.FORBIDDEN,
+        "Access denied. Only planners and admins can view heatmap.",
         null,
-        404,
+        403,
       );
     }
-    if (req.user.role !== "planner" && req.user.role !== "admin") {
-      logger.warn(
-        `Access denied to geographic analytics for policy ${policyId} by user ${req.user.id}`,
-      );
-      return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
+
+    // Build match stage for votes (app only, with region)
+    const voteMatch = { channel: "app", region: { $ne: null } };
+    if (policyId) voteMatch.policyId = new mongoose.Types.ObjectId(policyId);
+    if (startDate) voteMatch.createdAt = { $gte: new Date(startDate) };
+    if (endDate)
+      voteMatch.createdAt = { ...voteMatch.createdAt, $lte: new Date(endDate) };
+    if (regions) {
+      const regionList = regions.split(",").map((r) => r.trim());
+      voteMatch.region = { $in: regionList };
     }
 
-    // Only consider app votes that have comments (same as original logic)
-    exports.getGeographicAnalytics = async (req, res) => {
-      try {
-        const { policyId } = req.params;
-        const policy = await Policy.findById(policyId);
-        if (!policy) {
-          logger.warn(
-            `Geographic analytics requested for non-existent policy: ${policyId}`,
-          );
-          return sendError(
-            res,
-            ErrorCodes.NOT_FOUND,
-            "Policy not found",
-            null,
-            404,
-          );
-        }
-        if (req.user.role !== "planner" && req.user.role !== "admin") {
-          logger.warn(
-            `Access denied to geographic analytics for policy ${policyId} by user ${req.user.id}`,
-          );
-          return sendError(
-            res,
-            ErrorCodes.FORBIDDEN,
-            "Access denied",
-            null,
-            403,
-          );
-        }
+    // Date formatting based on interval
+    let dateFormat;
+    switch (interval) {
+      case "day":
+        dateFormat = "%Y-%m-%d";
+        break;
+      case "week":
+        dateFormat = "%Y-%W";
+        break;
+      case "month":
+        dateFormat = "%Y-%m";
+        break;
+      default:
+        dateFormat = "%Y-%W";
+    }
 
-        // 1. Aggregate votes (all app votes) by region (snapshot on Vote)
-        const voteAgg = await Vote.aggregate([
-          {
-            $match: {
-              policyId: policy._id,
-              channel: "app",
-              region: { $ne: null },
+    let results;
+    if (byRegionFlag) {
+      // Group by time bucket AND region
+      const voteAgg = await Vote.aggregate([
+        { $match: voteMatch },
+        {
+          $group: {
+            _id: {
+              period: {
+                $dateToString: { format: dateFormat, date: "$createdAt" },
+              },
+              region: "$region",
             },
+            totalVotes: { $sum: 1 },
+            averageRating: { $avg: "$rating" },
           },
-          {
-            $group: {
-              _id: "$region",
-              totalVotes: { $sum: 1 },
-              averageRating: { $avg: "$rating" },
-            },
-          },
-          { $sort: { totalVotes: -1 } },
-        ]);
+        },
+        { $sort: { "_id.period": 1, "_id.region": 1 } },
+      ]);
 
-        // 2. Aggregate sentiment counts per region by joining Comment -> Vote
-        const sentimentAgg = await Comment.aggregate([
-          { $match: { policyId: policy._id } },
-          {
-            $lookup: {
-              from: "votes",
-              localField: "voteId",
-              foreignField: "_id",
-              as: "vote",
-            },
+      // Sentiment aggregation from comments, joining to vote to get region
+      const commentMatch = {};
+      if (policyId)
+        commentMatch.policyId = new mongoose.Types.ObjectId(policyId);
+      if (startDate) commentMatch.createdAt = { $gte: new Date(startDate) };
+      if (endDate)
+        commentMatch.createdAt = {
+          ...commentMatch.createdAt,
+          $lte: new Date(endDate),
+        };
+
+      const sentimentAgg = await Comment.aggregate([
+        { $match: commentMatch },
+        {
+          $lookup: {
+            from: "votes",
+            localField: "voteId",
+            foreignField: "_id",
+            as: "vote",
           },
-          { $unwind: "$vote" },
-          {
-            $group: {
-              _id: "$vote.region",
-              positive: {
-                $sum: {
-                  $cond: [{ $eq: ["$sentiment.label", "positive"] }, 1, 0],
-                },
+        },
+        { $unwind: "$vote" },
+        { $match: { "vote.region": { $ne: null } } },
+        {
+          $group: {
+            _id: {
+              period: {
+                $dateToString: { format: dateFormat, date: "$createdAt" },
               },
-              negative: {
-                $sum: {
-                  $cond: [{ $eq: ["$sentiment.label", "negative"] }, 1, 0],
-                },
-              },
-              neutral: {
-                $sum: {
-                  $cond: [{ $eq: ["$sentiment.label", "neutral"] }, 1, 0],
-                },
+              region: "$vote.region",
+            },
+            positive: {
+              $sum: {
+                $cond: [{ $eq: ["$sentiment.label", "positive"] }, 1, 0],
               },
             },
+            negative: {
+              $sum: {
+                $cond: [{ $eq: ["$sentiment.label", "negative"] }, 1, 0],
+              },
+            },
+            neutral: {
+              $sum: { $cond: [{ $eq: ["$sentiment.label", "neutral"] }, 1, 0] },
+            },
           },
-        ]);
+        },
+        { $sort: { "_id.period": 1, "_id.region": 1 } },
+      ]);
 
-        // Merge results
-        const sentimentMap = new Map();
-        sentimentAgg.forEach((s) => {
-          sentimentMap.set(s._id, {
-            positive: s.positive,
-            negative: s.negative,
-            neutral: s.neutral,
-          });
+      // Merge voteAgg and sentimentAgg into periodsMap
+      const periodsMap = new Map();
+      voteAgg.forEach((v) => {
+        const period = v._id.period;
+        const region = v._id.region;
+        if (!periodsMap.has(period)) periodsMap.set(period, new Map());
+        const regionMap = periodsMap.get(period);
+        regionMap.set(region, {
+          totalVotes: v.totalVotes,
+          averageRating: parseFloat(v.averageRating.toFixed(2)),
+          sentiment: { positive: 0, negative: 0, neutral: 0 },
         });
+      });
+      sentimentAgg.forEach((c) => {
+        const period = c._id.period;
+        const region = c._id.region;
+        if (!periodsMap.has(period)) periodsMap.set(period, new Map());
+        const regionMap = periodsMap.get(period);
+        if (!regionMap.has(region)) {
+          regionMap.set(region, {
+            totalVotes: 0,
+            averageRating: 0,
+            sentiment: { positive: 0, negative: 0, neutral: 0 },
+          });
+        }
+        const data = regionMap.get(region);
+        data.sentiment.positive += c.positive;
+        data.sentiment.negative += c.negative;
+        data.sentiment.neutral += c.neutral;
+      });
 
-        const result = voteAgg.map((item) => {
-          const region = item._id;
-          const sentiment = sentimentMap.get(region) || {
+      // Build response array
+      const periods = Array.from(periodsMap.keys()).sort();
+      results = periods.map((period) => {
+        const regionMap = periodsMap.get(period);
+        const regionsArr = Array.from(regionMap.entries()).map(
+          ([region, data]) => ({
+            region,
+            totalVotes: data.totalVotes,
+            averageRating: data.averageRating,
+            sentimentCounts: data.sentiment,
+          }),
+        );
+        // Optional: add human readable date range
+        let startDateStr = "",
+          endDateStr = "";
+        if (interval === "day") startDateStr = period;
+        else if (interval === "week") {
+          const [year, week] = period.split("-");
+          const firstDay = new Date(year, 0, 1 + (week - 1) * 7);
+          startDateStr = firstDay.toISOString().split("T")[0];
+          const lastDay = new Date(
+            firstDay.getTime() + 6 * 24 * 60 * 60 * 1000,
+          );
+          endDateStr = lastDay.toISOString().split("T")[0];
+        } else if (interval === "month") {
+          startDateStr = period + "-01";
+          const lastDay = new Date(
+            new Date(period + "-01").getFullYear(),
+            new Date(period + "-01").getMonth() + 1,
+            0,
+          );
+          endDateStr = lastDay.toISOString().split("T")[0];
+        }
+        return {
+          period,
+          startDate: startDateStr,
+          endDate: endDateStr,
+          regions: regionsArr,
+        };
+      });
+    } else {
+      // Without region grouping: global time series (no region breakdown)
+      const voteAgg = await Vote.aggregate([
+        { $match: voteMatch },
+        {
+          $group: {
+            _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+            totalVotes: { $sum: 1 },
+            averageRating: { $avg: "$rating" },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]);
+      const sentimentAgg = await Comment.aggregate([
+        { $match: commentMatch },
+        {
+          $group: {
+            _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+            positive: {
+              $sum: {
+                $cond: [{ $eq: ["$sentiment.label", "positive"] }, 1, 0],
+              },
+            },
+            negative: {
+              $sum: {
+                $cond: [{ $eq: ["$sentiment.label", "negative"] }, 1, 0],
+              },
+            },
+            neutral: {
+              $sum: { $cond: [{ $eq: ["$sentiment.label", "neutral"] }, 1, 0] },
+            },
+          },
+        },
+        { $sort: { _id: 1 } },
+      ]);
+
+      const merged = new Map();
+      voteAgg.forEach((v) => {
+        merged.set(v._id, {
+          period: v._id,
+          totalVotes: v.totalVotes,
+          averageRating: parseFloat(v.averageRating?.toFixed(2) || 0),
+          positive: 0,
+          negative: 0,
+          neutral: 0,
+        });
+      });
+      sentimentAgg.forEach((s) => {
+        if (!merged.has(s._id)) {
+          merged.set(s._id, {
+            period: s._id,
+            totalVotes: 0,
+            averageRating: 0,
             positive: 0,
             negative: 0,
             neutral: 0,
-          };
-          return {
-            region,
-            totalVotes: item.totalVotes,
-            averageRating: parseFloat(item.averageRating.toFixed(2)),
-            sentimentCounts: sentiment,
-          };
-        });
+          });
+        }
+        const data = merged.get(s._id);
+        data.positive += s.positive;
+        data.negative += s.negative;
+        data.neutral += s.neutral;
+      });
 
-        logger.info(
-          `Geographic analytics delivered for policy ${policyId} to user ${req.user.id} (${result.length} regions)`,
-        );
-        return sendSuccess(
-          res,
-          { policyId, regions: result },
-          "Geographic analytics retrieved successfully",
-        );
-      } catch (err) {
-        logger.error(
-          { error: err.message, stack: err.stack },
-          "Geographic analytics error",
-        );
-        return sendError(
-          res,
-          ErrorCodes.INTERNAL,
-          "Failed to retrieve geographic analytics",
-          null,
-          500,
-        );
-      }
-    };
-
-    const result = geographicData.map((item) => ({
-      region: item._id || "Unknown",
-      totalVotes: item.totalVotes,
-      averageRating: parseFloat(item.averageRating.toFixed(2)),
-      sentimentCounts: {
-        positive: item.positive,
-        negative: item.negative,
-        neutral: item.neutral,
-      },
-    }));
+      results = Array.from(merged.values()).sort((a, b) =>
+        a.period > b.period ? 1 : -1,
+      );
+    }
 
     logger.info(
-      `Geographic analytics delivered for policy ${policyId} to user ${req.user.id} (${result.length} regions)`,
+      `Heatmap data generated by user ${req.user.id} (${results.length} periods)`,
     );
     return sendSuccess(
       res,
-      { policyId, regions: result },
-      "Geographic analytics retrieved successfully",
+      { interval, data: results },
+      "Heatmap data retrieved successfully",
     );
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Geographic analytics error",
-    );
+    logger.error({ error: err.message, stack: err.stack }, "Heatmap error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to retrieve geographic analytics",
-      null,
-      500,
-    );
-  }
-};
-
-// GET /analytics/:policyId/trends?interval=day|week
-exports.getTrends = async (req, res) => {
-  try {
-    const { policyId } = req.params;
-    const { interval = "day" } = req.query;
-    const policy = await Policy.findById(policyId);
-    if (!policy) {
-      logger.warn(`Trends requested for non-existent policy: ${policyId}`);
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Policy not found",
-        null,
-        404,
-      );
-    }
-    if (req.user.role !== "planner" && req.user.role !== "admin") {
-      logger.warn(
-        `Access denied to trends for policy ${policyId} by user ${req.user.id}`,
-      );
-      return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
-    }
-
-    const dateFormat = interval === "week" ? "%Y-%W" : "%Y-%m-%d";
-
-    // Get rating trends from Votes
-    const voteTrends = await Vote.aggregate([
-      { $match: { policyId: policy._id } },
-      {
-        $group: {
-          _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
-          total: { $sum: 1 },
-          averageRating: { $avg: "$rating" },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]);
-
-    // Get sentiment trends from Comments
-    const sentimentTrends = await Comment.aggregate([
-      { $match: { policyId: policy._id } },
-      {
-        $group: {
-          _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
-          positive: {
-            $sum: { $cond: [{ $eq: ["$sentiment.label", "positive"] }, 1, 0] },
-          },
-          negative: {
-            $sum: { $cond: [{ $eq: ["$sentiment.label", "negative"] }, 1, 0] },
-          },
-          neutral: {
-            $sum: { $cond: [{ $eq: ["$sentiment.label", "neutral"] }, 1, 0] },
-          },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]);
-
-    // Merge both results
-    const merged = {};
-    voteTrends.forEach((vt) => {
-      merged[vt._id] = {
-        date: vt._id,
-        averageRating: parseFloat(vt.averageRating?.toFixed(2) || 0),
-        total: vt.total,
-        positive: 0,
-        negative: 0,
-        neutral: 0,
-      };
-    });
-    sentimentTrends.forEach((st) => {
-      if (merged[st._id]) {
-        merged[st._id].positive = st.positive;
-        merged[st._id].negative = st.negative;
-        merged[st._id].neutral = st.neutral;
-      } else {
-        merged[st._id] = {
-          date: st._id,
-          averageRating: 0,
-          total: 0,
-          positive: st.positive,
-          negative: st.negative,
-          neutral: st.neutral,
-        };
-      }
-    });
-
-    const result = Object.values(merged).sort((a, b) =>
-      a.date > b.date ? 1 : -1,
-    );
-
-    logger.info(
-      `Trends retrieved for policy ${policyId} by user ${req.user.id} (interval ${interval}, ${result.length} points)`,
-    );
-    return sendSuccess(
-      res,
-      { policyId, interval, data: result },
-      "Trends retrieved successfully",
-    );
-  } catch (err) {
-    logger.error({ error: err.message, stack: err.stack }, "Trends error");
-    return sendError(
-      res,
-      ErrorCodes.INTERNAL,
-      "Failed to retrieve trends",
+      "Failed to retrieve heatmap data",
       null,
       500,
     );
