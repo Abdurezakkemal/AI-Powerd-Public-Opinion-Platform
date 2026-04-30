@@ -53,9 +53,18 @@ const validateDateParam = (dateStr, paramName) => {
   return date;
 };
 
-// Helper to check if a policy is eligible for analytics (must be active/paused/closed)
-const isPolicyEligibleForAnalytics = (policy) => {
-  return ["active", "paused", "closed"].includes(policy.status);
+// Helper to check if user can view policy analytics
+const canViewPolicyAnalytics = (policy, user) => {
+  if (user.role === "admin") return true;
+  if (user.role !== "planner") return false;
+
+  // For draft/published: only creator can view
+  if (policy.status === "draft" || policy.status === "published") {
+    return policy.createdBy.toString() === user.id;
+  }
+
+  // For active/paused/closed: any planner can view
+  return true;
 };
 
 // GET /analytics/:policyId
@@ -84,17 +93,17 @@ exports.getAnalytics = async (req, res) => {
       );
     }
 
-    // Block draft and published policies
-    if (!isPolicyEligibleForAnalytics(policy)) {
+    // Check permission (admin, creator, or viewable status)
+    if (!canViewPolicyAnalytics(policy, req.user)) {
       logger.warn(
-        `Analytics requested for ineligible policy: ${policyId} (status: ${policy.status})`,
+        `Access denied to analytics for policy ${policyId} by user ${req.user.id}`,
       );
       return sendError(
         res,
-        ErrorCodes.VALIDATION,
-        "Policy is not active yet (no analytics available)",
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
         null,
-        400,
+        404,
       );
     }
 
@@ -193,17 +202,17 @@ exports.exportAnalytics = async (req, res) => {
       );
     }
 
-    // Block draft and published policies
-    if (!isPolicyEligibleForAnalytics(policy)) {
+    // Check permission
+    if (!canViewPolicyAnalytics(policy, req.user)) {
       logger.warn(
-        `CSV export requested for ineligible policy: ${policyId} (status: ${policy.status})`,
+        `Access denied to CSV export for policy ${policyId} by user ${req.user.id}`,
       );
       return sendError(
         res,
-        ErrorCodes.VALIDATION,
-        "Policy is not active yet (no analytics available)",
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
         null,
-        400,
+        404,
       );
     }
 
@@ -282,17 +291,17 @@ exports.getComments = async (req, res) => {
       );
     }
 
-    // Block draft and published policies
-    if (!isPolicyEligibleForAnalytics(policy)) {
+    // Check permission
+    if (!canViewPolicyAnalytics(policy, req.user)) {
       logger.warn(
-        `Comments requested for ineligible policy: ${policyId} (status: ${policy.status})`,
+        `Access denied to comments for policy ${policyId} by user ${req.user.id}`,
       );
       return sendError(
         res,
-        ErrorCodes.VALIDATION,
-        "Policy is not active yet (no analytics available)",
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
         null,
-        400,
+        404,
       );
     }
 
@@ -400,6 +409,16 @@ exports.getHeatmap = async (req, res) => {
         dateFormat = "%Y-%W";
     }
 
+    // Build comment match (needed in both branches)
+    const commentMatch = {};
+    if (policyId) commentMatch.policyId = new mongoose.Types.ObjectId(policyId);
+    if (startDate) commentMatch.createdAt = { $gte: new Date(startDate) };
+    if (endDate)
+      commentMatch.createdAt = {
+        ...commentMatch.createdAt,
+        $lte: new Date(endDate),
+      };
+
     let results;
     if (byRegionFlag) {
       // Group by time bucket AND region
@@ -421,16 +440,6 @@ exports.getHeatmap = async (req, res) => {
       ]);
 
       // Sentiment aggregation from comments, joining to vote to get region
-      const commentMatch = {};
-      if (policyId)
-        commentMatch.policyId = new mongoose.Types.ObjectId(policyId);
-      if (startDate) commentMatch.createdAt = { $gte: new Date(startDate) };
-      if (endDate)
-        commentMatch.createdAt = {
-          ...commentMatch.createdAt,
-          $lte: new Date(endDate),
-        };
-
       const sentimentAgg = await Comment.aggregate([
         { $match: commentMatch },
         {
@@ -512,7 +521,6 @@ exports.getHeatmap = async (req, res) => {
             sentimentCounts: data.sentiment,
           }),
         );
-        // Optional: add human readable date range
         let startDateStr = "",
           endDateStr = "";
         if (interval === "day") startDateStr = period;
