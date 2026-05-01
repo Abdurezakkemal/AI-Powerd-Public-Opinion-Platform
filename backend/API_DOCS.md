@@ -2209,91 +2209,113 @@ Query parameters (all optional):
 
 ## 8. SMS Simulation (Public)
 
-These endpoints simulate an SMS gateway. They return plain text, not JSON. They are rate-limited per phone number (3 votes per 24 hours).
+These endpoints simulate an SMS gateway. They return plain text, not JSON.
+
+- **Rate limiting:** Only the `RATE` command is limited to 3 votes per 24 hours per phone number(using Redis).
+- All other commands (`HELP`, `SUBSCRIBE`, `STOP`, `POLICIES`, `STATUS`, `MYVOTES`, `RESULTS`) are not subject to the daily vote limit, but are still protected by the global IP rate limit (100 requests per 15 minutes).
+
+**Subscription required** for most commands.  
+A user must first send `SUBSCRIBE` to register their phone number. Once subscribed, they can use all commands.  
+Unsubscribed users who send any command other than `SUBSCRIBE` or `STOP` receive a reminder to subscribe.
 
 ### 8.1 Send SMS command
 
 **`POST /sms/receive`**
 
-Request body (JSON or form-encoded):
+**Request body** (JSON or form‑encoded):
 
-| Field   | Type   | Required | Description                        |
-| ------- | ------ | -------- | ---------------------------------- |
-| phone   | string | yes      | Phone number (e.g., +251912345678) |
-| message | string | yes      | Command text (case-insensitive)    |
+| Field     | Type   | Required | Description                        |
+| --------- | ------ | -------- | ---------------------------------- |
+| `phone`   | string | yes      | Phone number (e.g., +251912345678) |
+| `message` | string | yes      | Command (case‑insensitive)         |
 
-Supported commands:
+**Supported commands (for subscribed users):**
 
-| Command | Format                  | Description                                  |
-| ------- | ----------------------- | -------------------------------------------- |
-| RATE    | RATE <policyCode> <1-5> | Vote on an active policy                     |
-| STATUS  | STATUS <policyCode>     | Get current average rating for active policy |
-| RESULTS | RESULTS <policyCode>    | Get final results after policy is closed     |
-| HELP    | HELP                    | Show available commands                      |
+| Command    | Format              | Description                                        |
+| ---------- | ------------------- | -------------------------------------------------- |
+| `RATE`     | `RATE <code> <1-5>` | Vote on an active policy (max 3 votes/day)         |
+| `STATUS`   | `STATUS <code>`     | Get current average rating of an active policy     |
+| `POLICIES` | `POLICIES`          | List all currently active policies (code + title)  |
+| `MYVOTES`  | `MYVOTES`           | Show policies you have voted on, with their status |
+| `RESULTS`  | `RESULTS <code>`    | Get final results of a closed policy               |
+| `HELP`     | `HELP`              | Show this help message                             |
 
-Response (plain text) – successful RATE:
+**Subscription commands (always allowed, even for unsubscribed numbers):**
 
-```text
-You voted 4 stars for "Clean Water Initiative". Current average rating: 3.5 stars (12 votes). Thank you!
-```
+| Command     | Description                                       |
+| ----------- | ------------------------------------------------- |
+| `SUBSCRIBE` | Register for the service (creates a subscription) |
+| `STOP`      | Unsubscribe (no further commands allowed)         |
 
-Response (plain text) – STATUS:
+---
 
-```text
+### 8.2 Example interactions
+
+**Unsubscribed user sends `POLICIES`:**
+
+You are not subscribed to this service. Send SUBSCRIBE to register for SMS voting.
+
+**Subscribe:**
+SUBSCRIBE
+< Welcome to the Civic Engagement SMS service.
+You can now vote on policies, check status, and receive closure notifications.
+Send HELP for available commands.
+
+**After subscription – `POLICIES`:**
+Active policies:
+CLEAN123 - Clean Water Initiative
+RURAL456 - Rural Road Development
+
+**`RATE` (first vote):**
+RATE CLEAN123 4
+< You voted 4 stars for "Clean Water Initiative".
+Current average: 4.00 stars (1 votes).
+2 vote(s) left today.
+
+**`MYVOTES` (after voting on one policy):**
+Policies you voted on:
+CLEAN123 (Clean Water Initiative): Active - voting open
+
+**`STATUS`:**
 Policy: Clean Water Initiative
-Current average rating: 3.5 stars (12 votes)
-```
+Average rating: 3.33 stars (3 votes)
 
-Response (plain text) – RESULTS:
+**`RESULTS` (after policy is closed):**
+Policy: Clean Water Initiative
+Final average rating: 3.80 stars (150 votes)
 
-```text
-Policy: Clean Water Initiative – Final average rating: 3.8 stars (150 votes)
-```
+**`STOP` (unsubscribe):**
+You have unsubscribed from SMS voting. You will no longer receive notifications or be able to vote. Send SUBSCRIBE to rejoin.
 
-Response (plain text) – HELP:
-
-```text
+**`HELP` (subscribed user):**
 Commands:
-RATE <code> <1-5> - Vote on a policy
-STATUS <code> - Get current average rating for active policy
-RESULTS <code> - Get final results (only after policy closes)
-HELP - Show this message
-```
+SUBSCRIBE - Register for SMS voting
+STOP - Unsubscribe
+POLICIES - List active policies
+STATUS <code> - Current average rating
+RATE <code> <1-5> - Vote (max 3 per day)
+MYVOTES - Policies you voted on
+RESULTS <code> - Final results (closed policy)
+HELP - This message
 
-Error responses (plain text):
+### 8.3 Error responses (plain text)
 
-| Status | Text                                                                  |
-| ------ | --------------------------------------------------------------------- |
-| 400    | "Phone and message are required"                                      |
-| 400    | "Invalid format. Use: RATE code rating (e.g., RATE POL123 4)"         |
-| 403    | "This number is registered with the app. Please use the app to vote." |
-| 404    | "Policy not found or not active"                                      |
-| 409    | "You have already voted on this policy via SMS."                      |
-| 429    | "Daily limit of 3 votes reached. Try again in X hour(s)."             |
+| Status  | Text                                                                                   |
+| ------- | -------------------------------------------------------------------------------------- |
+| 400     | `"Phone and message are required"`                                                     |
+| 400     | `"Invalid format. Use: RATE code rating (e.g., RATE POL123 4)"`                        |
+| 400     | `"Unknown command. Send HELP for available commands."`                                 |
+| 403     | `"This number is registered with the app. Please use the app to vote."`                |
+| 404     | `"Policy not found or not active."`                                                    |
+| 409     | `"You have already voted on this policy via SMS."`                                     |
+| 429     | `"Daily limit of 3 votes reached. Try again in X hour(s)."`                            |
+| (other) | `"You are not subscribed to this service. Send SUBSCRIBE to register for SMS voting."` |
 
-### 8.2 Get results (alternative)
+### 8.4 Get results (alternative)
 
-**`GET /sms/results`**
-
-Query parameters:
-
-| Parameter | Type   | Required | Description                          |
-| --------- | ------ | -------- | ------------------------------------ |
-| code      | string | yes      | Policy code (e.g., POL123)           |
-| phone     | string | no       | Phone number (optional, for logging) |
-
-Response (plain text) – successful:
-
-```text
-Policy: Clean Water Initiative – Final average rating: 3.8 stars (150 votes)
-```
-
-Error responses (plain text):
-
-| Status | Text                                 |
-| ------ | ------------------------------------ |
-| 400    | "Policy code is required"            |
-| 404    | "Policy not found or not yet closed" |
+**`GET /sms/results`**  
+Works exactly as before (no subscription required, but only for closed policies).  
+Query parameters: `code` (required), `phone` (optional, for logging). Returns plain text with final results.
 
 ## 9. Health Check
 

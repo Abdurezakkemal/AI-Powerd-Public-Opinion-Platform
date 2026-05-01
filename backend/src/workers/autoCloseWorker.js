@@ -2,6 +2,7 @@ const cron = require("node-cron");
 const Policy = require("../models/Policy");
 const Vote = require("../models/Vote");
 const Notification = require("../models/Notification");
+const SmsSubscription = require("../models/SmsSubscription");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
 
@@ -34,14 +35,14 @@ const autoClosePolicies = async () => {
         req: null,
       });
 
-      // Compute final statistics for notifications
+      // Compute final statistics
       const allVotes = await Vote.find({ policyId: policy._id });
       const totalVotes = allVotes.length;
       const totalRating = allVotes.reduce((sum, v) => sum + v.rating, 0);
       const avgRating =
         totalVotes > 0 ? (totalRating / totalVotes).toFixed(2) : 0;
 
-      // Notify all app users who voted on this policy (userId exists)
+      // --- In‑app notifications for app users ---
       const distinctUserIds = [
         ...new Set(allVotes.map((v) => v.userId).filter((id) => id)),
       ];
@@ -61,7 +62,7 @@ const autoClosePolicies = async () => {
         });
       }
 
-      // Also notify the policy owner (planner)
+      // Notify policy owner (planner)
       await Notification.create({
         userId: policy.createdBy,
         userRole: "planner",
@@ -76,8 +77,32 @@ const autoClosePolicies = async () => {
         },
       });
 
+      // --- SMS notifications for subscribed SMS voters ---
+      // Collect all unique phone hashes from SMS votes
+      const smsVoterPhoneHashes = [
+        ...new Set(
+          allVotes
+            .filter((v) => v.channel === "sms" && v.phoneHash)
+            .map((v) => v.phoneHash),
+        ),
+      ];
+      // Find which of these have an active subscription
+      const subscribedHashes = await SmsSubscription.find(
+        { phoneHash: { $in: smsVoterPhoneHashes }, subscribed: true },
+        { phoneHash: 1 },
+      ).lean();
+      const subscribedSet = new Set(subscribedHashes.map((s) => s.phoneHash));
+
+      for (const phoneHash of smsVoterPhoneHashes) {
+        if (!subscribedSet.has(phoneHash)) continue;
+        // Simulated SMS – replace with real gateway if needed
+        logger.info(
+          `[SIMULATED SMS] To subscribed phone hash ${phoneHash}: Policy "${policy.title}" closed. Final average rating: ${avgRating} stars (${totalVotes} votes).`,
+        );
+      }
+
       logger.info(
-        `Auto-closed policy ${policy._id} (${policy.policyCode}) - endDate ${policy.endDate.toISOString()} (notified ${distinctUserIds.length} citizens)`,
+        `Auto-closed policy ${policy._id} (${policy.policyCode}) - endDate ${policy.endDate.toISOString()} (notified ${distinctUserIds.length} app users, ${subscribedSet.size} SMS voters)`,
       );
     }
   } catch (err) {
