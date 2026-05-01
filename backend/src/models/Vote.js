@@ -6,6 +6,7 @@ const voteSchema = new mongoose.Schema({
     ref: "Policy",
     required: true,
   },
+  region: { type: String, default: null }, // snapshot of user's region at vote time
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   phoneHash: { type: String },
   channel: { type: String, enum: ["app", "sms"], required: true },

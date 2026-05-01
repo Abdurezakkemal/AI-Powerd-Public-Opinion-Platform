@@ -348,11 +348,18 @@ The admin cannot reset their own password through this endpoint – they must us
 
 All policy endpoints require authentication. Role permissions:
 
-| Role    | View draft? | View published? | View active?     | View paused?     | View closed? | Create / Update / Delete (draft & published) | Publish / Unpublish | Activate (published → active) | Extend / Pause / Resume / Close |
-| ------- | ----------- | --------------- | ---------------- | ---------------- | ------------ | -------------------------------------------- | ------------------- | ----------------------------- | ------------------------------- |
-| Citizen | No          | No              | Yes (own region) | Yes (own region) | No           | No                                           | No                  | No                            | No                              |
-| Planner | Yes (all)   | Yes (own only)  | Yes (all)        | Yes (all)        | Yes (all)    | Yes (own policies only)\*                    | Yes (own only)      | Yes (own only)                | Yes (own only)\*\*              |
-| Admin   | Yes (all)   | Yes (all)       | Yes (all)        | Yes (all)        | Yes (all)    | Yes (all policies)\*                         | Yes (all)           | Yes (all)                     | Yes (all)                       |
+| Role    | View own draft/published? | View others' draft/published? | View others' active/paused/closed? | Create / Update / Delete (own) | Publish / Unpublish (own) | Activate / Pause / Resume / Close / Extend (own)      |
+| ------- | ------------------------- | ----------------------------- | ---------------------------------- | ------------------------------ | ------------------------- | ----------------------------------------------------- |
+| Citizen | No                        | No                            | Yes (only `active`, own region)    | No                             | No                        | No                                                    |
+| Planner | Yes (all statuses)        | **No (404)**                  | Yes                                | Yes (draft/published only)     | Yes (draft → published)   | Yes (published → active, active/paused → close, etc.) |
+| Admin   | Yes (all)                 | Yes (all)                     | Yes                                | Yes (any policy)               | Yes (any policy)          | Yes (any policy)                                      |
+
+**Important visibility rule for planners:**
+
+- A planner can see **their own** policies regardless of status (draft, published, active, paused, closed).
+- For **other planners' policies**: only `active`, `paused`, and `closed` are visible.
+- **Draft and published** policies belonging to another planner are **completely hidden** – any endpoint (GET, PUT, PATCH, POST, DELETE) that targets such a policy will return **`404 Not Found`**, as if the policy does not exist.
+- This applies to **all policy‑specific endpoints**: `GET /policies/:id`, `PUT /policies/:id`, `PATCH /policies/:id/publish`, `PATCH /policies/:id/unpublish`, `PATCH /policies/:id/activate`, `PATCH /policies/:id/pause`, `PATCH /policies/:id/resume`, `PATCH /policies/:id/extend`, `POST /policies/:id/close`, `DELETE /policies/:id`, `POST /policies/:id/clone`, `GET /policies/:id/history`.
 
 **Notes:**
 
@@ -370,13 +377,13 @@ All policy endpoints require authentication. Role permissions:
 
 Query parameters (all optional):
 
-| Parameter | Type    | Default | Description                                                                                                                                                                                                                                                              |
-| --------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --- |
-| `status`  | string  | none    | Filter by `draft`, `published`, `active`, `paused`, or `closed`. Citizens cannot see `draft`, `published`, or `closed`; they see only `active` and `paused`.                                                                                                             |
-| `region`  | string  | none    | Filter by target region (planners/admins only)                                                                                                                                                                                                                           |
-| `owner`   | string  | none    | **Planners only.** Use `owner=me` to see only policies owned by the logged‑in planner (any status, including `draft` and `published`). Without this, planners see their own policies + others' `active`, `paused`, `closed` (excluding others' `draft` and `published`). |
-| `page`    | integer | 1       | Page number (1‑based)                                                                                                                                                                                                                                                    |
-| `limit`   | integer | 20      | Items per page (max 100)                                                                                                                                                                                                                                                 |     |
+| Parameter | Type    | Default | Description                                                                                                                                                                                                                                                                                                                          |
+| --------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `status`  | string  | none    | Filter by `draft`, `published`, `active`, `paused`, or `closed`. Citizens cannot see `draft`, `published`, or `closed`; they see only `active` and `paused`.                                                                                                                                                                         |
+| `region`  | string  | none    | Filter by target region (planners/admins only).                                                                                                                                                                                                                                                                                      |
+| `owner`   | string  | none    | **Planners only.** Use `owner=me` to see only policies owned by the logged‑in planner (any status). Without this, planners see their own policies (all statuses) **plus** other planners' `active`, `paused`, and `closed` policies. **Other planners' draft and published policies are excluded** – they do not appear in the list. |
+| `page`    | integer | 1       | Page number (1‑based).                                                                                                                                                                                                                                                                                                               |
+| `limit`   | integer | 20      | Items per page (max 100).                                                                                                                                                                                                                                                                                                            |
 
 **Response (200 OK):**
 
@@ -435,6 +442,15 @@ Path parameter:
 | --------- | ------ | ---------------------------- |
 | `id`      | string | Policy ID (MongoDB ObjectId) |
 
+**Access rules:**
+
+- Citizens can only view `active` policies in their own region.
+- Planners can view:
+  - Their own policies (any status)
+  - Other planners' `active`, `paused`, `closed` policies
+- Other planners' `draft` or `published` policies return **`404 Not Found`**.
+- Admins can view any policy.
+
 **Response (200 OK):**
 
 ```json
@@ -459,11 +475,11 @@ Path parameter:
 
 **Error responses:**
 
-| Status | Code           | Message                                                  |
-| ------ | -------------- | -------------------------------------------------------- |
-| 401    | `UNAUTHORIZED` | `"Access denied. No token provided."`                    |
-| 403    | `FORBIDDEN`    | `"You do not have access to this policy" (citizen only)` |
-| 404    | `NOT_FOUND`    | `"Policy not found"`                                     |
+| Status | Code           | Message                                                                                                 |
+| ------ | -------------- | ------------------------------------------------------------------------------------------------------- |
+| 401    | `UNAUTHORIZED` | `"Access denied. No token provided."`                                                                   |
+| 403    | `FORBIDDEN`    | `"You do not have access to this policy" (citizen only)`                                                |
+| 404    | `NOT_FOUND`    | `"Policy not found"` (policy ID invalid, or planner trying to access another planner's draft/published) |
 
 ### 3.3 Create policy
 
@@ -533,7 +549,7 @@ Request body:
 | 400    | `VALIDATION_ERROR` | `"End date must be after start date."`                                                                   |
 | 403    | `FORBIDDEN`        | `"Only draft policies can be edited. Published, active, paused, or closed policies cannot be modified."` |
 | 403    | `FORBIDDEN`        | `"You do not have permission to edit this policy"` (not creator)                                         |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                                                                     |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or the policy is draft/published and you are not the owner)     |
 
 ### 3.5 Publish policy (draft → published/active)
 
@@ -564,12 +580,12 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                       |
-| ------ | ------------------ | ------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only draft policies can be published. Current status: ..."` |
-| 400    | `VALIDATION_ERROR` | `"Cannot publish a policy that has already ended."`           |
-| 403    | `FORBIDDEN`        | `"You do not have permission to publish this policy"`         |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                          |
+| Status | Code               | Message                                                                                              |
+| ------ | ------------------ | ---------------------------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only draft policies can be published. Current status: ..."`                                        |
+| 400    | `VALIDATION_ERROR` | `"Cannot publish a policy that has already ended."`                                                  |
+| 403    | `FORBIDDEN`        | `"You do not have permission to publish this policy"`                                                |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or the policy is draft/published and you are not the owner) |
 
 ### 3.6 Unpublish policy (published → draft)
 
@@ -597,11 +613,11 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                             |
-| ------ | ------------------ | ------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only published policies can be unpublished. Current status: ..."` |
-| 403    | `FORBIDDEN`        | `"You do not have permission to unpublish this policy"`             |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                                |
+| Status | Code               | Message                                                                                              |
+| ------ | ------------------ | ---------------------------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only published policies can be unpublished. Current status: ..."`                                  |
+| 403    | `FORBIDDEN`        | `"You do not have permission to unpublish this policy"`                                              |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or the policy is draft/published and you are not the owner) |
 
 ### 3.7 Close policy
 
@@ -626,11 +642,12 @@ Request body:
 ```
 
 **Error responses:**
-| Status | Code | Message |
-| ------ | ---------------- | ----------------------------------------------------------------------- |
-| 400 | `VALIDATION_ERROR` | `"Only active or paused policies can be closed. Current status: draft"` |
-| 403 | `FORBIDDEN` | `"You do not have permission to close this policy"` (not creator) |
-| 404 | `NOT_FOUND` | `"Policy not found"` |
+
+| Status | Code               | Message                                                                    |
+| ------ | ------------------ | -------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only active or paused policies can be closed. Current status: draft"`    |
+| 403    | `FORBIDDEN`        | `"You do not have permission to close this policy"` (not creator)          |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
 
 ### 3.8 Activate policy (draft → active)
 
@@ -656,12 +673,12 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                        |
-| ------ | ------------------ | -------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only draft policies can be activated. Current status: ..."`  |
-| 400    | `VALIDATION_ERROR` | `"Cannot activate a policy whose end date has already passed"` |
-| 403    | `FORBIDDEN`        | `"You do not have permission to activate this policy"`         |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                           |
+| Status | Code               | Message                                                                    |
+| ------ | ------------------ | -------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only draft policies can be activated. Current status: ..."`              |
+| 400    | `VALIDATION_ERROR` | `"Cannot activate a policy whose end date has already passed"`             |
+| 403    | `FORBIDDEN`        | `"You do not have permission to activate this policy"`                     |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
 
 ### 3.9 Pause policy (active → paused)
 
@@ -687,11 +704,11 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                     |
-| ------ | ------------------ | ----------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only active policies can be paused. Current status: ..."` |
-| 403    | `FORBIDDEN`        | `"You do not have permission to pause this policy"`         |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                        |
+| Status | Code               | Message                                                                    |
+| ------ | ------------------ | -------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only active policies can be paused. Current status: ..."`                |
+| 403    | `FORBIDDEN`        | `"You do not have permission to pause this policy"`                        |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
 
 ### 3.10 Resume policy (paused → active)
 
@@ -717,12 +734,12 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                       |
-| ------ | ------------------ | ------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only paused policies can be resumed. Current status: ..."`  |
-| 400    | `VALIDATION_ERROR` | `"Cannot resume policy because the voting period has ended."` |
-| 403    | `FORBIDDEN`        | `"You do not have permission to resume this policy"`          |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                          |
+| Status | Code               | Message                                                                    |
+| ------ | ------------------ | -------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only paused policies can be resumed. Current status: ..."`               |
+| 400    | `VALIDATION_ERROR` | `"Cannot resume policy because the voting period has ended."`              |
+| 403    | `FORBIDDEN`        | `"You do not have permission to resume this policy"`                       |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
 
 ### 3.11 Extend policy end date
 
@@ -742,14 +759,14 @@ Request body:
 
 **Error responses:**
 
-| Status | Code               | Message                                                |
-| ------ | ------------------ | ------------------------------------------------------ |
-| 400    | `VALIDATION_ERROR` | `"Policy must be active or paused to modify end date"` |
-| 400    | `VALIDATION_ERROR` | `"newEndDate must be a valid ISO date string"`         |
-| 400    | `VALIDATION_ERROR` | `"New end date must be after start date"`              |
-| 400    | `VALIDATION_ERROR` | `"New end date cannot be in the past"`                 |
-| 403    | `FORBIDDEN`        | `"You do not have permission to modify this policy"`   |
-| 404    | `NOT_FOUND`        | `"Policy not found"`                                   |
+| Status | Code               | Message                                                                    |
+| ------ | ------------------ | -------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Policy must be active or paused to modify end date"`                     |
+| 400    | `VALIDATION_ERROR` | `"newEndDate must be a valid ISO date string"`                             |
+| 400    | `VALIDATION_ERROR` | `"New end date must be after start date"`                                  |
+| 400    | `VALIDATION_ERROR` | `"New end date cannot be in the past"`                                     |
+| 403    | `FORBIDDEN`        | `"You do not have permission to modify this policy"`                       |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
 
 ### 3.12 Delete draft policy (draft or published)
 
@@ -776,7 +793,7 @@ Request body:
 | ------ | ----------- | ----------------------------------------------------------------------------------------------------------- |
 | 403    | `FORBIDDEN` | `"Only draft or published policies can be deleted. For active or paused policies, use the close endpoint."` |
 | 403    | `FORBIDDEN` | `"You do not have permission to delete this policy"` (not creator)                                          |
-| 404    | `NOT_FOUND` | `"Policy not found"`                                                                                        |
+| 404    | `NOT_FOUND` | `"Policy not found"` (policy ID invalid, or hidden draft/published policy)                                  |
 
 ### 3.13 Clone policy
 
@@ -799,6 +816,8 @@ Creates a new draft policy as a copy of an existing one.
 | --------- | ------ | ------------------------- |
 | `id`      | string | ID of the original policy |
 
+**Visibility note:** A planner can only clone policies they are allowed to see. Attempting to clone another planner's draft/published policy returns **`404 Not Found`**.
+
 **Response (201 Created):**
 
 ```json
@@ -815,17 +834,17 @@ Creates a new draft policy as a copy of an existing one.
 
 **Error responses:**
 
-| Status | Code                    | Message                                                       |
-| ------ | ----------------------- | ------------------------------------------------------------- |
-| 404    | `NOT_FOUND`             | `"Original policy not found"` or `"Invalid policy ID format"` |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to clone policy"`                                    |
+| Status | Code                    | Message                                                                                          |
+| ------ | ----------------------- | ------------------------------------------------------------------------------------------------ |
+| 404    | `NOT_FOUND`             | `"Original policy not found"` or `"Invalid policy ID format"` (or hidden draft/published policy) |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to clone policy"`                                                                       |
 
 ### 3.14 Policy history
 
 **`GET /policies/:id/history`**
 
 **Roles:** planner (only for policies they own) or admin (any policy)
-
+**Visibility note:** A planner can only view history of policies they own. Attempting to view history of another planner's draft/published policy returns **`404 Not Found`**.
 **Behaviour:**  
 Returns a chronological list of audit events for the policy (creation, activation, pause, resume, close, clone, deletion, etc.) based on the `auditlogs` collection.
 
@@ -871,11 +890,11 @@ Returns a chronological list of audit events for the policy (creation, activatio
 
 **Error responses:**
 
-| Status | Code                    | Message                                                       |
-| ------ | ----------------------- | ------------------------------------------------------------- |
-| 403    | `FORBIDDEN`             | `"You do not have permission to view history of this policy"` |
-| 404    | `NOT_FOUND`             | `"Policy not found"` or `"Invalid policy ID format"`          |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve policy history"`                         |
+| Status | Code                    | Message                                                                                 |
+| ------ | ----------------------- | --------------------------------------------------------------------------------------- |
+| 403    | `FORBIDDEN`             | `"You do not have permission to view history of this policy"`                           |
+| 404    | `NOT_FOUND`             | `"Policy not found"` or `"Invalid policy ID format"` (or hidden draft/published policy) |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve policy history"`                                                   |
 
 ## 4. Voting & Comment Endpoints
 
@@ -969,25 +988,38 @@ Adds a detailed comment to a vote that was previously cast without one (or allow
 
 ## 5. Analytics Endpoints
 
-Roles required: planner or admin (all endpoints in this section)
+**Roles required:** planner or admin (all endpoints in this section)
 
-### 5.1 Get policy analytics
+**General access rules:**
+
+- For **draft** or **published** policies:
+  - The **creator** (planner) receives `400` with message `"Policy is not active yet (no analytics available)"`.
+  - Any **other planner** receives `404` with `"Policy not found"` (policy appears non‑existent).
+- For **active**, **paused**, or **closed** policies: any planner or admin can view analytics.
+- Citizens never have access to these endpoints.
+
+**All endpoints support optional date range filters** (`startDate`, `endDate`) unless otherwise noted.
+
+### 5.1 Policy analytics (summary)
 
 **`GET /analytics/:policyId`**
 
-Path parameter:
+Returns a high‑level summary of voting and sentiment for a single policy, optionally restricted to a date range.
 
-| Parameter  | Type   | Description                  |
-| ---------- | ------ | ---------------------------- |
-| `policyId` | string | Policy ID (MongoDB ObjectId) |
+**Query parameters (all optional):**
 
-Response (200 OK):
+| Parameter   | Type   | Description                                                                            |
+| ----------- | ------ | -------------------------------------------------------------------------------------- |
+| `startDate` | string | ISO date (e.g., `2026-04-01`). Filters votes & comments created on or after this date. |
+| `endDate`   | string | ISO date. Filters votes & comments created on or before this date.                     |
+
+**Response (200 OK):**
 
 ```json
 {
   "status": "success",
   "data": {
-    "policyId": "...",
+    "policyId": "67f1a2b3c4d5e6f7a8b9c0d1",
     "title": "Clean Water Initiative",
     "averageRating": 3.8,
     "ratingDistribution": {
@@ -1006,52 +1038,68 @@ Response (200 OK):
       { "keyword": "water", "count": 4 },
       { "keyword": "access", "count": 2 }
     ],
-    "totalVotes": 11,
-    "appVotes": 6,
-    "smsVotes": 5
+    "totalVotes": 12,
+    "appVotes": 8,
+    "smsVotes": 4
   },
   "message": "Analytics retrieved successfully",
   "timestamp": "..."
 }
 ```
 
-Error responses:
+**Error responses :**
 
-| Status | Code                    | Message                                                         |
-| ------ | ----------------------- | --------------------------------------------------------------- |
-| 403    | `FORBIDDEN`             | `"Access denied. Only planners and admins can view analytics."` |
-| 404    | `NOT_FOUND`             | `"Policy not found"`                                            |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve analytics"`                                |
+| Status | Code               | Message                                                                     |
+| ------ | ------------------ | --------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Policy is not active yet (no analytics available)"` (own draft/published) |
+| 400    | `VALIDATION_ERROR` | `"Invalid startDate: ..."` or `"Invalid endDate: ..."`                      |
+| 403    | `FORBIDDEN`        | `"Access denied. Only planners and admins can view analytics."`             |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (other planner's draft/published or non‑existent)      |
 
 ### 5.2 Export analytics as CSV
 
 **`GET /analytics/:policyId/export`**
 
-Path parameter:
+Downloads a CSV file containing each individual vote (rating, channel, date, region). Region is only available for app votes.
 
-| Parameter  | Type   | Description |
-| ---------- | ------ | ----------- |
-| `policyId` | string | Policy ID   |
+**Query parameters:** same as 5.1 (`startDate`, `endDate`).
 
-Response: CSV file download.
+**Response:** `text/csv` file attachment. Example content:
 
-Columns: rating,channel,date,region
+```csv
+rating,channel,date,region
+5,app,2026-04-01,Addis Ababa
+4,app,2026-04-02,Oromia
+3,sms,2026-04-03,
+```
 
-Error responses: same as 5.1 (but CSV content is not returned on error – JSON error instead).
+**Error responses:**
 
-### 5.3 Get comments (paginated)
+| Status | Code                    | Message                                                                     |
+| ------ | ----------------------- | --------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Policy is not active yet (no analytics available)"` (own draft/published) |
+| 400    | `VALIDATION_ERROR`      | `"Invalid startDate: ..."` or `"Invalid endDate: ..."`                      |
+| 403    | `FORBIDDEN`             | `"Access denied. Only planners and admins can view analytics."`             |
+| 404    | `NOT_FOUND`             | `"Policy not found"` (other planner's draft/published or non‑existent)      |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to export analytics"`                                              |
+
+## 5.3 Get paginated comments (with filters)
 
 **`GET /analytics/:policyId/comments`**
 
-Query parameters (all optional):
+Returns comments posted for a policy, with optional filtering by sentiment, date range, pagination. **User emails are never included** for privacy.
+
+**Query parameters (all optional):**
 
 | Parameter   | Type    | Default | Description                                    |
 | ----------- | ------- | ------- | ---------------------------------------------- |
 | `page`      | integer | 1       | Page number (1‑based)                          |
 | `limit`     | integer | 20      | Items per page (max 100)                       |
 | `sentiment` | string  | none    | Filter by `positive`, `negative`, or `neutral` |
+| `startDate` | string  | none    | ISO date (filter comments created after)       |
+| `endDate`   | string  | none    | ISO date (filter comments created before)      |
 
-Response (200 OK):
+**Response (200 OK):**
 
 ```json
 {
@@ -1059,11 +1107,11 @@ Response (200 OK):
   "data": {
     "comments": [
       {
-        "id": "...",
-        "text": "This policy is great!",
+        "id": "67f1a2b3c4d5e6f7a8b9c0d3",
+        "text": "This policy is excellent!",
         "sentiment": "positive",
         "confidence": 0.95,
-        "keywords": ["great", "policy"],
+        "keywords": ["excellent"],
         "createdAt": "2026-04-01T10:00:00Z"
       }
     ],
@@ -1075,84 +1123,163 @@ Response (200 OK):
 }
 ```
 
-Error responses: same as 5.1.
+**Error responses:**
 
-### 5.4 Geographic analytics
+| Status | Code                    | Message                                                                     |
+| ------ | ----------------------- | --------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Policy is not active yet (no analytics available)"` (own draft/published) |
+| 400    | `VALIDATION_ERROR`      | `"Invalid startDate: ..."` or `"Invalid endDate: ..."`                      |
+| 403    | `FORBIDDEN`             | `"Access denied. Only planners and admins can view analytics."`             |
+| 404    | `NOT_FOUND`             | `"Policy not found"` (other planner's draft/published or non‑existent)      |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve comments"`                                             |
 
-**`GET /analytics/:policyId/geographic`**
+## 5.4 Heatmap (unified geographic & time‑series)
 
-Response (200 OK):
+**`GET /analytics/heatmap`**
 
-```json
-{
-  "status": "success",
-  "data": {
-    "policyId": "...",
-    "regions": [
-      {
-        "region": "Addis Ababa",
-        "totalVotes": 4,
-        "averageRating": 4.2,
-        "sentimentCounts": {
-          "positive": 3,
-          "negative": 0,
-          "neutral": 1
-        }
-      }
-    ]
-  },
-  "message": "Geographic analytics retrieved successfully",
-  "timestamp": "..."
-}
-```
+This is the **primary analytics endpoint** for visualising voting patterns over time and across Ethiopian regions. It can produce:
 
-Notes:
+- **Global time series** (vote volume + sentiment aggregated per time bucket, no regional breakdown).
+- **Geographic heatmap** (vote volume, average rating, and sentiment per region, per time bucket).
 
--Only includes votes from the app channel (SMS votes have no region).
--Only includes votes with comments (empty comments are excluded).
+**Roles:** planner, admin
 
-Error responses: same as 5.1.
+### Query parameters (all optional)
 
-### 5.5 Trends over time
+| Parameter   | Type    | Default | Description                                                                                                                                                   |
+| ----------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `startDate` | string  | none    | ISO date (e.g., `2026-04-01`). Filters votes and comments created on or after this date.                                                                      |
+| `endDate`   | string  | none    | ISO date. Filters votes and comments created on or before this date.                                                                                          |
+| `interval`  | string  | `week`  | Grouping interval: `day`, `week`, or `month`.                                                                                                                 |
+| `policyId`  | string  | none    | If provided, only votes/comments belonging to that policy are included. Otherwise, data for **all policies** (subject to planner's visibility) is aggregated. |
+| `byRegion`  | boolean | `false` | If `true`, the response is grouped by region within each time bucket (geographic heatmap). If `false`, the response is a simple time series (global totals).  |
+| `regions`   | string  | none    | Comma‑separated list of region names, e.g., `Addis Ababa,Oromia`. Only applicable when `byRegion=true`. Filters both votes and sentiment to those regions.    |
 
-**`GET /analytics/:policyId/trends`**
+### Important notes about data sources
 
-Query parameters:
+- Only **app votes** (with a region snapshot) are included in the geographic parts. SMS votes never appear in region breakdowns because they have no region.
+- Sentiment counts are derived from **comments** linked to votes. If a vote has no comment, it contributes only to `totalVotes` and `averageRating`, not to sentiment.
+- When `byRegion=false`, the global `totalVotes` includes **SMS votes** as well.
 
-| Parameter  | Type   | Default | Description                        |
-| ---------- | ------ | ------- | ---------------------------------- |
-| `interval` | string | `day`   | Grouping interval: `day` or `week` |
+---
 
-Response (200 OK):
+### 5.4.1 Response when `byRegion=false` (global time series)
 
 ```json
 {
   "status": "success",
   "data": {
-    "policyId": "...",
-    "interval": "day",
+    "interval": "week",
     "data": [
       {
-        "date": "2026-04-01",
+        "period": "2026-14",
+        "totalVotes": 8,
         "averageRating": 4.1,
         "positive": 5,
         "negative": 1,
-        "neutral": 2,
-        "total": 8
+        "neutral": 2
+      },
+      {
+        "period": "2026-15",
+        "totalVotes": 12,
+        "averageRating": 3.9,
+        "positive": 7,
+        "negative": 2,
+        "neutral": 3
       }
     ]
   },
-  "message": "Trends retrieved successfully",
+  "message": "Heatmap data retrieved successfully",
   "timestamp": "..."
 }
 ```
 
-Date format:
+Fields:
 
-interval=day → YYYY-MM-DD
-interval=week → YYYY-Www (e.g., 2026-W14)
+- `period`: time bucket label. For `day`: `YYYY-MM-DD`; for `week`: `YYYY-VV` (ISO week number); for `month`: `YYYY-MM`.
+- `totalVotes`: total votes (app + SMS) in that period.
+- `averageRating`: average rating (all votes).
+- `positive`, `negative`, `neutral`: sentiment counts from comments that fell inside that period.
 
-Error responses: same as 5.1.
+### 5.4.2 Response when `byRegion=true` (geographic heatmap)
+
+```json
+{
+  "status": "success",
+  "data": {
+    "interval": "week",
+    "data": [
+      {
+        "period": "2026-14",
+        "startDate": "2026-04-01",
+        "endDate": "2026-04-07",
+        "regions": [
+          {
+            "region": "Addis Ababa",
+            "totalVotes": 3,
+            "averageRating": 4.2,
+            "sentimentCounts": {
+              "positive": 2,
+              "negative": 0,
+              "neutral": 1
+            }
+          },
+          {
+            "region": "Oromia",
+            "totalVotes": 5,
+            "averageRating": 3.8,
+            "sentimentCounts": {
+              "positive": 2,
+              "negative": 1,
+              "neutral": 2
+            }
+          }
+        ]
+      },
+      {
+        "period": "2026-15",
+        "startDate": "2026-04-08",
+        "endDate": "2026-04-14",
+        "regions": [ ... ]
+      }
+    ]
+  },
+  "message": "Heatmap data retrieved successfully",
+  "timestamp": "..."
+}
+```
+
+**Additional fields:**
+
+- `startDate` and `endDate` are human‑readable dates for the period (only for `week` and `month` intervals; for `day` they are the same as `period`).
+- Each `region` object contains:
+  - `totalVotes`: number of app votes from that region.
+  - `averageRating`: average rating of those votes.
+  - `sentimentCounts`: aggregated sentiment from comments attached to those votes (only votes with comments contribute to sentiment).
+
+**Note:** If a region appears in the response with `totalVotes: 0` but non‑zero sentiment, it is possible (only comments exist, votes outside date range? In practice, the heatmap merges votes and comments, so a region should not appear without votes unless the `regions` filter explicitly includes it and only comments match – that would be rare. The implementation ensures consistency.)
+
+### 5.4.3 Common use cases
+
+| What you want                                                                 | Example request                                                                                      |
+| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Global weekly vote volume and sentiment for the last 30 days                  | `GET /analytics/heatmap?interval=week&startDate=2026-03-01&endDate=2026-03-31`                       |
+| Geographic heatmap for a single policy, daily intervals                       | `GET /analytics/heatmap?policyId=...&byRegion=true&interval=day`                                     |
+| Geographic heatmap limited to two regions                                     | `GET /analytics/heatmap?byRegion=true&regions=Addis%20Ababa,Oromia&interval=week`                    |
+| Monthly global trend for all policies                                         | `GET /analytics/heatmap?interval=month`                                                              |
+| Time series for a specific policy without region breakdown (replaces /trends) | `GET /analytics/heatmap?policyId=...&interval=week` (byRegion defaults to false)                     |
+| Geographic snapshot of a policy (replaces /geographic)                        | `GET /analytics/heatmap?policyId=...&byRegion=true&startDate=...&endDate=...` (take earliest period) |
+
+### 5.4.4 Error responses
+
+| Status | Code                    | Message                                                                                                       |
+| ------ | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Invalid startDate: ..."` or `"Invalid endDate: ..."`                                                        |
+| 400    | `VALIDATION_ERROR`      | `"Invalid policyId format"`                                                                                   |
+| 400    | `VALIDATION_ERROR`      | `"Policy is not active yet (no analytics available)"` (policyId supplied, user is creator of draft/published) |
+| 403    | `FORBIDDEN`             | `"Access denied. Only planners and admins can view heatmap."`                                                 |
+| 404    | `NOT_FOUND`             | `"Policy not found"` (policyId supplied and user is not creator or policy does not exist)                     |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve heatmap data"`                                                                           |
 
 ## 6. Admin Endpoints
 
