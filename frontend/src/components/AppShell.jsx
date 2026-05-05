@@ -6,7 +6,7 @@ import { useAuth } from "../auth/AuthContext";
 const baseLinks = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/policies", label: "Policies", icon: FileText },
-  { to: "/policies", label: "Analytics", icon: BarChart3 },
+  
 ];
 
 export function AppShell() {

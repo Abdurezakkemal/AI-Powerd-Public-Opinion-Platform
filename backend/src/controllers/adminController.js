@@ -61,10 +61,16 @@ exports.listPlanners = async (req, res) => {
 };
 
 // POST /admin/planners
+// POST /admin/planners
 exports.createPlanner = async (req, res) => {
   try {
+    console.log("=== CREATE PLANNER START ===");
+    console.log("Request Body:", req.body);
+
     const { email, password } = req.body;
+
     if (!email || !password) {
+      console.log("Validation failed: Email or password missing");
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -74,7 +80,10 @@ exports.createPlanner = async (req, res) => {
       );
     }
 
+    console.log("Step 1: Checking for existing user...");
     const existing = await User.findOne({ email });
+    console.log("Existing user found?", !!existing);
+
     if (existing) {
       logger.warn(
         `Admin ${req.user.id} attempted to create planner with existing email: ${email}`,
@@ -88,18 +97,31 @@ exports.createPlanner = async (req, res) => {
       );
     }
 
+    // Hash Password
+    console.log("Step 2: Hashing password...");
     const passwordHash = await hashPassword(password);
+    console.log("Password hashed successfully");
+
+    // Use a unique placeholder for phoneHash (planners don't have phone)
+    const uniquePhonePlaceholder = `planner_no_phone_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+
+    console.log("Step 3: Creating new User object...");
     const planner = new User({
       email,
       passwordHash,
       role: "planner",
-      phoneHash: null,
+      phoneHash: uniquePhonePlaceholder,        // ← Fixed here
       region: "",
       verified: true,
       active: true,
     });
-    await planner.save();
 
+    console.log("User object created, about to save...");
+    await planner.save();
+    console.log("✅ User saved successfully! ID:", planner._id);
+
+    // Audit Log
+    console.log("Step 4: Creating audit log...");
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
@@ -109,21 +131,37 @@ exports.createPlanner = async (req, res) => {
       details: { email: planner.email },
       req,
     });
+    console.log("Audit log created successfully");
 
     logger.info(
       `Admin ${req.user.id} created planner: ${email} (${planner._id})`,
     );
+
+    console.log("=== CREATE PLANNER SUCCESS ===");
+
     return sendSuccess(
       res,
       { id: planner._id, email: planner.email },
       "Planner account created successfully",
       201,
     );
+
   } catch (err) {
+    console.error("=== CREATE PLANNER FAILED ===");
+    console.error("Error Name:", err.name);
+    console.error("Error Message:", err.message);
+    console.error("Error Code:", err.code);
+
     logger.error(
-      { error: err.message, stack: err.stack },
+      { 
+        error: err.message, 
+        stack: err.stack,
+        name: err.name,
+        code: err.code 
+      },
       "Create planner error",
     );
+
     return sendError(
       res,
       ErrorCodes.INTERNAL,
