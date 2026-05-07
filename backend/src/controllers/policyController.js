@@ -43,7 +43,7 @@ exports.getAll = async (req, res) => {
     if (status) filter.status = status;
 
     if (req.user.role === "citizen") {
-      filter.status = { $in: ["active", "paused"] };
+      filter.status = { $in: ["active", "paused", "closed"] };
       filter.targetRegions = req.user.region;
     } else if (req.user.role === "planner") {
       if (owner === "me") {
@@ -132,7 +132,7 @@ exports.getOne = async (req, res) => {
     }
 
     if (req.user.role === "citizen") {
-      const allowedStatuses = ["active", "paused"];
+      const allowedStatuses = ["active", "paused", "closed"];
       if (
         !allowedStatuses.includes(policy.status) ||
         !policy.targetRegions.includes(req.user.region)
