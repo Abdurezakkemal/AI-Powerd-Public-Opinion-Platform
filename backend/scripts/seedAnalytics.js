@@ -9,6 +9,7 @@ const User = require("../src/models/User");
 const Policy = require("../src/models/Policy");
 const Vote = require("../src/models/Vote");
 const Comment = require("../src/models/Comment");
+const SmsSubscription = require("../src/models/SmsSubscription"); // <-- new
 
 const MONGO_URI =
   process.env.MONGO_URI || "mongodb://localhost:27017/communityinsight";
@@ -174,13 +175,14 @@ async function seed() {
     await Vote.deleteMany({});
     await Comment.deleteMany({});
     await Policy.deleteMany({});
+    await SmsSubscription.deleteMany({}); // clear old subscriptions
     await User.deleteMany({ role: { $ne: "admin" } });
     console.log("Cleaned.");
 
-    // Recreate indexes (optional – your model defines them; we'll rely on syncIndexes)
-    // But we explicitly call syncIndexes for safety
+    // Sync indexes
     await Vote.syncIndexes();
     await Comment.syncIndexes();
+    await SmsSubscription.syncIndexes();
     console.log("Indexes synced");
 
     const passwordHash = await bcrypt.hash(DEFAULT_PASSWORD, 10);
@@ -231,10 +233,6 @@ async function seed() {
     );
 
     // ---- 3. Create policies ----
-    // We want:
-    //   - One policy targeting all regions (for geographic & heatmap testing) – status "active"
-    //   - Four other active policies with random targets
-    //   - One closed policy (was active in the past) – again random targets
     const policyTitles = [
       "Geographic Test Policy (All Regions)",
       "Clean Water Access Initiative",
@@ -256,8 +254,6 @@ async function seed() {
           randomItem(ALL_REGIONS),
         ].slice(0, randomInt(1, 2));
       }
-      // For the closed policy (i=5), make its end date before today so that the auto‑worker would have closed it.
-      // But we create it as "closed" directly.
       const startDate = new Date("2026-02-01");
       const endDate = i === 5 ? new Date("2026-03-15") : new Date("2026-07-30");
       let status = "active";
@@ -285,33 +281,29 @@ async function seed() {
       `Created ${policies.length} policies (${activePolicies.length} active, ${closedPolicies.length} closed)`,
     );
 
-    // ---- 4. Create votes & comments for all active AND closed policies ----
+    // ---- 4. Create app votes & comments for all active AND closed policies ----
     const policiesToSeed = [...activePolicies, ...closedPolicies];
     let voteCounter = 0;
 
     for (const policy of policiesToSeed) {
       for (const citizen of citizens) {
-        // Only vote if the citizen's region is in the policy's target regions
         if (!policy.targetRegions.includes(citizen.region)) continue;
-
         voteCounter++;
         const rating = randomInt(1, 5);
         const hasComment = Math.random() > 0.3;
         const createdAt = randomVoteDate();
 
-        // Create Vote with region snapshot
         const vote = new Vote({
           policyId: policy._id,
           userId: citizen._id,
           phoneHash: citizen.phoneHash,
           channel: "app",
           rating,
-          region: citizen.region, // ★ snapshot for historical accuracy
+          region: citizen.region,
           createdAt,
         });
         await vote.save();
 
-        // Create optional Comment (linked)
         if (hasComment) {
           const sentimentLabel =
             rating <= 2 ? "negative" : rating === 3 ? "neutral" : "positive";
@@ -345,36 +337,50 @@ async function seed() {
       }
     }
 
-    // // ---- 5. Create some SMS votes (only for active policies; no region) ----
-    // // SMS votes are anonymous but we still need them to test global counts.
-    // const smsPhones = [
-    //   "+251911234567",
-    //   "+251922345678",
-    //   "+251933456789",
-    //   "+251944567890",
-    // ];
-    // for (const policy of activePolicies) {
-    //   for (let i = 0; i < 3; i++) {
-    //     const rating = randomInt(1, 5);
-    //     const createdAt = randomVoteDate();
-    //     const vote = new Vote({
-    //       policyId: policy._id,
-    //       userId: null,
-    //       phoneHash: smsPhones[i % smsPhones.length],
-    //       channel: "sms",
-    //       rating,
-    //       region: null, // SMS votes have no region
-    //       createdAt,
-    //     });
-    //     await vote.save();
-    //     // No comment for SMS votes
-    //   }
-    // }
+    // ---- 5. Create SMS votes and corresponding subscriptions ----
+    const smsPhones = [
+      "+251911234567",
+      "+251922345678",
+      "+251933456789",
+      "+251944567890",
+    ];
+    const smsSubscriptions = [];
+    for (const phone of smsPhones) {
+      const phoneHash = require("../src/utils/helpers").hashPhone(phone);
+      const existingSub = await SmsSubscription.findOne({ phoneHash });
+      if (!existingSub) {
+        const sub = new SmsSubscription({ phoneHash, subscribed: true });
+        await sub.save();
+        smsSubscriptions.push(sub);
+      }
+    }
+    console.log(`Created ${smsSubscriptions.length} SMS subscriptions.`);
+
+    for (const policy of activePolicies) {
+      for (let i = 0; i < 3; i++) {
+        const rating = randomInt(1, 5);
+        const createdAt = randomVoteDate();
+        const phoneHash = require("../src/utils/helpers").hashPhone(
+          smsPhones[i % smsPhones.length],
+        );
+        const vote = new Vote({
+          policyId: policy._id,
+          userId: null,
+          phoneHash,
+          channel: "sms",
+          rating,
+          region: null,
+          createdAt,
+        });
+        await vote.save();
+      }
+    }
 
     const totalVotes = await Vote.countDocuments();
     const totalComments = await Comment.countDocuments();
+    const totalSmsVotes = await Vote.countDocuments({ channel: "sms" });
     console.log(
-      `Created ${totalVotes} votes (${citizens.length * policiesToSeed.length} app votes + ~${activePolicies.length * 3} SMS votes)`,
+      `Created ${totalVotes} votes (including ${totalSmsVotes} SMS votes)`,
     );
     console.log(`Created ${totalComments} comments (with AI processing)`);
 
@@ -392,6 +398,15 @@ async function seed() {
         `\n🔒 Use this policy ID for closed-policy analytics: ${closedPolicies[0]._id}`,
       );
       console.log(`   Policy title: ${closedPolicies[0].title}`);
+    }
+
+    console.log("\nSMS test phone numbers and their subscription status:");
+    for (const phone of smsPhones) {
+      const phoneHash = require("../src/utils/helpers").hashPhone(phone);
+      const sub = await SmsSubscription.findOne({ phoneHash });
+      console.log(
+        `   ${phone} -> subscribed: ${sub ? sub.subscribed : "no subscription"}`,
+      );
     }
 
     // ---- 6. Obtain JWT tokens for manual API testing (optional) ----
@@ -418,11 +433,15 @@ async function seed() {
     console.log(
       `Policies: ${policies.length} (${activePolicies.length} active, ${closedPolicies.length} closed, 0 draft/published)`,
     );
-    console.log(`Votes: ${totalVotes}`);
+    console.log(`Total votes: ${totalVotes}`);
+    console.log(`  - App votes: ${totalVotes - totalSmsVotes}`);
+    console.log(`  - SMS votes: ${totalSmsVotes}`);
     console.log(`Comments: ${totalComments}`);
-    console.log(`SMS votes: ${await Vote.countDocuments({ channel: "sms" })}`);
     console.log(
       `Region snapshots stored on Vote: ${await Vote.countDocuments({ region: { $ne: null } })}`,
+    );
+    console.log(
+      `SMS subscriptions: ${await SmsSubscription.countDocuments({ subscribed: true })}`,
     );
     console.log("===================================\n");
 

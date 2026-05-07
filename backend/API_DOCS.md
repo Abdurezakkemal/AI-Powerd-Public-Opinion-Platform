@@ -233,7 +233,7 @@ Authenticates a user with email and password. Returns a JWT token valid for 7 da
 | 403    | `ACCOUNT_DISABLED`    | `"Your account has been deactivated. Please contact an administrator."`         |
 | 403    | `NOT_VERIFIED`        | `"Your email address is not verified. Please complete OTP verification first."` |
 
-## 2.5 Password Reset
+### 2.5 Password Reset
 
 ### 2.5.1 Request password reset (user self‑service)
 
@@ -346,30 +346,25 @@ The admin cannot reset their own password through this endpoint – they must us
 
 ## 3. Policy Endpoints
 
-All policy endpoints require authentication. Role permissions:
+| Role    | View own draft/published? | View others' draft/published? | View others' active/paused/closed?      | Create / Update / Delete (own) | Publish / Unpublish (own) | Activate / Pause / Resume / Close / Extend (own)      |
+| ------- | ------------------------- | ----------------------------- | --------------------------------------- | ------------------------------ | ------------------------- | ----------------------------------------------------- |
+| Citizen | No                        | No                            | Yes (`active` and `paused`, own region) | No                             | No                        | No                                                    |
+| Planner | Yes (all statuses)        | **No (404)**                  | Yes                                     | Yes (draft/published only)     | Yes (draft → published)   | Yes (published → active, active/paused → close, etc.) |
+| Admin   | Yes (all)                 | Yes (all)                     | Yes                                     | Yes (any policy)               | Yes (any policy)          | Yes (any policy)                                      |
 
-| Role    | View own draft/published? | View others' draft/published? | View others' active/paused/closed? | Create / Update / Delete (own) | Publish / Unpublish (own) | Activate / Pause / Resume / Close / Extend (own)      |
-| ------- | ------------------------- | ----------------------------- | ---------------------------------- | ------------------------------ | ------------------------- | ----------------------------------------------------- |
-| Citizen | No                        | No                            | Yes (only `active`, own region)    | No                             | No                        | No                                                    |
-| Planner | Yes (all statuses)        | **No (404)**                  | Yes                                | Yes (draft/published only)     | Yes (draft → published)   | Yes (published → active, active/paused → close, etc.) |
-| Admin   | Yes (all)                 | Yes (all)                     | Yes                                | Yes (any policy)               | Yes (any policy)          | Yes (any policy)                                      |
+**Important visibility rules:**
 
-**Important visibility rule for planners:**
+- **Citizens** can only see policies with status `active` or `paused` that target their region. Any other policy (different status, different region) returns **`404 Not Found`** when accessed directly – citizens are never told that such a policy exists.
+- **Planners** see their own policies (any status). For other planners' policies, only `active`, `paused`, and `closed` are visible; **draft** and **published** policies of others return **`404 Not Found`** on any endpoint.
+- **Admins** can see all policies.
 
-- A planner can see **their own** policies regardless of status (draft, published, active, paused, closed).
-- For **other planners' policies**: only `active`, `paused`, and `closed` are visible.
-- **Draft and published** policies belonging to another planner are **completely hidden** – any endpoint (GET, PUT, PATCH, POST, DELETE) that targets such a policy will return **`404 Not Found`**, as if the policy does not exist.
-- This applies to **all policy‑specific endpoints**: `GET /policies/:id`, `PUT /policies/:id`, `PATCH /policies/:id/publish`, `PATCH /policies/:id/unpublish`, `PATCH /policies/:id/activate`, `PATCH /policies/:id/pause`, `PATCH /policies/:id/resume`, `PATCH /policies/:id/extend`, `POST /policies/:id/close`, `DELETE /policies/:id`, `POST /policies/:id/clone`, `GET /policies/:id/history`.
+**Notes on actions:**
 
-**Notes:**
-
-- Citizens cannot see `published` policies; they only become visible when `active`.
-- Planners see their own `draft` and `published` policies, plus other planners' `active`, `paused`, and `closed` policies (others' `draft` and `published` are hidden).
-- `*` Delete allowed only for `draft` or `published` policies. `Update` only for `draft` policies.
-- `**` `Extend` works on `active` or `paused` policies. `Pause` works on `active`, `Resume` on `paused`. `Close` works on `active` or `paused`.
-- `Activate` moves a `published` policy to `active` (if within voting window). Auto‑activation also does this on startDate.
-- `Publish` moves a `draft` policy to `published` (or directly to `active` if startDate already passed).
-- `Unpublish` moves a `published` policy back to `draft`.
+- Delete allowed only for `draft` or `published` policies. Update only for `draft` policies.
+- Extend works on `active` or `paused`. Pause works on `active`, Resume on `paused`. Close works on `active` or `paused`.
+- Activate moves a `published` policy to `active` (within voting window). Auto‑activation also does this on startDate.
+- Publish moves a `draft` policy to `published` (or directly to `active` if startDate already passed).
+- Unpublish moves a `published` policy back to `draft`.
 
 ### 3.1 List policies
 
@@ -444,12 +439,9 @@ Path parameter:
 
 **Access rules:**
 
-- Citizens can only view `active` policies in their own region.
-- Planners can view:
-  - Their own policies (any status)
-  - Other planners' `active`, `paused`, `closed` policies
-- Other planners' `draft` or `published` policies return **`404 Not Found`**.
-- Admins can view any policy.
+- **Citizens**: can only view policies that are `active` or `paused` **and** target their region. All other policies return **`404 Not Found`**.
+- **Planners**: view their own policies (any status) and other planners' `active`, `paused`, `closed` policies. Other planners' `draft` or `published` policies return **`404 Not Found`**.
+- **Admins**: can view any policy.
 
 **Response (200 OK):**
 
@@ -473,13 +465,14 @@ Path parameter:
 }
 ```
 
-**Error responses:**
+**Error responses (updated):**
 
-| Status | Code           | Message                                                                                                 |
-| ------ | -------------- | ------------------------------------------------------------------------------------------------------- |
-| 401    | `UNAUTHORIZED` | `"Access denied. No token provided."`                                                                   |
-| 403    | `FORBIDDEN`    | `"You do not have access to this policy" (citizen only)`                                                |
-| 404    | `NOT_FOUND`    | `"Policy not found"` (policy ID invalid, or planner trying to access another planner's draft/published) |
+| Status | Code           | Message                                                                                                                                                              |
+| ------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 401    | `UNAUTHORIZED` | `"Access denied. No token provided."`                                                                                                                                |
+| 404    | `NOT_FOUND`    | `"Policy not found"` (policy does not exist, citizen tries to access non‑active/paused or wrong‑region policy, or planner tries to access another's draft/published) |
+
+**Note:** Citizens never receive a `403` for inaccessible policies – only `404` to hide existence.
 
 ### 3.3 Create policy
 
@@ -2209,91 +2202,113 @@ Query parameters (all optional):
 
 ## 8. SMS Simulation (Public)
 
-These endpoints simulate an SMS gateway. They return plain text, not JSON. They are rate-limited per phone number (3 votes per 24 hours).
+These endpoints simulate an SMS gateway. They return plain text, not JSON.
+
+- **Rate limiting:** Only the `RATE` command is limited to 3 votes per 24 hours per phone number(using Redis).
+- All other commands (`HELP`, `SUBSCRIBE`, `STOP`, `POLICIES`, `STATUS`, `MYVOTES`, `RESULTS`) are not subject to the daily vote limit, but are still protected by the global IP rate limit (100 requests per 15 minutes).
+
+**Subscription required** for most commands.  
+A user must first send `SUBSCRIBE` to register their phone number. Once subscribed, they can use all commands.  
+Unsubscribed users who send any command other than `SUBSCRIBE` or `STOP` receive a reminder to subscribe.
 
 ### 8.1 Send SMS command
 
 **`POST /sms/receive`**
 
-Request body (JSON or form-encoded):
+**Request body** (JSON or form‑encoded):
 
-| Field   | Type   | Required | Description                        |
-| ------- | ------ | -------- | ---------------------------------- |
-| phone   | string | yes      | Phone number (e.g., +251912345678) |
-| message | string | yes      | Command text (case-insensitive)    |
+| Field     | Type   | Required | Description                        |
+| --------- | ------ | -------- | ---------------------------------- |
+| `phone`   | string | yes      | Phone number (e.g., +251912345678) |
+| `message` | string | yes      | Command (case‑insensitive)         |
 
-Supported commands:
+**Supported commands (for subscribed users):**
 
-| Command | Format                  | Description                                  |
-| ------- | ----------------------- | -------------------------------------------- |
-| RATE    | RATE <policyCode> <1-5> | Vote on an active policy                     |
-| STATUS  | STATUS <policyCode>     | Get current average rating for active policy |
-| RESULTS | RESULTS <policyCode>    | Get final results after policy is closed     |
-| HELP    | HELP                    | Show available commands                      |
+| Command    | Format              | Description                                        |
+| ---------- | ------------------- | -------------------------------------------------- |
+| `RATE`     | `RATE <code> <1-5>` | Vote on an active policy (max 3 votes/day)         |
+| `STATUS`   | `STATUS <code>`     | Get current average rating of an active policy     |
+| `POLICIES` | `POLICIES`          | List all currently active policies (code + title)  |
+| `MYVOTES`  | `MYVOTES`           | Show policies you have voted on, with their status |
+| `RESULTS`  | `RESULTS <code>`    | Get final results of a closed policy               |
+| `HELP`     | `HELP`              | Show this help message                             |
 
-Response (plain text) – successful RATE:
+**Subscription commands (always allowed, even for unsubscribed numbers):**
 
-```text
-You voted 4 stars for "Clean Water Initiative". Current average rating: 3.5 stars (12 votes). Thank you!
-```
+| Command     | Description                                       |
+| ----------- | ------------------------------------------------- |
+| `SUBSCRIBE` | Register for the service (creates a subscription) |
+| `STOP`      | Unsubscribe (no further commands allowed)         |
 
-Response (plain text) – STATUS:
+---
 
-```text
+### 8.2 Example interactions
+
+**Unsubscribed user sends `POLICIES`:**
+
+You are not subscribed to this service. Send SUBSCRIBE to register for SMS voting.
+
+**Subscribe:**
+SUBSCRIBE
+< Welcome to the Civic Engagement SMS service.
+You can now vote on policies, check status, and receive closure notifications.
+Send HELP for available commands.
+
+**After subscription – `POLICIES`:**
+Active policies:
+CLEAN123 - Clean Water Initiative
+RURAL456 - Rural Road Development
+
+**`RATE` (first vote):**
+RATE CLEAN123 4
+< You voted 4 stars for "Clean Water Initiative".
+Current average: 4.00 stars (1 votes).
+2 vote(s) left today.
+
+**`MYVOTES` (after voting on one policy):**
+Policies you voted on:
+CLEAN123 (Clean Water Initiative): Active - voting open
+
+**`STATUS`:**
 Policy: Clean Water Initiative
-Current average rating: 3.5 stars (12 votes)
-```
+Average rating: 3.33 stars (3 votes)
 
-Response (plain text) – RESULTS:
+**`RESULTS` (after policy is closed):**
+Policy: Clean Water Initiative
+Final average rating: 3.80 stars (150 votes)
 
-```text
-Policy: Clean Water Initiative – Final average rating: 3.8 stars (150 votes)
-```
+**`STOP` (unsubscribe):**
+You have unsubscribed from SMS voting. You will no longer receive notifications or be able to vote. Send SUBSCRIBE to rejoin.
 
-Response (plain text) – HELP:
-
-```text
+**`HELP` (subscribed user):**
 Commands:
-RATE <code> <1-5> - Vote on a policy
-STATUS <code> - Get current average rating for active policy
-RESULTS <code> - Get final results (only after policy closes)
-HELP - Show this message
-```
+SUBSCRIBE - Register for SMS voting
+STOP - Unsubscribe
+POLICIES - List active policies
+STATUS <code> - Current average rating
+RATE <code> <1-5> - Vote (max 3 per day)
+MYVOTES - Policies you voted on
+RESULTS <code> - Final results (closed policy)
+HELP - This message
 
-Error responses (plain text):
+### 8.3 Error responses (plain text)
 
-| Status | Text                                                                  |
-| ------ | --------------------------------------------------------------------- |
-| 400    | "Phone and message are required"                                      |
-| 400    | "Invalid format. Use: RATE code rating (e.g., RATE POL123 4)"         |
-| 403    | "This number is registered with the app. Please use the app to vote." |
-| 404    | "Policy not found or not active"                                      |
-| 409    | "You have already voted on this policy via SMS."                      |
-| 429    | "Daily limit of 3 votes reached. Try again in X hour(s)."             |
+| Status  | Text                                                                                   |
+| ------- | -------------------------------------------------------------------------------------- |
+| 400     | `"Phone and message are required"`                                                     |
+| 400     | `"Invalid format. Use: RATE code rating (e.g., RATE POL123 4)"`                        |
+| 400     | `"Unknown command. Send HELP for available commands."`                                 |
+| 403     | `"This number is registered with the app. Please use the app to vote."`                |
+| 404     | `"Policy not found or not active."`                                                    |
+| 409     | `"You have already voted on this policy via SMS."`                                     |
+| 429     | `"Daily limit of 3 votes reached. Try again in X hour(s)."`                            |
+| (other) | `"You are not subscribed to this service. Send SUBSCRIBE to register for SMS voting."` |
 
-### 8.2 Get results (alternative)
+### 8.4 Get results (alternative)
 
-**`GET /sms/results`**
-
-Query parameters:
-
-| Parameter | Type   | Required | Description                          |
-| --------- | ------ | -------- | ------------------------------------ |
-| code      | string | yes      | Policy code (e.g., POL123)           |
-| phone     | string | no       | Phone number (optional, for logging) |
-
-Response (plain text) – successful:
-
-```text
-Policy: Clean Water Initiative – Final average rating: 3.8 stars (150 votes)
-```
-
-Error responses (plain text):
-
-| Status | Text                                 |
-| ------ | ------------------------------------ |
-| 400    | "Policy code is required"            |
-| 404    | "Policy not found or not yet closed" |
+**`GET /sms/results`**  
+Works exactly as before (no subscription required, but only for closed policies).  
+Query parameters: `code` (required), `phone` (optional, for logging). Returns plain text with final results.
 
 ## 9. Health Check
 

@@ -6,7 +6,7 @@ const voteSchema = new mongoose.Schema({
     ref: "Policy",
     required: true,
   },
-  region: { type: String, default: null }, // snapshot of user's region at vote time
+  region: { type: String, default: null },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
   phoneHash: { type: String },
   channel: { type: String, enum: ["app", "sms"], required: true },
@@ -14,8 +14,19 @@ const voteSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-// Ensure a user (or phone) can only vote once per policy
-voteSchema.index({ policyId: 1, userId: 1 }, { unique: true, sparse: true });
-voteSchema.index({ policyId: 1, phoneHash: 1 }, { unique: true, sparse: true });
+// Partial unique index for app votes (only when userId is an ObjectId, i.e., not null)
+voteSchema.index(
+  { policyId: 1, userId: 1 },
+  { unique: true, partialFilterExpression: { userId: { $type: "objectId" } } },
+);
+
+// Partial unique index for SMS votes (only when phoneHash is a string, i.e., not null)
+voteSchema.index(
+  { policyId: 1, phoneHash: 1 },
+  { unique: true, partialFilterExpression: { phoneHash: { $type: "string" } } },
+);
+
+// Optional: index for date queries
+voteSchema.index({ createdAt: -1 });
 
 module.exports = mongoose.model("Vote", voteSchema);

@@ -43,7 +43,7 @@ exports.getAll = async (req, res) => {
     if (status) filter.status = status;
 
     if (req.user.role === "citizen") {
-      filter.status = "active";
+      filter.status = { $in: ["active", "paused"] };
       filter.targetRegions = req.user.region;
     } else if (req.user.role === "planner") {
       if (owner === "me") {
@@ -132,16 +132,17 @@ exports.getOne = async (req, res) => {
     }
 
     if (req.user.role === "citizen") {
+      const allowedStatuses = ["active", "paused"];
       if (
-        policy.status !== "active" ||
+        !allowedStatuses.includes(policy.status) ||
         !policy.targetRegions.includes(req.user.region)
       ) {
         return sendError(
           res,
-          ErrorCodes.FORBIDDEN,
-          "You do not have access to this policy",
+          ErrorCodes.NOT_FOUND,
+          "Policy not found",
           null,
-          403,
+          404,
         );
       }
     }

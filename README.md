@@ -23,9 +23,12 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 
 ### For Basic Phone Users (Simulated SMS)
 
-- Vote via SMS commands: `RATE <code> <rating>`
-- Check current status: `STATUS <code>`
-- Get final results after policy closes: `RESULTS <code>`
+- **Subscription required** – first send `SUBSCRIBE` to register.
+- Vote: `RATE <code> <rating>` (max 3 votes per day)
+- Check active policies: `POLICIES`, current status: `STATUS <code>`
+- View your votes: `MYVOTES`, get final results: `RESULTS <code>`
+- Unsubscribe: `STOP`
+- Closure notifications are sent only to subscribed voters.
 
 ### For Planners & Admins (Web Dashboard)
 
