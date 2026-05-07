@@ -179,20 +179,20 @@ export function CommentModerationPage() {
                     </p>
                   </div>
                   <div className="flex gap-1">
-                    {comment.sentiment && (
+                    {comment.sentiment?.label && (
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold capitalize ${
-                          SENTIMENT_COLORS[comment.sentiment] || "bg-slate-100 text-slate-700"
+                          SENTIMENT_COLORS[comment.sentiment?.label] || "bg-slate-100 text-slate-700"
                         }`}
                       >
-                        {comment.sentiment}
+                        {comment.sentiment?.label}
                       </span>
                     )}
                   </div>
                 </div>
 
                 <div className="mb-3 rounded-lg bg-slate-50 p-3">
-                  <p className="text-sm text-slate-900">{comment.text}</p>
+                  <p className="text-sm text-slate-900">{comment.comment}</p>
                 </div>
 
                 <div className="mb-3 space-y-1">
@@ -211,9 +211,9 @@ export function CommentModerationPage() {
                       </div>
                     </div>
                   )}
-                  {comment.confidence && (
+                  {comment.sentiment?.confidence !== undefined && (
                     <p className="text-xs text-slate-600">
-                      <strong>Confidence:</strong> {(comment.confidence * 100).toFixed(1)}%
+                      <strong>Confidence:</strong> {(comment.sentiment.confidence * 100).toFixed(1)}%
                     </p>
                   )}
                   {comment.errorReason && (
@@ -304,7 +304,7 @@ export function CommentModerationPage() {
         <Modal title={`${actionType === "approve" ? "Approve" : "Reject"} Comment`} onClose={() => setModalOpen(false)}>
           <div className="space-y-4">
             <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-sm text-slate-900">"{selectedComment.text}"</p>
+              <p className="text-sm text-slate-900">"{selectedComment.comment}"</p>
             </div>
 
             <p className="text-sm text-slate-600">

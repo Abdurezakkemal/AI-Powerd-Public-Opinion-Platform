@@ -23,7 +23,7 @@ export function TrendsDashboardPage() {
     try {
       const result = await adminApi.getTrends({
         startDate: dates.startDate ? toIsoFromDateInput(dates.startDate) : undefined,
-        endDate: dates.endDate ? toIsoFromDateInput(dates.endDate) : undefined,
+        endDate: dates.endDate ? toIsoFromDateInput(dates.endDate, true) : undefined,
       });
       setTrends(result);
     } catch (err) {
@@ -45,6 +45,11 @@ export function TrendsDashboardPage() {
   const handleApplyFilter = () => {
     loadTrends();
   };
+
+  const trendData = trends?.data || [];
+  const totalVotes = trends?.totalVotes || 0;
+  const totalNewUsers = trends?.newUsers || 0;
+  const averageRating = trends?.averageRating || 0;
 
   if (loading) return <LoadingState label="Loading trends" />;
 
@@ -101,30 +106,49 @@ export function TrendsDashboardPage() {
           <div className="space-y-5">
             {/* Summary Metrics */}
             <div className="grid gap-4 sm:grid-cols-4">
-              <MetricCard label="Total Votes" value={trends.totalVotes || 0} />
-              <MetricCard label="Total Comments" value={trends.totalComments || 0} />
-              <MetricCard label="Pending Comments" value={trends.pendingComments || 0} />
-              <MetricCard label="Avg Rating" value={(trends.averageRating || 0).toFixed(2)} />
+              <MetricCard label="Total Votes" value={totalVotes} />
+              <MetricCard label="New Users" value={totalNewUsers} />
+              <MetricCard label="Avg Rating" value={averageRating.toFixed(2)} />
+              <MetricCard label="Interval" value={trends.interval || "day"} />
             </div>
 
-            {/* Votes Over Time */}
-            {trends.votesTimeSeries && trends.votesTimeSeries.length > 0 && (
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <h3 className="mb-4 font-bold text-slate-900">Votes Over Time</h3>
-                <ResponsiveContainer width="100%" height={300}>
-                  <LineChart data={trends.votesTimeSeries}>
-                    <CartesianGrid strokeDasharray="3 3" />
-                    <XAxis dataKey="date" />
-                    <YAxis />
-                    <Tooltip />
-                    <Legend />
-                    <Line type="monotone" dataKey="votes" stroke="#0d9488" strokeWidth={2} name="Votes" />
-                  </LineChart>
-                </ResponsiveContainer>
+            {trendData.length === 0 ? (
+              <div className="rounded-lg border border-slate-200 bg-white px-8 py-12 text-center">
+                <p className="text-slate-600">No trends data found for the selected date range.</p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                  <h3 className="mb-4 font-bold text-slate-900">Votes Over Time</h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={trendData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="votes" stroke="#0d9488" strokeWidth={2} name="Votes" />
+                      <Line type="monotone" dataKey="newUsers" stroke="#2563eb" strokeWidth={2} name="New Users" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+                  <h3 className="mb-4 font-bold text-slate-900">Average Rating Over Time</h3>
+                  <ResponsiveContainer width="100%" height={300}>
+                    <LineChart data={trendData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="date" />
+                      <YAxis />
+                      <Tooltip />
+                      <Legend />
+                      <Line type="monotone" dataKey="avgRating" stroke="#0f766e" strokeWidth={2} name="Avg Rating" />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
               </div>
             )}
 
-            {/* Sentiment Trend */}
             {trends.sentimentTrend && trends.sentimentTrend.length > 0 && (
               <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="mb-4 font-bold text-slate-900">Sentiment Distribution Over Time</h3>
@@ -143,7 +167,6 @@ export function TrendsDashboardPage() {
               </div>
             )}
 
-            {/* Regional Breakdown */}
             {trends.byRegion && Object.keys(trends.byRegion).length > 0 && (
               <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
                 <h3 className="mb-4 font-bold text-slate-900">Votes by Region</h3>
@@ -172,7 +195,6 @@ export function TrendsDashboardPage() {
               </div>
             )}
 
-            {/* Channel Breakdown */}
             {trends.byChannel && (
               <div className="grid gap-4 sm:grid-cols-2">
                 {Object.entries(trends.byChannel).map(([channel, count]) => (
