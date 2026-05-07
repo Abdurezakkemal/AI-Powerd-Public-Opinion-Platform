@@ -233,7 +233,7 @@ Authenticates a user with email and password. Returns a JWT token valid for 7 da
 | 403    | `ACCOUNT_DISABLED`    | `"Your account has been deactivated. Please contact an administrator."`         |
 | 403    | `NOT_VERIFIED`        | `"Your email address is not verified. Please complete OTP verification first."` |
 
-## 2.5 Password Reset
+### 2.5 Password Reset
 
 ### 2.5.1 Request password reset (user self‑service)
 
@@ -346,30 +346,25 @@ The admin cannot reset their own password through this endpoint – they must us
 
 ## 3. Policy Endpoints
 
-All policy endpoints require authentication. Role permissions:
+| Role    | View own draft/published? | View others' draft/published? | View others' active/paused/closed?      | Create / Update / Delete (own) | Publish / Unpublish (own) | Activate / Pause / Resume / Close / Extend (own)      |
+| ------- | ------------------------- | ----------------------------- | --------------------------------------- | ------------------------------ | ------------------------- | ----------------------------------------------------- |
+| Citizen | No                        | No                            | Yes (`active` and `paused`, own region) | No                             | No                        | No                                                    |
+| Planner | Yes (all statuses)        | **No (404)**                  | Yes                                     | Yes (draft/published only)     | Yes (draft → published)   | Yes (published → active, active/paused → close, etc.) |
+| Admin   | Yes (all)                 | Yes (all)                     | Yes                                     | Yes (any policy)               | Yes (any policy)          | Yes (any policy)                                      |
 
-| Role    | View own draft/published? | View others' draft/published? | View others' active/paused/closed? | Create / Update / Delete (own) | Publish / Unpublish (own) | Activate / Pause / Resume / Close / Extend (own)      |
-| ------- | ------------------------- | ----------------------------- | ---------------------------------- | ------------------------------ | ------------------------- | ----------------------------------------------------- |
-| Citizen | No                        | No                            | Yes (only `active`, own region)    | No                             | No                        | No                                                    |
-| Planner | Yes (all statuses)        | **No (404)**                  | Yes                                | Yes (draft/published only)     | Yes (draft → published)   | Yes (published → active, active/paused → close, etc.) |
-| Admin   | Yes (all)                 | Yes (all)                     | Yes                                | Yes (any policy)               | Yes (any policy)          | Yes (any policy)                                      |
+**Important visibility rules:**
 
-**Important visibility rule for planners:**
+- **Citizens** can only see policies with status `active` or `paused` that target their region. Any other policy (different status, different region) returns **`404 Not Found`** when accessed directly – citizens are never told that such a policy exists.
+- **Planners** see their own policies (any status). For other planners' policies, only `active`, `paused`, and `closed` are visible; **draft** and **published** policies of others return **`404 Not Found`** on any endpoint.
+- **Admins** can see all policies.
 
-- A planner can see **their own** policies regardless of status (draft, published, active, paused, closed).
-- For **other planners' policies**: only `active`, `paused`, and `closed` are visible.
-- **Draft and published** policies belonging to another planner are **completely hidden** – any endpoint (GET, PUT, PATCH, POST, DELETE) that targets such a policy will return **`404 Not Found`**, as if the policy does not exist.
-- This applies to **all policy‑specific endpoints**: `GET /policies/:id`, `PUT /policies/:id`, `PATCH /policies/:id/publish`, `PATCH /policies/:id/unpublish`, `PATCH /policies/:id/activate`, `PATCH /policies/:id/pause`, `PATCH /policies/:id/resume`, `PATCH /policies/:id/extend`, `POST /policies/:id/close`, `DELETE /policies/:id`, `POST /policies/:id/clone`, `GET /policies/:id/history`.
+**Notes on actions:**
 
-**Notes:**
-
-- Citizens cannot see `published` policies; they only become visible when `active`.
-- Planners see their own `draft` and `published` policies, plus other planners' `active`, `paused`, and `closed` policies (others' `draft` and `published` are hidden).
-- `*` Delete allowed only for `draft` or `published` policies. `Update` only for `draft` policies.
-- `**` `Extend` works on `active` or `paused` policies. `Pause` works on `active`, `Resume` on `paused`. `Close` works on `active` or `paused`.
-- `Activate` moves a `published` policy to `active` (if within voting window). Auto‑activation also does this on startDate.
-- `Publish` moves a `draft` policy to `published` (or directly to `active` if startDate already passed).
-- `Unpublish` moves a `published` policy back to `draft`.
+- Delete allowed only for `draft` or `published` policies. Update only for `draft` policies.
+- Extend works on `active` or `paused`. Pause works on `active`, Resume on `paused`. Close works on `active` or `paused`.
+- Activate moves a `published` policy to `active` (within voting window). Auto‑activation also does this on startDate.
+- Publish moves a `draft` policy to `published` (or directly to `active` if startDate already passed).
+- Unpublish moves a `published` policy back to `draft`.
 
 ### 3.1 List policies
 
@@ -444,12 +439,9 @@ Path parameter:
 
 **Access rules:**
 
-- Citizens can only view `active` policies in their own region.
-- Planners can view:
-  - Their own policies (any status)
-  - Other planners' `active`, `paused`, `closed` policies
-- Other planners' `draft` or `published` policies return **`404 Not Found`**.
-- Admins can view any policy.
+- **Citizens**: can only view policies that are `active` or `paused` **and** target their region. All other policies return **`404 Not Found`**.
+- **Planners**: view their own policies (any status) and other planners' `active`, `paused`, `closed` policies. Other planners' `draft` or `published` policies return **`404 Not Found`**.
+- **Admins**: can view any policy.
 
 **Response (200 OK):**
 
@@ -473,13 +465,14 @@ Path parameter:
 }
 ```
 
-**Error responses:**
+**Error responses (updated):**
 
-| Status | Code           | Message                                                                                                 |
-| ------ | -------------- | ------------------------------------------------------------------------------------------------------- |
-| 401    | `UNAUTHORIZED` | `"Access denied. No token provided."`                                                                   |
-| 403    | `FORBIDDEN`    | `"You do not have access to this policy" (citizen only)`                                                |
-| 404    | `NOT_FOUND`    | `"Policy not found"` (policy ID invalid, or planner trying to access another planner's draft/published) |
+| Status | Code           | Message                                                                                                                                                              |
+| ------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 401    | `UNAUTHORIZED` | `"Access denied. No token provided."`                                                                                                                                |
+| 404    | `NOT_FOUND`    | `"Policy not found"` (policy does not exist, citizen tries to access non‑active/paused or wrong‑region policy, or planner tries to access another's draft/published) |
+
+**Note:** Citizens never receive a `403` for inaccessible policies – only `404` to hide existence.
 
 ### 3.3 Create policy
 
