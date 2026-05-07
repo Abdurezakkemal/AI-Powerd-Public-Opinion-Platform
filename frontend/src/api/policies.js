@@ -1,5 +1,6 @@
 import { apiClient } from "./client";
 
+// Note: This is an extended version with unpublish and other lifecycle methods
 export const policyApi = {
   list(params = {}) {
     return apiClient.get("/policies", { params });

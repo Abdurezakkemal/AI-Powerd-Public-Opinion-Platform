@@ -3,11 +3,17 @@ import { AppShell } from "./components/AppShell";
 import { LoadingState } from "./components/LoadingState";
 import { useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
+import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
+import { ResetPasswordPage } from "./pages/ResetPasswordPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { PoliciesPage } from "./pages/PoliciesPage";
 import { PolicyFormPage } from "./pages/PolicyFormPage";
 import { PolicyAnalyticsPage } from "./pages/PolicyAnalyticsPage";
 import { UsersPage } from "./pages/UsersPage";
+import { CitizenManagementPage } from "./pages/CitizenManagementPage";
+import { CommentModerationPage } from "./pages/CommentModerationPage";
+import { TrendsDashboardPage } from "./pages/TrendsDashboardPage";
+import { AuditLogsPage } from "./pages/AuditLogsPage";
 
 function ProtectedRoute({ roles }) {
   const { initializing, isAuthenticated, role } = useAuth();
@@ -44,6 +50,8 @@ export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route element={<ProtectedRoute roles={["planner", "admin"]} />}>
         <Route element={<AppShell />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
@@ -54,6 +62,10 @@ export default function App() {
           <Route path="/policies/:id/analytics" element={<PolicyAnalyticsPage />} />
           <Route element={<ProtectedRoute roles={["admin"]} />}>
             <Route path="/users" element={<UsersPage />} />
+            <Route path="/citizens" element={<CitizenManagementPage />} />
+            <Route path="/comments/pending" element={<CommentModerationPage />} />
+            <Route path="/trends" element={<TrendsDashboardPage />} />
+            <Route path="/audit-logs" element={<AuditLogsPage />} />
           </Route>
         </Route>
       </Route>

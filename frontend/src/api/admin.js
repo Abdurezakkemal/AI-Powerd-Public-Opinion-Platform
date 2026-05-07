@@ -16,4 +16,43 @@ export const adminApi = {
   setPlannerStatus(id, active) {
     return apiClient.put(`/admin/planners/${id}/status`, { active });
   },
+  listCitizens(params = {}) {
+    return apiClient.get("/admin/users/citizens", { params });
+  },
+  updateCitizenStatus(id, active) {
+    return apiClient.put(`/admin/users/${id}/status`, { active });
+  },
+  initiatePasswordReset(id) {
+    return apiClient.post(`/admin/users/${id}/initiate-password-reset`);
+  },
+  getPendingComments(params = {}) {
+    return apiClient.get("/admin/comments/pending", { params });
+  },
+  updateComment(id, payload) {
+    return apiClient.put(`/admin/comments/${id}`, payload);
+  },
+  retryComment(id) {
+    return apiClient.post(`/admin/comments/${id}/retry`);
+  },
+  retryAllComments() {
+    return apiClient.post("/admin/comments/retry-all");
+  },
+  deleteComment(id) {
+    return apiClient.delete(`/admin/comments/${id}`);
+  },
+  getTrends(params = {}) {
+    return apiClient.get("/admin/trends", { params });
+  },
+  getAuditLogs(params = {}) {
+    return apiClient.get("/admin/audit-logs", { params });
+  },
+  exportAuditLogs(params = {}) {
+    return apiClient.get("/admin/audit-logs/export", {
+      params,
+      responseType: "blob",
+    });
+  },
+  getAIHealth() {
+    return apiClient.get("/admin/ai/health");
+  },
 };

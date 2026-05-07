@@ -1,4 +1,4 @@
-import { BarChart3, FileText, LayoutDashboard, LogOut, Menu, Users, X } from "lucide-react";
+import { BarChart3, FileText, LayoutDashboard, LogOut, Menu, Users, X, AlertCircle, TrendingUp, Clock } from "lucide-react";
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -6,14 +6,21 @@ import { useAuth } from "../auth/AuthContext";
 const baseLinks = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/policies", label: "Policies", icon: FileText },
-  
+];
+
+const adminLinks = [
+  { to: "/users", label: "Planner Accounts", icon: Users },
+  { to: "/citizens", label: "Citizens", icon: Users },
+  { to: "/comments/pending", label: "Pending Comments", icon: AlertCircle },
+  { to: "/trends", label: "Trends", icon: TrendingUp },
+  { to: "/audit-logs", label: "Audit Logs", icon: Clock },
 ];
 
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, role, logout } = useAuth();
   const navigate = useNavigate();
-  const links = role === "admin" ? [...baseLinks, { to: "/users", label: "Users", icon: Users }] : baseLinks;
+  const links = role === "admin" ? [...baseLinks, ...adminLinks] : baseLinks;
 
   const handleLogout = () => {
     logout();

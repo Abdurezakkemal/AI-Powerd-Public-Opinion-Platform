@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useForm } from "react-hook-form";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate, Link } from "react-router-dom";
 import { z } from "zod";
 import { useAuth } from "../auth/AuthContext";
 import { ErrorAlert } from "../components/ErrorAlert";
@@ -105,6 +105,15 @@ export function LoginPage() {
             >
               {submitting ? "Signing in..." : "Login"}
             </button>
+
+            <div className="text-center">
+              <Link
+                to="/forgot-password"
+                className="text-sm font-semibold text-teal-700 hover:text-teal-800"
+              >
+                Forgot password?
+              </Link>
+            </div>
           </form>
         </div>
       </section>

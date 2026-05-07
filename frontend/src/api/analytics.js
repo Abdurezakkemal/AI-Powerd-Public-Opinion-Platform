@@ -14,4 +14,7 @@ export const analyticsApi = {
     });
     return response;
   },
+  heatmap(params = {}) {
+    return apiClient.get("/analytics/heatmap", { params });
+  },
 };

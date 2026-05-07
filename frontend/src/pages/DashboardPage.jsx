@@ -5,6 +5,7 @@ import { adminApi } from "../api/admin";
 import { analyticsApi } from "../api/analytics";
 import { policyApi } from "../api/policies";
 import { useAuth } from "../auth/AuthContext";
+import { AIHealthCard } from "../components/AIHealthCard";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
@@ -116,7 +117,7 @@ export function DashboardPage() {
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           <MetricCard label="Active planners" value={formatNumber(adminStats.planners?.active)} icon={Activity} helper={`${formatNumber(adminStats.planners?.total)} total planners`} />
           <MetricCard label="Pending comments" value={formatNumber(adminStats.comments?.pendingReview)} helper="Awaiting moderation or AI retry" />
-          <MetricCard label="AI health" value={adminStats.aiHealth?.status || "unknown"} helper="Reported by backend monitoring" />
+          <AIHealthCard />
         </div>
       ) : null}
 

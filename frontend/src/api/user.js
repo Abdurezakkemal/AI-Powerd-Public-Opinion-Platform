@@ -4,4 +4,31 @@ export const userApi = {
   me() {
     return apiClient.get("/users/me");
   },
+  update(payload) {
+    return apiClient.put("/users/me", payload);
+  },
+  changePassword(currentPassword, newPassword) {
+    return apiClient.put("/users/me/password", { currentPassword, newPassword });
+  },
+  deleteMe() {
+    return apiClient.delete("/users/me");
+  },
+  requestEmailChange(newEmail) {
+    return apiClient.post("/users/me/email/request", { newEmail });
+  },
+  verifyEmailChange(token) {
+    return apiClient.post("/users/me/email/verify", { token });
+  },
+  getNotifications(params = {}) {
+    return apiClient.get("/users/me/notifications", { params });
+  },
+  markNotificationRead(id) {
+    return apiClient.patch(`/users/me/notifications/${id}/read`);
+  },
+  markAllNotificationsRead() {
+    return apiClient.patch("/users/me/notifications/read-all");
+  },
+  getHistory(params = {}) {
+    return apiClient.get("/users/me/history", { params });
+  },
 };
