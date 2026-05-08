@@ -1,0 +1,197 @@
+import '../../../../core/network/api_client.dart';
+import '../../../../core/session/session_store.dart';
+import '../../domain/entities/notification_page.dart';
+import '../../domain/entities/policy.dart';
+import '../../domain/entities/policy_page.dart';
+import '../../domain/entities/user_profile.dart';
+import '../../domain/entities/vote_history.dart';
+import '../../domain/entities/vote_receipt.dart';
+import '../../domain/repositories/citizen_repository.dart';
+import '../models/citizen_notification_model.dart';
+import '../models/policy_model.dart';
+import '../models/user_profile_model.dart';
+import '../models/vote_history_model.dart';
+
+class CitizenRepositoryImpl implements CitizenRepository {
+  CitizenRepositoryImpl(this._apiClient, this._sessionStore);
+
+  final ApiClient _apiClient;
+  final SessionStore _sessionStore;
+
+  @override
+  Future<UserProfile> getProfile() async {
+    final response = await _apiClient.get('/users/me');
+    return UserProfileModel.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<UserProfile> updateRegion(String region) async {
+    final response = await _apiClient.put(
+      '/users/me',
+      body: {'region': region.trim()},
+    );
+    return UserProfileModel.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<String> changePassword({
+    required String currentPassword,
+    required String newPassword,
+  }) async {
+    final response = await _apiClient.put(
+      '/users/me/password',
+      body: {'currentPassword': currentPassword, 'newPassword': newPassword},
+    );
+    return response.message;
+  }
+
+  @override
+  Future<String> requestEmailChange(String newEmail) async {
+    final response = await _apiClient.post(
+      '/users/me/email/request',
+      body: {'newEmail': newEmail.trim()},
+    );
+    return response.message;
+  }
+
+  @override
+  Future<String> verifyEmailChange(String code) async {
+    final response = await _apiClient.post(
+      '/users/me/email/verify',
+      body: {'code': code.trim()},
+    );
+    return response.message;
+  }
+
+  @override
+  Future<String> deleteAccount() async {
+    final response = await _apiClient.delete('/users/me');
+    await _sessionStore.clear();
+    return response.message;
+  }
+
+  @override
+  Future<PolicyPage> getPolicies({
+    String? status,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final response = await _apiClient.get(
+      '/policies',
+      query: {
+        if (status != null && status != 'all') 'status': status,
+        'page': page,
+        'limit': limit,
+      },
+    );
+    final data = response.data as Map<String, dynamic>;
+    final rawPolicies = data['policies'];
+    final policies =
+        rawPolicies is List
+            ? rawPolicies
+                .whereType<Map<String, dynamic>>()
+                .map(PolicyModel.fromJson)
+                .toList()
+            : <Policy>[];
+    return PolicyPage(
+      policies: policies,
+      total: _toInt(data['total']),
+      page: _toInt(data['page'], fallback: page),
+    );
+  }
+
+  @override
+  Future<Policy> getPolicy(String id) async {
+    final response = await _apiClient.get('/policies/$id');
+    return PolicyModel.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<VoteReceipt> submitVote({
+    required String policyId,
+    required int rating,
+    String? comment,
+  }) async {
+    final body = <String, dynamic>{'policyId': policyId, 'rating': rating};
+    final trimmedComment = comment?.trim();
+    if (trimmedComment != null && trimmedComment.isNotEmpty) {
+      body['comment'] = trimmedComment;
+    }
+    final response = await _apiClient.post('/votes', body: body);
+    final data = response.data as Map<String, dynamic>? ?? {};
+    return VoteReceipt(
+      voteId: data['voteId']?.toString() ?? '',
+      commentId: data['commentId']?.toString(),
+      rating: _toInt(data['rating'], fallback: rating),
+      message: response.message,
+    );
+  }
+
+  @override
+  Future<String> addComment({
+    required String voteId,
+    required String comment,
+  }) async {
+    final response = await _apiClient.post(
+      '/comments/$voteId',
+      body: {'comment': comment.trim()},
+    );
+    return response.message;
+  }
+
+  @override
+  Future<List<VoteHistory>> getHistory() async {
+    final response = await _apiClient.get('/users/me/history');
+    final data = response.data as Map<String, dynamic>;
+    final rawHistory = data['history'];
+    if (rawHistory is! List) return const [];
+    return rawHistory
+        .whereType<Map<String, dynamic>>()
+        .map(VoteHistoryModel.fromJson)
+        .toList();
+  }
+
+  @override
+  Future<NotificationPage> getNotifications({
+    int page = 1,
+    int limit = 20,
+    bool unreadOnly = false,
+  }) async {
+    final response = await _apiClient.get(
+      '/users/me/notifications',
+      query: {'page': page, 'limit': limit, if (unreadOnly) 'unreadOnly': true},
+    );
+    final data = response.data as Map<String, dynamic>;
+    final rawNotifications = data['notifications'];
+    final notifications =
+        rawNotifications is List
+            ? rawNotifications
+                .whereType<Map<String, dynamic>>()
+                .map(CitizenNotificationModel.fromJson)
+                .toList()
+            : <CitizenNotificationModel>[];
+
+    return NotificationPage(
+      notifications: notifications,
+      total: _toInt(data['total']),
+      page: _toInt(data['page'], fallback: page),
+    );
+  }
+
+  @override
+  Future<void> markNotificationRead(String id) async {
+    await _apiClient.patch('/users/me/notifications/$id/read');
+  }
+
+  @override
+  Future<int> markAllNotificationsRead() async {
+    final response = await _apiClient.patch('/users/me/notifications/read-all');
+    final data = response.data as Map<String, dynamic>? ?? {};
+    return _toInt(data['modifiedCount']);
+  }
+
+  static int _toInt(dynamic value, {int fallback = 0}) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+}
