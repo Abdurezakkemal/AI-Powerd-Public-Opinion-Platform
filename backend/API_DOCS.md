@@ -69,11 +69,16 @@ Error response:
 
 ### 1.5 Rate Limiting
 
-| Endpoint group                    | Limit        | Time window                 |
-| --------------------------------- | ------------ | --------------------------- |
-| `/auth/login`, `/auth/verify-otp` | 10 requests  | 15 minutes (per IP)         |
-| All other API endpoints (global)  | 100 requests | 15 minutes (per IP)         |
-| `/sms/receive`                    | 3 votes      | 24 hours (per phone number) |
+| Endpoint group                    | Limit        | Time window | Scope             |
+| --------------------------------- | ------------ | ----------- | ----------------- |
+| `/auth/login`, `/auth/verify-otp` | 10 requests  | 15 minutes  | Per IP            |
+| `/auth/send-otp`                  | 3 requests   | 1 hour      | Per IP            |
+| `/auth/forgot-password`           | 3 requests   | 1 hour      | Per IP            |
+| `/auth/reset-password`            | 5 requests   | 15 minutes  | Per IP            |
+| `/votes` (POST)                   | 30 requests  | 1 hour      | Per user (by JWT) |
+| `/comments` (POST)                | 10 requests  | 1 minute    | Per user (by JWT) |
+| All other `/api` endpoints        | 100 requests | 15 minutes  | Per IP            |
+| `/sms/receive`                    | 3 votes      | 24 hours    | Per phone number  |
 
 When limit is exceeded, the API returns 429 RATE_LIMIT_EXCEEDED.
 
@@ -131,7 +136,7 @@ Error responses:
 **`POST /auth/send-otp`**
 
 Sends a 6‑digit OTP to the user's registered email address.  
-**Rate limit:** 3 requests per 5 minutes per email.  
+**Rate limit:** 3 requests per hour per IP. If the limit is exceeded, the API returns `429 RATE_LIMIT_EXCEEDED` with message `"Too many requests. Please wait 60 minutes."`
 **Resend cooldown:** If an OTP already exists and has more than 30 seconds of life remaining (i.e., TTL > 270 seconds), the request is rejected with a `RATE_LIMIT_EXCEEDED` error. After 30 seconds, a new OTP can be sent (overwriting the previous one).
 
 **Request body:**
@@ -165,6 +170,8 @@ Response (200 OK):
 **`POST /auth/verify-otp`**
 
 Verifies the OTP and returns a JWT token. After successful verification, the user's verified flag becomes true, allowing login.
+
+**Rate limit:** 5 requests per 15 minutes per IP. After 5 failed attempts, you must wait 15 minutes.
 
 Request body:
 
@@ -239,8 +246,9 @@ Authenticates a user with email and password. Returns a JWT token valid for 7 da
 
 **`POST /auth/forgot-password`**
 
-Sends a secure reset token to the user’s registered email address. The token is valid for 1 hour and can be used with `/auth/reset-password`.  
-**Rate limit:** 3 requests per email per hour (to prevent abuse).
+Sends a secure reset token to the user’s registered email address. The token is valid for 1 hour and can be used with `/auth/reset-password`.
+
+**Rate limit:** 3 requests per hour per IP. This limit is enforced by the global rate limiter (see 1.5).
 
 **Request body:**
 
@@ -2327,8 +2335,13 @@ Response (200 OK):
 
 ## Appendix: Rate Limiting Summary
 
-| Endpoint group                | Limit | Window   | Scope            |
-| ----------------------------- | ----- | -------- | ---------------- |
-| /auth/login, /auth/verify-otp | 10    | 15 min   | Per IP           |
-| All other JSON endpoints      | 100   | 15 min   | Per IP           |
-| /sms/receive                  | 3     | 24 hours | Per phone number |
+| Endpoint group                    | Limit        | Time window | Scope             |
+| --------------------------------- | ------------ | ----------- | ----------------- |
+| `/auth/login`, `/auth/verify-otp` | 10 requests  | 15 minutes  | Per IP            |
+| `/auth/send-otp`                  | 3 requests   | 1 hour      | Per IP            |
+| `/auth/forgot-password`           | 3 requests   | 1 hour      | Per IP            |
+| `/auth/reset-password`            | 5 requests   | 15 minutes  | Per IP            |
+| `/votes` (POST)                   | 30 requests  | 1 hour      | Per user (by JWT) |
+| `/comments` (POST)                | 10 requests  | 1 minute    | Per user (by JWT) |
+| All other `/api` endpoints        | 100 requests | 15 minutes  | Per IP            |
+| `/sms/receive`                    | 3 votes      | 24 hours    | Per phone number  |

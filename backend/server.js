@@ -7,6 +7,7 @@ const mongoose = require("mongoose");
 const connectDB = require("./src/config/db");
 const redisClient = require("./src/config/redis");
 const requestLogger = require("./src/middleware/requestLogger");
+const limiters = require("./src/config/rateLimits");
 
 connectDB(); // connect to MongoDB
 
@@ -17,7 +18,10 @@ app.use(express.json());
 // Request logger MUST come before routes
 app.use(requestLogger);
 
-// Health check
+// Global rate limiter for all API routes (except health)
+app.use("/api", limiters.global);
+
+// Health check (unlimited)
 app.get("/health", (req, res) => {
   res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
@@ -50,7 +54,7 @@ startAutoActivateWorker();
 // Graceful shutdown
 process.on("SIGINT", () => {
   console.log("Shutting down gracefully...");
-  stopWorker(); // from aiWorker
+  stopWorker();
   redisClient.quit();
   mongoose.connection.close();
   server.close(() => process.exit(0));
