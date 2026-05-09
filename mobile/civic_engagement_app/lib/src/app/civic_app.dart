@@ -5,6 +5,7 @@ import '../core/di/service_locator.dart';
 import '../core/theme/app_theme.dart';
 import '../features/auth/presentation/cubit/auth_cubit.dart';
 import '../features/auth/presentation/pages/auth_page.dart';
+import '../features/auth/presentation/pages/landing_page.dart';
 import '../features/citizen/presentation/cubit/history_cubit.dart';
 import '../features/citizen/presentation/cubit/notifications_cubit.dart';
 import '../features/citizen/presentation/cubit/policy_cubit.dart';
@@ -56,7 +57,7 @@ class CivicApp extends StatelessWidget {
               );
             }
 
-            return const AuthPage();
+            return const LandingPage();
           },
         ),
       ),

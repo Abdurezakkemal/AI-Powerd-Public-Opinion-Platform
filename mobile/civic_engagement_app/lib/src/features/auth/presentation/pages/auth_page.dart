@@ -11,14 +11,16 @@ import '../cubit/auth_cubit.dart';
 enum _AuthMode { login, register, verify, reset }
 
 class AuthPage extends StatefulWidget {
-  const AuthPage({super.key});
+  const AuthPage({this.initialRegister = false, super.key});
+  
+  final bool initialRegister;
 
   @override
   State<AuthPage> createState() => _AuthPageState();
 }
 
 class _AuthPageState extends State<AuthPage> {
-  _AuthMode _mode = _AuthMode.login;
+  late _AuthMode _mode;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -33,6 +35,7 @@ class _AuthPageState extends State<AuthPage> {
   @override
   void initState() {
     super.initState();
+    _mode = widget.initialRegister ? _AuthMode.register : _AuthMode.login;
     // Don't auto-detect on load - require user to explicitly enable GPS
   }
 
