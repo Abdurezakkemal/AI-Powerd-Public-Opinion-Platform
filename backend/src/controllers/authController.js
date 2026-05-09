@@ -22,13 +22,42 @@ const {
 
 exports.register = async (req, res) => {
   try {
-    const { email, password, phone, region } = req.body;
-    if (!email || !password || !phone || !region) {
+    const {
+      email,
+      password,
+      phone,
+      region,
+      ageRange,
+      gender,
+      occupation,
+      education,
+    } = req.body;
+    if (
+      !email ||
+      !password ||
+      !phone ||
+      !region ||
+      !ageRange ||
+      !gender ||
+      !occupation ||
+      !education
+    ) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Missing required fields: email, password, phone, region are all required",
-        { required: ["email", "password", "phone", "region"] },
+        "Missing required fields: email, password, phone, region, and all demographics (ageRange, gender, occupation, education) are required",
+        {
+          required: [
+            "email",
+            "password",
+            "phone",
+            "region",
+            "ageRange",
+            "gender",
+            "occupation",
+            "education",
+          ],
+        },
         400,
       );
     }
@@ -55,6 +84,10 @@ exports.register = async (req, res) => {
       passwordHash,
       phoneHash,
       region,
+      ageRange,
+      gender,
+      occupation,
+      education,
       role: "citizen",
       verified: false,
       active: true,
@@ -62,6 +95,7 @@ exports.register = async (req, res) => {
     await user.save();
 
     const otp = generateOTP();
+    console.log(`[DEV] OTP for ${email}: ${otp}`); // temporary
     const otpKey = `otp:email:${email}`;
     await client.setEx(otpKey, 300, otp);
 
@@ -123,6 +157,7 @@ exports.sendOtp = async (req, res) => {
     }
 
     const otp = generateOTP();
+    console.log(`[DEV] OTP for ${email}: ${otp}`); // temporary
     const otpKey = `otp:email:${email}`;
     await client.setEx(otpKey, 300, otp);
 

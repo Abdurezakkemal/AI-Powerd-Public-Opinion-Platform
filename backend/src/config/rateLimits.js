@@ -58,6 +58,14 @@ const limiters = {
     keyPrefix: "rl:comment",
     keyGenerator: (req) => req.user?.id || req.ip,
   }),
+
+  // Planner request: 1 per day per user
+  plannerRequest: createRateLimiter({
+    windowMs: 24 * 60 * 60 * 1000,
+    max: 1,
+    keyPrefix: "rl:planner:request",
+    keyGenerator: (req) => req.user?.id || req.ip,
+  }),
 };
 
 module.exports = limiters;

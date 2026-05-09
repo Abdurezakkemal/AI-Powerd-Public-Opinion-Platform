@@ -77,10 +77,11 @@ Error response:
 | `/auth/reset-password`            | 5 requests   | 15 minutes  | Per IP            |
 | `/votes` (POST)                   | 30 requests  | 1 hour      | Per user (by JWT) |
 | `/comments` (POST)                | 10 requests  | 1 minute    | Per user (by JWT) |
+| `/planners/request`               | 1 request    | 24 hours    | Per user (by JWT) |
 | All other `/api` endpoints        | 100 requests | 15 minutes  | Per IP            |
 | `/sms/receive`                    | 3 votes      | 24 hours    | Per phone number  |
 
-When limit is exceeded, the API returns 429 RATE_LIMIT_EXCEEDED.
+When a limit is exceeded, the API returns `429 RATE_LIMIT_EXCEEDED` with a human-readable message.
 
 ## 2. Authentication Endpoints
 
@@ -99,37 +100,43 @@ Request body:
   "email": "user@example.com",
   "password": "strongPass123",
   "phone": "+251912345678",
-  "region": "Addis Ababa"
+  "region": "Addis Ababa",
+  "ageRange": "25-34",
+  "gender": "male",
+  "occupation": "private-sector",
+  "education": "bachelors"
 }
 ```
 
-| Field    | Type   | Required | Description                                                         |
-| -------- | ------ | -------- | ------------------------------------------------------------------- |
-| email    | string | yes      | Valid email address                                                 |
-| password | string | yes      | Min 6 characters                                                    |
-| phone    | string | yes      | Ethiopian phone number, international format recommended (+2519...) |
-| region   | string | yes      | City/region name (e.g., "Addis Ababa", "Oromia")                    |
+| Field      | Type   | Required | Description                                                                                     |
+| ---------- | ------ | -------- | ----------------------------------------------------------------------------------------------- |
+| email      | string | yes      | Valid email address                                                                             |
+| password   | string | yes      | Min 8 characters, at least one uppercase, one lowercase, one number, one special                |
+| phone      | string | yes      | Ethiopian phone number, international format recommended (+2519...)                             |
+| region     | string | yes      | City/region name (e.g., "Addis Ababa", "Oromia")                                                |
+| ageRange   | string | yes      | One of: `18-24`, `25-34`, `35-44`, `45-54`, `55+`                                               |
+| gender     | string | yes      | `male`, `female`, `non-binary`, `prefer-not-to-say`                                             |
+| occupation | string | yes      | `student`, `farmer`, `merchant`, `government-employee`, `private-sector`, `unemployed`, `other` |
+| education  | string | yes      | `no-formal`, `primary`, `secondary`, `diploma`, `bachelors`, `postgraduate`                     |
 
-Response (201 Created):
+**Response (201 Created):**
 
 ```json
 {
   "status": "success",
-  "data": {
-    "userId": "67f1a2b3c4d5e6f7a8b9c0d1"
-  },
+  "data": { "userId": "67f1a2b3c4d5e6f7a8b9c0d1" },
   "message": "User registered successfully. A 6-digit OTP has been sent to your email for verification.",
   "timestamp": "2026-04-09T12:00:00Z"
 }
 ```
 
-Error responses:
+**Error responses:**
 
-| Status | Code                    | Message example                                                              |
-| ------ | ----------------------- | ---------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`      | `"Missing required fields: email, password, phone, region are all required"` |
-| 409    | `DUPLICATE_ENTRY`       | `"Email already registered. Please use a different email."`                  |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Unable to complete registration. Please try again later."`                 |
+| Status | Code                    | Message example                                                                                      |
+| ------ | ----------------------- | ---------------------------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Missing required fields: email, password, phone, region, ageRange, gender, occupation, education"` |
+| 409    | `DUPLICATE_ENTRY`       | `"Email already registered. Please use a different email."`                                          |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Unable to complete registration. Please try again later."`                                         |
 
 ### 2.2 Send OTP
 
@@ -2332,6 +2339,200 @@ Response (200 OK):
   "timestamp": "2026-04-09T12:00:00Z"
 }
 ```
+
+## 10. Planner Onboarding
+
+These endpoints allow citizens to request planner status, admins to review and approve/reject, and new planners to complete mandatory training.
+
+### 10.1 Citizen requests to become planner
+
+`POST /planners/request`
+
+**Roles:** citizen (authenticated)  
+**Rate limit:** 1 request per 24 hours per user (returns 429 if exceeded).
+
+**Request body:**
+
+```json
+{
+  "organization": "Ministry of Education",
+  "reason": "I have been working in education policy for 5 years and want to create policies about school funding. This is a long enough reason to exceed the 50 character minimum requirement.",
+  "proofFile": null
+}
+```
+
+| Field        | Type   | Required | Description                                                       |
+| ------------ | ------ | -------- | ----------------------------------------------------------------- |
+| organization | string | no       | Name of affiliated organization (if any)                          |
+| reason       | string | yes      | Min 50 characters, explains why the user needs planner privileges |
+| proofFile    | string | no       | Base64 encoded document (PDF/image) for verification (future use) |
+
+**Response (201 Created):**
+
+```json
+{
+  "status": "success",
+  "data": { "requestId": "67f1a2b3c4d5e6f7a8b9c0d2" },
+  "message": "Your request has been submitted. Admins will review it.",
+  "timestamp": "2026-05-09T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code                  | Message                                                               |
+| ------ | --------------------- | --------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`    | `"Reason must be at least 50 characters."`                            |
+| 409    | `DUPLICATE_ENTRY`     | `"You already have a pending request. Please wait for admin review."` |
+| 429    | `RATE_LIMIT_EXCEEDED` | `"Too many requests. You can only submit one request per day."`       |
+
+### 10.2 Planner completes mandatory training
+
+`POST /planners/training/complete`
+
+**Roles:** planner (authenticated, must have role `planner` but training not yet completed)  
+**Behaviour:** Marks the planner as having completed the required training. After this, they can create policies.
+
+**Request body:** none
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Training completed. You can now create policies.",
+  "timestamp": "2026-05-09T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code               | Message                                  |
+| ------ | ------------------ | ---------------------------------------- |
+| 403    | `FORBIDDEN`        | `"Only planners can complete training."` |
+| 400    | `VALIDATION_ERROR` | `"Training already completed."`          |
+
+### 10.3 Admin lists pending planner requests
+
+`GET /planners/requests/pending`
+
+**Roles:** admin
+
+**Query parameters:** none
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "_id": "67f1a2b3c4d5e6f7a8b9c0d2",
+      "userId": {
+        "_id": "67f1a2b3c4d5e6f7a8b9c0d1",
+        "email": "citizen@example.com",
+        "region": "Addis Ababa",
+        "ageRange": "25-34",
+        "gender": "male",
+        "occupation": "private-sector",
+        "education": "bachelors",
+        "createdAt": "2026-05-01T00:00:00Z"
+      },
+      "organization": "Ministry of Education",
+      "reason": "I have been working in education policy for 5 years...",
+      "status": "pending",
+      "createdAt": "2026-05-09T00:00:00Z"
+    }
+  ],
+  "message": "Pending requests retrieved successfully",
+  "timestamp": "2026-05-09T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                      |
+| ------ | ----------------------- | -------------------------------------------- |
+| 403    | `FORBIDDEN`             | `"Access denied. Insufficient permissions."` |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to fetch requests"`                 |
+
+### 10.4 Admin approves a planner request
+
+`POST /planners/requests/:id/approve`
+
+**Roles:** admin
+
+**Path parameter:**
+
+| Parameter | Type   | Description                   |
+| --------- | ------ | ----------------------------- |
+| `id`      | string | Planner request ID (ObjectId) |
+
+**Request body:** none
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Planner request approved. User role updated.",
+  "timestamp": "2026-05-09T12:00:00Z"
+}
+```
+
+**What happens:**
+
+- The user's role changes from `citizen` to `planner`.
+- The user's `tokenVersion` increments (invalidates old JWTs).
+- An email is sent to the user (or mock in development).
+- The request status becomes `approved`.
+
+**Error responses:**
+
+| Status | Code               | Message                                    |
+| ------ | ------------------ | ------------------------------------------ |
+| 404    | `NOT_FOUND`        | `"Request not found"`                      |
+| 400    | `VALIDATION_ERROR` | `"Request already approved"` (or rejected) |
+
+### 10.5 Admin rejects a planner request
+
+`POST /planners/requests/:id/reject`
+
+**Roles:** admin
+
+**Path parameter:** same as approval.
+
+**Request body:**
+
+```json
+{
+  "rejectionReason": "Your organization could not be verified. Please provide a valid letter of appointment."
+}
+```
+
+| Field           | Type   | Required | Description                              |
+| --------------- | ------ | -------- | ---------------------------------------- |
+| rejectionReason | string | yes      | Min 10 characters, explains why rejected |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Request rejected.",
+  "timestamp": "2026-05-09T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code               | Message                                              |
+| ------ | ------------------ | ---------------------------------------------------- |
+| 404    | `NOT_FOUND`        | `"Request not found"`                                |
+| 400    | `VALIDATION_ERROR` | `"Rejection reason must be at least 10 characters."` |
 
 ## Appendix: Rate Limiting Summary
 

@@ -35,6 +35,7 @@ app.use("/api/analytics", require("./src/routes/analyticsRoutes"));
 app.use("/api/sms", require("./src/routes/smsRoutes"));
 app.use("/api/admin", require("./src/routes/adminRoutes"));
 app.use("/api/users", require("./src/routes/userRoutes"));
+app.use("/api/planners", require("./src/routes/plannerRoutes")); // NEW
 
 const PORT = process.env.PORT || 5000;
 const server = app.listen(PORT, () => {
