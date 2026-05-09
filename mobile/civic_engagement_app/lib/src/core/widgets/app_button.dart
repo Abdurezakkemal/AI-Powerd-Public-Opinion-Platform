@@ -38,6 +38,34 @@ class AppButton extends StatelessWidget {
               ],
             );
 
-    return ElevatedButton(onPressed: loading ? null : onPressed, child: child);
+    return Container(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Theme.of(context).colorScheme.primary.withValues(alpha: 0.8),
+            Theme.of(context).colorScheme.primary,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: [
+          if (!loading && onPressed != null)
+            BoxShadow(
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.35),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+        ],
+      ),
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.transparent,
+          shadowColor: Colors.transparent,
+        ),
+        onPressed: loading ? null : onPressed, 
+        child: child,
+      ),
+    );
   }
 }

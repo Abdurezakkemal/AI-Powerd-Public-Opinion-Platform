@@ -32,37 +32,51 @@ class _CitizenHomeShellState extends State<CitizenHomeShell> {
       ),
       bottomNavigationBar: BlocBuilder<NotificationsCubit, NotificationsState>(
         builder: (context, state) {
-          return BottomNavigationBar(
-            currentIndex: _selectedIndex,
-            onTap: (index) => setState(() => _selectedIndex = index),
-            items: [
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.policy_outlined),
-                activeIcon: Icon(Icons.policy_rounded),
-                label: 'Policies',
-              ),
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.history_outlined),
-                activeIcon: Icon(Icons.history_rounded),
-                label: 'History',
-              ),
-              BottomNavigationBarItem(
-                icon: _BadgeIcon(
-                  icon: Icons.notifications_none_rounded,
-                  count: state.unreadCount,
+          return Container(
+            decoration: BoxDecoration(
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.05),
+                  blurRadius: 30,
+                  offset: const Offset(0, -10),
                 ),
-                activeIcon: _BadgeIcon(
-                  icon: Icons.notifications_rounded,
-                  count: state.unreadCount,
-                ),
-                label: 'Alerts',
+              ],
+            ),
+            child: ClipRRect(
+              borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
+              child: BottomNavigationBar(
+                currentIndex: _selectedIndex,
+                onTap: (index) => setState(() => _selectedIndex = index),
+                items: [
+                  const BottomNavigationBarItem(
+                    icon: Icon(Icons.policy_outlined),
+                    activeIcon: Icon(Icons.policy_rounded),
+                    label: 'Policies',
+                  ),
+                  const BottomNavigationBarItem(
+                    icon: Icon(Icons.history_outlined),
+                    activeIcon: Icon(Icons.history_rounded),
+                    label: 'History',
+                  ),
+                  BottomNavigationBarItem(
+                    icon: _BadgeIcon(
+                      icon: Icons.notifications_none_rounded,
+                      count: state.unreadCount,
+                    ),
+                    activeIcon: _BadgeIcon(
+                      icon: Icons.notifications_rounded,
+                      count: state.unreadCount,
+                    ),
+                    label: 'Alerts',
+                  ),
+                  const BottomNavigationBarItem(
+                    icon: Icon(Icons.person_outline_rounded),
+                    activeIcon: Icon(Icons.person_rounded),
+                    label: 'Account',
+                  ),
+                ],
               ),
-              const BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline_rounded),
-                activeIcon: Icon(Icons.person_rounded),
-                label: 'Account',
-              ),
-            ],
+            ),
           );
         },
       ),

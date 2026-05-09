@@ -96,7 +96,7 @@ class _AuthPageState extends State<AuthPage> {
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const _AuthHeader(),
                   const SizedBox(height: 26),
@@ -243,29 +243,39 @@ class _AuthHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Container(
-          width: 54,
-          height: 54,
+          width: 72,
+          height: 72,
           decoration: BoxDecoration(
             color: AppTheme.primary.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [
+              BoxShadow(
+                color: AppTheme.primary.withValues(alpha: 0.25),
+                blurRadius: 24,
+                offset: const Offset(0, 10),
+              ),
+            ],
           ),
-          child: const Icon(Icons.how_to_vote_rounded, color: AppTheme.primary),
+          child: const Icon(Icons.how_to_vote_rounded, color: AppTheme.primary, size: 36),
         ),
-        const SizedBox(height: 18),
+        const SizedBox(height: 24),
         Text(
           'Civic Voice',
+          textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
             fontWeight: FontWeight.w900,
             color: AppTheme.text,
+            letterSpacing: -0.5,
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         const Text(
           'Review active public policies, vote once, and track your feedback.',
-          style: TextStyle(color: AppTheme.mutedText, fontSize: 15),
+          textAlign: TextAlign.center,
+          style: TextStyle(color: AppTheme.mutedText, fontSize: 16, height: 1.4),
         ),
       ],
     );

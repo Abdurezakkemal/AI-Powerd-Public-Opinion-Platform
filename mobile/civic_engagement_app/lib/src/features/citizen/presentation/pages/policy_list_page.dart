@@ -132,39 +132,61 @@ class _PolicyHeader extends StatelessWidget {
       child: BlocBuilder<ProfileCubit, ProfileState>(
         builder: (context, state) {
           final region = state.profile?.region ?? 'your region';
-          return AppCard(
+          return Container(
             margin: EdgeInsets.zero,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(24),
+              gradient: LinearGradient(
+                colors: [
+                  AppTheme.primary,
+                  AppTheme.primary.withValues(alpha: 0.8),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: AppTheme.primary.withValues(alpha: 0.3),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
             child: Row(
               children: [
                 Container(
-                  width: 46,
-                  height: 46,
+                  width: 52,
+                  height: 52,
                   decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(14),
+                    color: Colors.white.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: const Icon(
                     Icons.location_city_rounded,
-                    color: AppTheme.primary,
+                    color: Colors.white,
+                    size: 28,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 16),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
+                      Text(
                         'Citizen workspace',
                         style: TextStyle(
-                          color: AppTheme.mutedText,
+                          color: Colors.white.withValues(alpha: 0.8),
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      const SizedBox(height: 3),
+                      const SizedBox(height: 4),
                       Text(
                         region,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w900),
+                        style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                          color: Colors.white,
+                          fontWeight: FontWeight.w900,
+                        ),
                       ),
                     ],
                   ),
@@ -213,15 +235,20 @@ class _FilterChips extends StatelessWidget {
       label: Text(label),
       selected: active,
       showCheckmark: false,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       onSelected:
           (_) => context.read<PolicyCubit>().loadPolicies(status: value),
-      selectedColor: AppTheme.primary.withValues(alpha: 0.14),
-      labelStyle: TextStyle(
-        color: active ? AppTheme.primary : AppTheme.mutedText,
-        fontWeight: FontWeight.w800,
+      selectedColor: AppTheme.primary,
+      backgroundColor: Colors.white,
+      shadowColor: Colors.black.withValues(alpha: 0.05),
+      elevation: 2,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+        side: BorderSide.none,
       ),
-      side: BorderSide(
-        color: active ? AppTheme.primary : const Color(0xFFE5EDF3),
+      labelStyle: TextStyle(
+        color: active ? Colors.white : AppTheme.mutedText,
+        fontWeight: FontWeight.w800,
       ),
     );
   }
