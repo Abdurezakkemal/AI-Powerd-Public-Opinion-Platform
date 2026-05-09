@@ -5,6 +5,7 @@ import { useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
+import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { PoliciesPage } from "./pages/PoliciesPage";
 import { PolicyFormPage } from "./pages/PolicyFormPage";
@@ -56,6 +57,7 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/change-password" element={<ChangePasswordPage />} />
           <Route path="/policies" element={<PoliciesPage />} />
           <Route path="/policies/new" element={<PolicyFormPage mode="create" />} />
           <Route path="/policies/:id/edit" element={<PolicyFormPage mode="edit" />} />
