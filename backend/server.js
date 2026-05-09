@@ -43,6 +43,7 @@ app.use("/api/admin", require("./src/routes/adminRoutes"));
 app.use("/api/users", require("./src/routes/userRoutes"));
 app.use("/api/planners", require("./src/routes/plannerRoutes"));
 app.use("/api/messages", require("./src/routes/messageRoutes"));
+app.use("/api/feed", require("./src/routes/feedRoutes"));
 
 // ========== HTTP & SOCKET.IO SERVER ==========
 const server = http.createServer(app);

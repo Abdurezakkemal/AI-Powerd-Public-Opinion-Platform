@@ -3180,6 +3180,106 @@ The system continuously monitors voting activity in real time (after each vote) 
 
 These endpoints work for all notification types, including smart alerts.
 
+## 13. Personalized Feed (for Citizens)
+
+These endpoints provide a personalized list of active policies for a citizen, ordered by relevance. Relevance is calculated using:
+
+- Demographic boost – matches the citizen's gender, age, occupation, and region with policy relevanceFactors (e.g., women: true, youth: true).
+- Content‑based boost – matches policy topics with topics from policies the citizen has previously interacted with (views, votes, comments).
+
+All feed endpoints require the citizen role.
+
+### 13.1 Get personalized feed
+
+GET /api/feed
+
+Authentication required: citizen
+
+Response (200 OK):
+
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "id": "67f1a2b3c4d5e6f7a8b9c0d1",
+      "title": "Women Entrepreneurship Support",
+      "description": "Policy to support women‑led businesses.",
+      "policyCode": "WOMENXSTCF",
+      "pollType": "rating",
+      "startDate": "2026-06-01T00:00:00Z",
+      "endDate": "2026-12-31T00:00:00Z",
+      "targetRegions": ["Addis Ababa"],
+      "relevanceScore": "6.50"
+    },
+    {
+      "id": "67f1a2b3...",
+      "title": "Youth Digital Skills",
+      "relevanceScore": "3.00"
+    }
+  ],
+  "message": "Personalized feed",
+  "timestamp": "2026-05-09T12:00:00Z"
+}
+```
+
+Behaviour:
+
+- Only policies with status "active" and targetRegions matching the citizen's region are returned.
+- Policies are sorted by relevanceScore descending (higher = more relevant).
+- Results are cached in Redis for 1 hour. The cache is invalidated automatically when the citizen records a new interaction (POST /api/feed/interact).
+
+Error responses:
+
+| Status | Code                  | Message                   |
+| ------ | --------------------- | ------------------------- |
+| 403    | FORBIDDEN             | "Feed only for citizens"  |
+| 500    | INTERNAL_SERVER_ERROR | "Failed to generate feed" |
+
+### 13.2 Record a user interaction (view, vote, comment)
+
+POST /api/feed/interact
+
+Records that a citizen has interacted with a specific policy. This affects the content‑based relevance score for future feed requests.
+
+Authentication required: citizen
+
+Request body:
+
+```json
+{
+  "policyId": "67f1a2b3c4d5e6f7a8b9c0d1",
+  "type": "view"
+}
+```
+
+type can be one of: "view", "vote", "comment".
+
+Response (200 OK):
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Interaction recorded",
+  "timestamp": "..."
+}
+```
+
+Behaviour:
+
+- Interactions are stored in the UserInteraction collection.
+- After recording, the feed cache for that citizen is immediately deleted, so the next feed call reflects the updated content profile.
+- Duplicate interactions of the same type for the same policy are ignored (no error, just no change).
+
+Error responses:
+
+| Status | Code                  | Message                            |
+| ------ | --------------------- | ---------------------------------- |
+| 400    | VALIDATION_ERROR      | "policyId and valid type required" |
+| 403    | FORBIDDEN             | "Feed only for citizens"           |
+| 500    | INTERNAL_SERVER_ERROR | "Failed to record interaction"     |
+
 ## Appendix: Rate Limiting Summary
 
 | Endpoint group                               | Limit        | Time window | Scope             |

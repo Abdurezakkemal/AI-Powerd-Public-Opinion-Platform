@@ -25,7 +25,7 @@ const generatePolicyCode = (title) => {
 const shouldHideFromPlanner = (policy, user) => {
   if (user.role === "admin") return false;
   if (user.role !== "planner") return false;
-  const isOwner = policy.createdBy.toString() === user.id;
+  const isOwner = policy.createdBy.toString() === user.id.toString();
   if (isOwner) return false;
   const isVisibleStatus = ["active", "paused", "closed"].includes(
     policy.status,
