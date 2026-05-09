@@ -776,6 +776,7 @@ exports.getComments = async (req, res) => {
       isOfficialReply: c.isOfficialReply,
       createdAt: c.createdAt,
       userEmail: c.userId?.email,
+      isEdited: (c.editedHistory && c.editedHistory.length > 0) || false,
     }));
 
     return sendSuccess(

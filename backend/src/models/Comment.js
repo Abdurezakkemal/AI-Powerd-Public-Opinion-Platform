@@ -42,7 +42,24 @@ const commentSchema = new mongoose.Schema({
     resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     resolutionNote: String,
   },
-  editedHistory: [{ text: String, editedAt: Date }],
+  editedHistory: [
+    {
+      text: String,
+      sentiment: { label: String, confidence: Number },
+      keywords: [String],
+      editedAt: Date,
+    },
+  ],
+  flaggedSnapshot: {
+    type: {
+      text: String,
+      sentiment: { label: String, confidence: Number },
+      keywords: [String],
+      capturedAt: Date,
+      reportCountAtCapture: Number,
+    },
+    default: null,
+  },
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

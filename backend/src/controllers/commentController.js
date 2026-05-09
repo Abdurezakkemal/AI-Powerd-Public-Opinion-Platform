@@ -125,6 +125,105 @@ exports.postComment = async (req, res) => {
   }
 };
 
+// ========== EDIT COMMENT (author only, with history) ==========
+exports.editComment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { text } = req.body;
+    if (!text || text.trim().length === 0) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Comment text is required",
+        null,
+        400,
+      );
+    }
+    if (text.length > 2000) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Comment too long (max 2000 characters)",
+        null,
+        400,
+      );
+    }
+
+    const comment = await Comment.findById(id).populate("policyId");
+    if (!comment) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+    }
+
+    // Only author can edit text
+    if (comment.userId.toString() !== req.user.id.toString()) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "Only the comment author can edit the text",
+        null,
+        403,
+      );
+    }
+
+    // Store current version in history (limit 3)
+    // Snapshot the current full state before changes
+    const snapshot = {
+      text: comment.text,
+      sentiment: comment.sentiment ? { ...comment.sentiment } : null,
+      keywords: [...(comment.keywords || [])],
+      editedAt: new Date(),
+    };
+    let updatedHistory = comment.editedHistory || [];
+    updatedHistory.unshift(snapshot);
+    if (updatedHistory.length > 3) updatedHistory = updatedHistory.slice(0, 3);
+    comment.editedHistory = updatedHistory;
+    comment.text = text;
+    comment.updatedAt = new Date();
+
+    // For top‑level comments, reset AI status so it gets re‑analyzed
+    if (!comment.parentCommentId) {
+      comment.status = "processing";
+      comment.sentiment = { label: null, confidence: null };
+      comment.keywords = [];
+    }
+
+    await comment.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "EDIT_COMMENT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: {
+        policyId: comment.policyId,
+        oldTextPreview: snapshot.text.slice(0, 100),
+      },
+      req,
+    });
+
+    return sendSuccess(res, { commentId: comment._id }, "Comment updated");
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Edit comment error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to edit comment",
+      null,
+      500,
+    );
+  }
+};
+
 // ========== REPORT COMMENT ==========
 exports.reportComment = async (req, res) => {
   try {
@@ -148,10 +247,19 @@ exports.reportComment = async (req, res) => {
         null,
         404,
       );
-
     comment.reportCount += 1;
     if (comment.reportCount >= 3) {
       comment.status = "flagged";
+      // Capture snapshot if not already captured
+      if (!comment.flaggedSnapshot) {
+        comment.flaggedSnapshot = {
+          text: comment.text,
+          sentiment: comment.sentiment ? { ...comment.sentiment } : null,
+          keywords: [...(comment.keywords || [])],
+          capturedAt: new Date(),
+          reportCountAtCapture: comment.reportCount,
+        };
+      }
     }
     await comment.save();
 
@@ -192,12 +300,41 @@ exports.reportComment = async (req, res) => {
     );
   }
 };
-
+// ========== GET COMMENT EDIT HISTORY ==========
+exports.getCommentHistory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const comment = await Comment.findById(id).select("editedHistory");
+    if (!comment) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+    }
+    return sendSuccess(
+      res,
+      { history: comment.editedHistory || [] },
+      "Edit history retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Get history error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve history",
+      null,
+      500,
+    );
+  }
+};
 // ========== MODERATION ENDPOINTS (for planners/admins) ==========
 exports.moderateComment = async (req, res) => {
   try {
     const { commentId } = req.params;
-    const { status, sentiment, keywords, text } = req.body;
+    const { status, sentiment, keywords } = req.body;
     const allowedStatuses = ["approved", "flagged", "deleted"];
     if (status && !allowedStatuses.includes(status)) {
       return sendError(res, ErrorCodes.VALIDATION, "Invalid status", null, 400);
@@ -213,10 +350,22 @@ exports.moderateComment = async (req, res) => {
         404,
       );
 
+    // Check permission: admin, policy owner, or associate with moderate_comments
     const isAdmin = req.user.role === "admin";
     const isOwner =
       comment.policyId.createdBy.toString() === req.user.id.toString();
+    let isModerator = false;
     if (!isAdmin && !isOwner) {
+      const PolicyAssociate = require("../models/PolicyAssociate");
+      const associate = await PolicyAssociate.findOne({
+        policyId: comment.policyId,
+        plannerId: req.user.id,
+        revokedAt: null,
+        permissions: { $in: ["moderate_comments"] },
+      });
+      isModerator = !!associate;
+    }
+    if (!isAdmin && !isOwner && !isModerator) {
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
@@ -229,12 +378,7 @@ exports.moderateComment = async (req, res) => {
     if (status) comment.status = status;
     if (sentiment) comment.sentiment = sentiment;
     if (keywords) comment.keywords = keywords;
-    if (text !== undefined) {
-      if (!comment.editedHistory) comment.editedHistory = [];
-      comment.editedHistory.push({ text: comment.text, editedAt: new Date() });
-      comment.text = text;
-      comment.updatedAt = new Date();
-    }
+    // Do NOT allow editing of `text` here
     await comment.save();
 
     await createAuditLog({
@@ -243,7 +387,7 @@ exports.moderateComment = async (req, res) => {
       action: "MODERATE_COMMENT",
       targetType: "Comment",
       targetId: comment._id,
-      details: { changes: { status, sentiment, keywords, textEdited: !!text } },
+      details: { changes: { status, sentiment, keywords } },
       req,
     });
 

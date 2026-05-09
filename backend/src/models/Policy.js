@@ -80,6 +80,12 @@ const policySchema = new mongoose.Schema({
 
   // Soft delete / archive
   archivedAt: { type: Date, default: null },
+  archivedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "User",
+    default: null,
+  },
+  archivedByRole: { type: String, enum: ["planner", "admin"], default: null },
 });
 
 module.exports = mongoose.model("Policy", policySchema);

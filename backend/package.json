@@ -12,6 +12,7 @@
   "description": "",
   "dependencies": {
     "@faker-js/faker": "^9.9.0",
+    "argon2": "^0.44.0",
     "axios": "^1.16.0",
     "bcryptjs": "^3.0.3",
     "bull": "^4.16.5",

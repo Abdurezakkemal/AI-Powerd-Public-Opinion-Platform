@@ -36,14 +36,27 @@ const shouldHideFromPlanner = (policy, user) => {
 // GET /api/policies
 exports.getAll = async (req, res) => {
   try {
-    const { status, region, page = 1, limit = 20, owner } = req.query;
+    const {
+      status,
+      region,
+      page = 1,
+      limit = 20,
+      owner,
+      includeArchived,
+      topic,
+    } = req.query;
     const filter = {};
+
+    // If a specific status is requested, apply it first (overrides later defaults)
     if (status) filter.status = status;
 
+    // Role‑specific filters
     if (req.user.role === "citizen") {
+      // Citizens always only active/paused/closed in their region
       filter.status = { $in: ["active", "paused", "closed"] };
       filter.targetRegions = req.user.region;
     } else if (req.user.role === "planner") {
+      // If owner=me, only policies created by this planner
       if (owner === "me") {
         filter.createdBy = new mongoose.Types.ObjectId(req.user.id);
       } else {
@@ -52,8 +65,26 @@ exports.getAll = async (req, res) => {
           { status: { $in: ["active", "paused", "closed"] } },
         ];
       }
-    } else if (region) {
+      // Unless a status is explicitly requested (e.g., ?status=archived), exclude archived policies
+      if (!status && includeArchived !== "true") {
+        filter.status = { $ne: "archived" };
+      }
+    } else if (req.user.role === "admin") {
+      if (!status && includeArchived !== "true") {
+        filter.status = { $ne: "archived" };
+      }
+      if (region) filter.targetRegions = region;
+    }
+
+    // If region was provided for planner (and not already handled)
+    if (region && req.user.role !== "citizen" && req.user.role !== "admin") {
       filter.targetRegions = region;
+    }
+
+    // Topic filter (if provided)
+    if (topic) {
+      const topics = Array.isArray(topic) ? topic : [topic];
+      filter.topics = { $in: topics };
     }
 
     const skip = (page - 1) * limit;
@@ -99,7 +130,6 @@ exports.getAll = async (req, res) => {
     );
   }
 };
-
 // GET /api/policies/:id
 exports.getOne = async (req, res) => {
   try {
@@ -1411,6 +1441,175 @@ exports.clone = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to clone policy",
+      null,
+      500,
+    );
+  }
+};
+
+// PATCH /api/policies/:id/archive
+exports.archive = async (req, res) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+
+    if (shouldHideFromPlanner(policy, req.user)) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
+    // NEW: block archiving draft policies
+    if (policy.status === "draft") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Draft policies cannot be archived. You can delete them instead.",
+        null,
+        400,
+      );
+    }
+
+    const ownerId = policy.createdBy.toString();
+    const userId = req.user.id.toString();
+    if (req.user.role !== "admin" && ownerId !== userId) {
+      return sendError(res, ErrorCodes.FORBIDDEN, "No permission", null, 403);
+    }
+
+    if (policy.status === "archived") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Policy already archived",
+        null,
+        400,
+      );
+    }
+
+    policy.status = "archived";
+    policy.archivedAt = new Date();
+    policy.archivedBy = req.user.id;
+    policy.archivedByRole = req.user.role === "admin" ? "admin" : "planner";
+    await policy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "ARCHIVE_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { policyCode: policy.policyCode, title: policy.title },
+      req,
+    });
+
+    return sendSuccess(
+      res,
+      { id: policy._id, status: policy.status },
+      "Policy archived successfully",
+    );
+  } catch (err) {
+    logger.error(`Archive error: ${err.message}`);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to archive policy",
+      null,
+      500,
+    );
+  }
+};
+
+// PATCH /api/policies/:id/restore
+exports.restore = async (req, res) => {
+  try {
+    const policy = await Policy.findById(req.params.id);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+
+    if (shouldHideFromPlanner(policy, req.user)) {
+      // Hide archived from non‑owner planners; but we need to allow access for owner/admin.
+      // We'll override below after checking permission.
+    }
+
+    if (policy.status !== "archived") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Only archived policies can be restored",
+        null,
+        400,
+      );
+    }
+
+    // If archived by admin, only admin can restore
+    if (policy.archivedByRole === "admin" && req.user.role !== "admin") {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "This policy was archived by an admin and can only be restored by an admin.",
+        null,
+        403,
+      );
+    }
+
+    // If archived by planner, allow owner or admin
+    if (policy.archivedByRole === "planner") {
+      const ownerId = policy.createdBy.toString();
+      const userId = req.user.id.toString();
+      if (req.user.role !== "admin" && ownerId !== userId) {
+        return sendError(
+          res,
+          ErrorCodes.FORBIDDEN,
+          "You do not have permission to restore this policy",
+          null,
+          403,
+        );
+      }
+    }
+
+    policy.status = "draft";
+    policy.archivedAt = null;
+    // Optionally keep archivedBy for audit, but clear role? Not needed.
+    await policy.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "RESTORE_POLICY",
+      targetType: "Policy",
+      targetId: policy._id,
+      details: { policyCode: policy.policyCode, title: policy.title },
+      req,
+    });
+
+    return sendSuccess(
+      res,
+      { id: policy._id, status: policy.status },
+      "Policy restored to draft",
+    );
+  } catch (err) {
+    logger.error(`Restore policy error: ${err.message}`, { error: err });
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to restore policy",
       null,
       500,
     );

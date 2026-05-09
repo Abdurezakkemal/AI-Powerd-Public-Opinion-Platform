@@ -53,5 +53,15 @@ router.get(
   auth(["planner", "admin"]),
   policyController.getHistory,
 );
+router.patch(
+  "/:id/archive",
+  auth(["planner", "admin"]),
+  policyController.archive,
+);
+router.patch(
+  "/:id/restore",
+  auth(["planner", "admin"]),
+  policyController.restore,
+);
 
 module.exports = router;

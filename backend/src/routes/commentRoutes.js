@@ -6,7 +6,8 @@ const limiters = require("../config/rateLimits");
 const {
   hasAssociatePermission,
 } = require("../middleware/permissionMiddleware");
-// Post comment (already rate‑limited)
+
+// Post comment
 router.post(
   "/",
   auth(["citizen", "planner", "admin"]),
@@ -14,7 +15,7 @@ router.post(
   commentController.postComment,
 );
 
-// Report comment (new rate limiter)
+// Report comment
 router.post(
   "/:commentId/report",
   auth(["citizen", "planner", "admin"]),
@@ -22,15 +23,22 @@ router.post(
   commentController.reportComment,
 );
 
-// Moderate comment (rate limiter optional)
+// Edit comment – author only
+router.put(
+  "/:id",
+  auth(["citizen", "planner", "admin"]),
+  commentController.editComment,
+);
+
+// Moderate comment – only with permission
 router.put(
   "/:commentId/moderate",
   auth(["planner", "admin"]),
-  limiters.moderateComment,
+  hasAssociatePermission("moderate_comments"),
   commentController.moderateComment,
 );
 
-// Appeal comment (rate limiter)
+// Appeal comment – citizen only
 router.post(
   "/:commentId/appeal",
   auth(["citizen"]),
@@ -38,17 +46,18 @@ router.post(
   commentController.appealComment,
 );
 
-// Resolve appeal (no extra limiter – uses global)
+// Resolve appeal – planner or admin
 router.post(
   "/:commentId/resolve-appeal",
   auth(["planner", "admin"]),
   commentController.resolveAppeal,
 );
 
-router.put(
-  "/:commentId/moderate",
+// View edit history – planners/admins only
+router.get(
+  "/:id/history",
   auth(["planner", "admin"]),
-  hasAssociatePermission("moderate_comments"),
-  commentController.moderateComment,
+  commentController.getCommentHistory,
 );
+
 module.exports = router;

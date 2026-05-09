@@ -89,6 +89,12 @@ const limiters = {
     keyPrefix: "rl:moderate:comment",
     keyGenerator: (req) => req.user?.id || req.ip,
   }),
+  phoneChangeRequest: createRateLimiter({
+    windowMs: 60 * 60 * 1000,
+    max: 3,
+    keyPrefix: "rl:phone:request",
+    keyGenerator: (req) => req.user?.id || req.ip,
+  }),
 };
 
 module.exports = limiters;

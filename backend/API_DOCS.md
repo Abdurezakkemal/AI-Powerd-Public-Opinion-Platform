@@ -387,13 +387,19 @@ The admin cannot reset their own password through this endpoint – they must us
 
 Query parameters (all optional):
 
-| Parameter | Type    | Default | Description                                                                                                                                                                                                                                                                                                                          |
-| --------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `status`  | string  | none    | Filter by `draft`, `published`, `active`, `paused`, or `closed`. Citizens cannot see `draft`, `published`, or `closed`; they see only `active` and `paused`.                                                                                                                                                                         |
-| `region`  | string  | none    | Filter by target region (planners/admins only).                                                                                                                                                                                                                                                                                      |
-| `owner`   | string  | none    | **Planners only.** Use `owner=me` to see only policies owned by the logged‑in planner (any status). Without this, planners see their own policies (all statuses) **plus** other planners' `active`, `paused`, and `closed` policies. **Other planners' draft and published policies are excluded** – they do not appear in the list. |
-| `page`    | integer | 1       | Page number (1‑based).                                                                                                                                                                                                                                                                                                               |
-| `limit`   | integer | 20      | Items per page (max 100).                                                                                                                                                                                                                                                                                                            |
+| Parameter         | Type    | Default | Description                                                                                                                                                                                                                                                                                                                                                                                                  |
+| ----------------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `status`          | string  | none    | Filter by `draft`, `published`, `active`, `paused`, `closed`, or `archived`. Citizens cannot see `draft`, `published`, `closed`, or `archived`; they see only `active` and `paused`.                                                                                                                                                                                                                         |
+| `includeArchived` | boolean | false   | **For planners and admins only.** If `true`, archived policies are included in the results (unless a specific `status` filter excludes them). Default `false` (archived policies hidden from normal lists).                                                                                                                                                                                                  |
+| `region`          | string  | none    | Filter by target region (planners/admins only).                                                                                                                                                                                                                                                                                                                                                              |
+| `owner`           | string  | none    | **Planners only.** Use `owner=me` to see only policies owned by the logged‑in planner (any status). Without this, planners see their own policies (all statuses) **plus** other planners' `active`, `paused`, and `closed` policies. **Other planners' draft and published policies are excluded** – they do not appear in the list.                                                                         |
+| `topic`           | string  | none    | Filter policies by a topic (e.g., `?topic=Agriculture`). Can be used multiple times (`?topic=Agriculture&topic=Health`) to return policies that match **any** of the given topics. Topics are stored in the policy's `topics` array (set during creation, optionally via AI suggestion). Works for all roles but respects visibility rules (e.g., citizens only see active/paused policies in their region). |
+| `page`            | integer | 1       | Page number (1‑based).                                                                                                                                                                                                                                                                                                                                                                                       |
+| `limit`           | integer | 20      | Items per page (max 100).                                                                                                                                                                                                                                                                                                                                                                                    |
+
+**Archived policies** are hidden from `GET /policies` by default for all roles, including admin and policy owners. To include them, use `?includeArchived=true` or request `?status=archived`. Citizens never see archived policies.
+
+**Topic filter** – The `topics` array is populated when the policy is created (planner can manually select topics or use the AI suggestion endpoint `/policies/suggest-topics`). The filter uses `$in` logic: if any of the requested topics matches a policy’s topic, the policy is included.
 
 **Response (200 OK):**
 
@@ -784,7 +790,77 @@ Query parameters (all optional):
 }
 ```
 
-### 3.14 Policy history
+### 3.14 Archive a policy (soft delete)
+
+**`PATCH /policies/:id/archive`**
+
+**Roles:** policy owner (planner) or admin  
+**Condition:** Policy status must **not** be `draft` (draft policies cannot be archived – they can be deleted instead).  
+**Behaviour:**
+
+- Changes policy `status` to `archived`.
+- Sets `archivedAt` to current time.
+- Records `archivedBy` (user ID) and `archivedByRole` (`planner` or `admin`).
+- Normal policy listings (`GET /policies`) exclude archived policies by default (for all roles, including owner and admin). Use `?includeArchived=true` or `?status=archived` to see them.
+- No new votes or comments can be submitted (same as closed).
+- The archived policy is **not deleted** – all votes, comments, and analytics remain accessible to authorised users for historical reporting.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": { "id": "...", "status": "archived" },
+  "message": "Policy archived successfully",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code               | Message                                                             |
+| ------ | ------------------ | ------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Draft policies cannot be archived. You can delete them instead."` |
+| 400    | `VALIDATION_ERROR` | `"Policy is already archived"`                                      |
+| 403    | `FORBIDDEN`        | `"You do not have permission to archive this policy"`               |
+| 404    | `NOT_FOUND`        | `"Policy not found"`                                                |
+
+### 3.15 Restore an archived policy
+
+**`PATCH /policies/:id/restore`**
+
+**Roles:**
+
+- If archived by **admin** → only an admin can restore.
+- If archived by **original owner** → the owner or an admin can restore.
+
+**Behaviour:**
+
+- Changes policy `status` back to `draft`.
+- Clears `archivedAt`, `archivedBy`, `archivedByRole`.
+- The policy becomes editable again (draft) and must be re‑published and activated to accept votes.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": { "id": "...", "status": "draft" },
+  "message": "Policy restored to draft",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code               | Message                                                                        |
+| ------ | ------------------ | ------------------------------------------------------------------------------ |
+| 400    | `VALIDATION_ERROR` | `"Only archived policies can be restored"`                                     |
+| 403    | `FORBIDDEN`        | `"This policy was archived by an admin and can only be restored by an admin."` |
+| 403    | `FORBIDDEN`        | `"You do not have permission to restore this policy"`                          |
+| 404    | `NOT_FOUND`        | `"Policy not found"`                                                           |
+
+### 3.16 Policy history
 
 **`GET /policies/:id/history`**
 
@@ -973,7 +1049,7 @@ All endpoints in this section require authentication with a valid JWT token (cit
 
 **`PUT /comments/:commentId/moderate`**
 
-**Roles:** policy owner (planner) or admin  
+**Roles:** policy owner, associate with `moderate_comments` permission, or admin  
 **Rate limit:** 30 per minute per user
 
 **Path parameter:**
@@ -988,10 +1064,12 @@ All endpoints in this section require authentication with a valid JWT token (cit
 {
   "status": "approved", // or "flagged", "deleted"
   "sentiment": { "label": "positive", "confidence": 0.95 },
-  "keywords": ["water", "access"],
-  "text": "New comment text (if editing)"
+  "keywords": ["water", "access"]
 }
 ```
+
+**Note:** Moderators **cannot** edit the original comment text. Only the original author can edit text (see 4.7).  
+The request body does **not** accept a `text` field.
 
 **Response (200 OK):**
 
@@ -1101,6 +1179,94 @@ All endpoints in this section require authentication with a valid JWT token (cit
 | 403    | `FORBIDDEN`        | `"No permission to resolve this appeal"` |
 | 404    | `NOT_FOUND`        | `"Comment not found"`                    |
 | 400    | `VALIDATION_ERROR` | `"No pending appeal for this comment"`   |
+
+### 4.7 Edit a comment (author only)
+
+**`PUT /comments/:id`**
+
+**Roles:** only the original author of the comment (citizen, planner, or admin)  
+**Rate limit:** 10 per minute per user (same as posting)
+
+**Path parameter:**
+
+| Parameter | Type   | Description |
+| --------- | ------ | ----------- |
+| `id`      | string | Comment ID  |
+
+**Request body:**
+
+```json
+{
+  "text": "Updated comment text (1‑2000 characters)"
+}
+```
+
+**Behaviour:**
+
+- Stores the **previous version** (text, sentiment, keywords, timestamp) in `editedHistory` (max 3 entries).
+- For top‑level comments: resets sentiment, keywords, and sets status to `"processing"` (AI will re‑analyse).
+- For replies: status remains `"approved"` (no AI re‑analysis).
+- The updated comment text is immediately visible, but the AI result for top‑level comments will be refreshed shortly.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": { "commentId": "67f1a2b3..." },
+  "message": "Comment updated",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code                  | Message                                              |
+| ------ | --------------------- | ---------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`    | `"Comment text is required"` or `"Comment too long"` |
+| 403    | `FORBIDDEN`           | `"Only the comment author can edit the text"`        |
+| 404    | `NOT_FOUND`           | `"Comment not found"`                                |
+| 429    | `RATE_LIMIT_EXCEEDED` | `"Too many comments. Please wait a moment."`         |
+
+### 4.8 Get comment edit history
+
+**`GET /comments/:id/history`**
+
+**Roles:** planner or admin only (citizens cannot access previous versions)  
+**Rate limit:** same as global API limit (100 per 15 minutes per IP)
+
+**Path parameter:**
+
+| Parameter | Type   | Description |
+| --------- | ------ | ----------- |
+| `id`      | string | Comment ID  |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "history": [
+      {
+        "text": "Original text",
+        "sentiment": { "label": "neutral", "confidence": 0.98 },
+        "keywords": ["original"],
+        "editedAt": "2026-05-10T10:00:00Z"
+      }
+    ]
+  },
+  "message": "Edit history retrieved",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code        | Message                                        |
+| ------ | ----------- | ---------------------------------------------- |
+| 403    | `FORBIDDEN` | `"Only planners/admins can view edit history"` |
+| 404    | `NOT_FOUND` | `"Comment not found"`                          |
 
 ## 5. Analytics Endpoints
 
@@ -1272,7 +1438,8 @@ All endpoints in this section require authentication with a valid JWT token (cit
         "status": "approved",
         "isOfficialReply": false,
         "createdAt": "2026-05-09T01:17:31.540Z",
-        "userEmail": "citizen@example.com"
+        "userEmail": "citizen@example.com",
+        "isEdited": true
       }
     ],
     "total": 50,
@@ -1282,6 +1449,8 @@ All endpoints in this section require authentication with a valid JWT token (cit
   "timestamp": "..."
 }
 ```
+
+**Note on `isEdited`:** This boolean field indicates whether the comment has been edited at least once. All roles (including citizens) see this flag, which can be used to display an "edited" badge in the UI. However, only planners and admins can view the actual edit history via `GET /comments/:id/history`.
 
 ### 5.4 Heatmap (unified geographic & time‑series)
 
@@ -2285,7 +2454,89 @@ Response (200 OK):
 | 400 | `VALIDATION_ERROR` | `"Invalid verification code"` |
 | 429 | `RATE_LIMIT_EXCEEDED` | `"Too many verification attempts. Please request a new code."` |
 
-### 7.8 Get notifications
+### 7.8 Request phone number change
+
+**`POST /users/me/phone/request`**
+
+**Authentication required** (citizen, planner, admin).  
+Sends an OTP to the **new phone number** to verify ownership. The old phone number remains unchanged until the OTP is verified.  
+**Rate limit:** 3 requests per hour per user (enforced by the rate limiter with key `rl:phone:request`).
+
+**Request body:**
+
+```json
+{
+  "newPhone": "+251912345678"
+}
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "OTP sent to the new phone number. It expires in 5 minutes.",
+  "timestamp": "2026-05-09T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                                     |
+| ------ | ----------------------- | ----------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"New phone number required"`                               |
+| 409    | `DUPLICATE_ENTRY`       | `"Phone number already in use by another account"`          |
+| 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many phone change requests. Please try again later."` |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to request phone change"`                          |
+
+**Note:** The OTP is sent via a mock SMS in the current demo (printed to the console). In production, a real SMS gateway would be used.
+
+---
+
+### 7.9 Verify phone number change
+
+**`POST /users/me/phone/verify`**
+
+**Authentication required.**  
+Verifies the OTP sent to the new phone number and updates the user’s phone hash permanently.
+**Request body:**
+
+```json
+{
+  "newPhone": "+251912345678",
+  "code": "123456"
+}
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Phone number updated successfully.",
+  "timestamp": "2026-05-09T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                                        |
+| ------ | ----------------------- | -------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"New phone and OTP are required"`                             |
+| 400    | `VALIDATION_ERROR`      | `"Invalid or expired OTP. Please request a new code."`         |
+| 404    | `NOT_FOUND`             | `"User not found"`                                             |
+| 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many verification attempts. Please request a new code."` |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to verify phone change"`                              |
+
+**Behaviour:**
+
+- On success, the user’s `phoneHash` is updated to the hash of the new phone number.
+- The `tokenVersion` is incremented, invalidating any existing JWT tokens (the user must log in again).
+- An audit log entry (`PHONE_CHANGE`) is recorded.
+
+### 7.10 Get notifications
 
 **`GET /users/me/notifications`**
 
@@ -2330,7 +2581,7 @@ Query parameters (all optional):
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 500 | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve notifications"` |
 
-### 7.9 Mark a single notification as read
+### 7.11 Mark a single notification as read
 
 **`PATCH /users/me/notifications/:id/read`**
 
@@ -2351,7 +2602,7 @@ Query parameters (all optional):
 | 404    | `NOT_FOUND` | `"Notification not found"`              |
 | 500    | `INTERNAL`  | `"Failed to mark notification as read"` |
 
-### 7.10 Mark all notifications as read
+### 7.12 Mark all notifications as read
 
 **`PATCH /users/me/notifications/read-all`**
 
