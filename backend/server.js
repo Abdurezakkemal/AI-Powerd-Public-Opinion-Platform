@@ -44,7 +44,7 @@ app.use("/api/users", require("./src/routes/userRoutes"));
 app.use("/api/planners", require("./src/routes/plannerRoutes"));
 app.use("/api/messages", require("./src/routes/messageRoutes"));
 app.use("/api/feed", require("./src/routes/feedRoutes"));
-
+app.use("/api/translate", require("./src/routes/translationRoutes"));
 // ========== HTTP & SOCKET.IO SERVER ==========
 const server = http.createServer(app);
 const io = socketIo(server, {
