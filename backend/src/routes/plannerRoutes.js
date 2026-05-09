@@ -36,4 +36,32 @@ router.post(
   plannerController.rejectRequest,
 );
 
+router.get(
+  "/search",
+  auth(["planner", "admin"]),
+  plannerController.searchPlannersByLanguage,
+);
+
+// Associates management
+router.post(
+  "/policies/:policyId/associates",
+  auth(["planner", "admin"]),
+  plannerController.addAssociate,
+);
+router.get(
+  "/policies/:policyId/associates",
+  auth(["planner", "admin"]),
+  plannerController.listAssociates,
+);
+router.patch(
+  "/policies/:policyId/associates/:associateId",
+  auth(["planner", "admin"]),
+  plannerController.updateAssociatePermissions,
+);
+router.delete(
+  "/policies/:policyId/associates/:associateId",
+  auth(["planner", "admin"]),
+  plannerController.revokeAssociate,
+);
+
 module.exports = router;

@@ -3,7 +3,9 @@ const router = express.Router();
 const commentController = require("../controllers/commentController");
 const auth = require("../middleware/authMiddleware");
 const limiters = require("../config/rateLimits");
-
+const {
+  hasAssociatePermission,
+} = require("../middleware/permissionMiddleware");
 // Post comment (already rate‑limited)
 router.post(
   "/",
@@ -43,4 +45,10 @@ router.post(
   commentController.resolveAppeal,
 );
 
+router.put(
+  "/:commentId/moderate",
+  auth(["planner", "admin"]),
+  hasAssociatePermission("moderate_comments"),
+  commentController.moderateComment,
+);
 module.exports = router;

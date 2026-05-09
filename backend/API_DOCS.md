@@ -1106,15 +1106,20 @@ All endpoints in this section require authentication with a valid JWT token (cit
 
 **Roles required:** planner or admin (all endpoints in this section)
 
-**General access rules:**
+**Access rules for analytics endpoints (all endpoints under /analytics):**
 
 - For **draft** or **published** policies:
-  - The **creator** (planner) receives `400` with message `"Policy is not active yet (no analytics available)"`.
-  - Any **other planner** receives `404` with `"Policy not found"` (policy appears non‑existent).
-- For **active**, **paused**, or **closed** policies: any planner or admin can view analytics.
-- Citizens never have access to these endpoints.
+  - The **policy owner** (planner who created it) can access analytics (but will receive a 400 error with message "Policy is not active yet (no analytics available)").
+  - Any **other planner** receives a 404 Not Found (the policy is hidden).
 
-**All endpoints support optional date range filters** (`startDate`, `endDate`) unless otherwise noted.
+- For **active**, **paused**, or **closed** policies:
+  - The **policy owner** has full access.
+  - Any **associate** (planner assigned via `/planners/policies/:policyId/associates`) with the `view_analytics` permission has access to all analytics endpoints (including export if `export_data` is also granted).
+  - Any **other planner** (not owner, not associate) receives a 404 Not Found.
+
+- **Admins** always have full access to all analytics, regardless of policy status or ownership.
+
+**Note for associates:** To grant an associate access to a specific analytics endpoint, they must have the corresponding permission (`view_analytics` for viewing, `export_data` for CSV export). The permissions are checked by the middleware before the request is processed.
 
 ### 5.1 Policy analytics (summary)
 
@@ -2699,6 +2704,367 @@ These endpoints allow citizens to request planner status, admins to review and a
 | 404    | `NOT_FOUND`        | `"Request not found"`                                |
 | 400    | `VALIDATION_ERROR` | `"Rejection reason must be at least 10 characters."` |
 
+## 11. Delegation & Internal Messaging
+
+These endpoints allow planners to collaborate by assigning associates to policies, searching for collaborators by language, and sending internal messages.
+
+**Roles required:** planner or admin (except where noted).
+
+All endpoints in this section require authentication with a planner or admin token.
+
+---
+
+### 11.1 Search planners by spoken language
+
+**GET /planners/search**
+
+**Query parameter:**
+
+- `language` (required) – one of: `am` (Amharic), `om` (Oromo), `ti` (Tigrinya), `en` (English)
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "\_id": "67f1a2b3c4d5e6f7a8b9c0d1",
+      "email": "planner@example.com",
+      "region": "Addis Ababa",
+      "languagesSpoken": ["am", "en"],
+      "trainingCompletedAt": "2026-05-01T00:00:00Z"
+    }
+  ],
+  "message": "Planners found",
+  "timestamp": "2026-05-09T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code             | Message                                             |
+| ------ | ---------------- | --------------------------------------------------- |
+| 400    | VALIDATION_ERROR | "Valid language code required (am, om, ti, en)"     |
+| 403    | FORBIDDEN        | "Access denied. Only planners can search planners." |
+
+---
+
+### 11.2 Add an associate to a policy
+
+**POST /planners/policies/:policyId/associates**
+
+**Roles:** policy owner (planner) or admin
+
+**Path parameter:**
+
+- `policyId` – MongoDB ObjectId of the policy
+
+**Request body:**
+
+```json
+{
+  "plannerEmail": "collaborator@example.com",
+  "permissions": [
+    "view_analytics",
+    "moderate_comments",
+    "reply_official",
+    "export_data"
+  ]
+}
+```
+
+**Permissions array options:**
+
+| Permission          | Description                                                         |
+| ------------------- | ------------------------------------------------------------------- |
+| `view_analytics`    | Access analytics for the policy (timeseries, export, heatmap, etc.) |
+| `moderate_comments` | Edit, delete, approve, flag comments; retry AI processing           |
+| `reply_official`    | Post official replies (marked with a badge)                         |
+| `export_data`       | Download CSV exports of votes and comments                          |
+
+**Response (201 Created):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "\_id": "67f1a2b3c4d5e6f7a8b9c0d2",
+    "policyId": "67f1a2b3c4d5e6f7a8b9c0d1",
+    "plannerId": "67f1a2b3c4d5e6f7a8b9c0d3",
+    "permissions": ["view_analytics", "moderate_comments"],
+    "assignedBy": "67f1a2b3c4d5e6f7a8b9c0d0",
+    "revokedAt": null,
+    "assignedAt": "2026-05-09T12:00:00Z"
+  },
+  "message": "Associate added successfully",
+  "timestamp": "2026-05-09T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code             | Message                                                                      |
+| ------ | ---------------- | ---------------------------------------------------------------------------- |
+| 400    | VALIDATION_ERROR | "plannerEmail and permissions array required"                                |
+| 403    | FORBIDDEN        | "Only policy owner can add associates"                                       |
+| 404    | NOT_FOUND        | "Policy not found" or "Planner not found with that email"                    |
+| 409    | DUPLICATE_ENTRY  | "This planner is already an associate (active). Update permissions instead." |
+
+---
+
+### 11.3 List associates of a policy
+
+**GET /planners/policies/:policyId/associates**
+
+**Roles:** policy owner (planner) or admin
+
+**Path parameter:**
+
+- `policyId` – Policy ID
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": [
+    {
+      "\_id": "67f1a2b3c4d5e6f7a8b9c0d2",
+      "policyId": "67f1a2b3c4d5e6f7a8b9c0d1",
+      "plannerId": {
+        "\_id": "...",
+        "email": "associate@example.com",
+        "region": "Addis Ababa",
+        "languagesSpoken": ["en"]
+      },
+      "permissions": ["view_analytics"],
+      "assignedBy": {
+        "\_id": "...",
+        "email": "owner@example.com"
+      },
+      "revokedAt": null,
+      "assignedAt": "2026-05-09T12:00:00Z"
+    }
+  ],
+  "message": "Associates retrieved",
+  "timestamp": "2026-05-09T12:00:00Z"
+}
+```
+
+**Error responses:**
+
+| Status | Code      | Message                                 |
+| ------ | --------- | --------------------------------------- |
+| 403    | FORBIDDEN | "Only policy owner can view associates" |
+| 404    | NOT_FOUND | "Policy not found"                      |
+
+---
+
+### 11.4 Update associate permissions
+
+**PATCH /planners/policies/:policyId/associates/:associateId**
+
+**Roles:** policy owner (planner) or admin
+
+**Path parameters:**
+
+- `policyId` – Policy ID
+- `associateId` – Associate record ID (not planner ID)
+
+**Request body:**
+
+````json
+{
+"permissions": ["view_analytics"]
+}
+```
+| Permission          | Description                                      |
+| ------------------- | ------------------------------------------------ |
+| `view_analytics`    | View all analytics for the policy                |
+| `moderate_comments` | Edit, delete, approve, flag comments; retry AI  |
+| `reply_official`    | Post replies marked as official responses        |
+| `export_data`       | Download CSV exports of votes and comments       |
+
+**Note:** The `permissions` array replaces the existing permissions entirely. To add a permission, include all existing ones plus the new one.
+
+**Response (200 OK):** returns the updated associate object (same shape as POST response).
+
+**Error responses:**
+
+| Status | Code             | Message                                            |
+| ------ | ---------------- | -------------------------------------------------- |
+| 400    | VALIDATION_ERROR | "permissions array required"                       |
+| 403    | FORBIDDEN        | "Only policy owner can update permissions"         |
+| 404    | NOT_FOUND        | "Policy not found" or "Active associate not found" |
+
+---
+
+### 11.5 Revoke an associate
+
+**DELETE /planners/policies/:policyId/associates/:associateId**
+
+**Roles:** policy owner (planner) or admin
+
+**Path parameters:** same as 11.4
+
+**Response (200 OK):**
+
+```json
+{
+"status": "success",
+"data": null,
+"message": "Associate revoked",
+"timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code      | Message                                            |
+| ------ | --------- | -------------------------------------------------- |
+| 403    | FORBIDDEN | "Only policy owner can revoke associates"          |
+| 404    | NOT_FOUND | "Policy not found" or "Active associate not found" |
+
+---
+
+### 11.6 Send a message
+
+**POST /api/messages**
+
+**Roles:** planner or admin
+
+**Rate limit:** 10 messages per minute per user (shared with comment limit).
+
+**Request body:**
+
+```json
+{
+"recipientId": "67f1a2b3c4d5e6f7a8b9c0d3",
+"subject": "Policy collaboration request",
+"body": "I would like your help moderating comments on the Clean Water policy."
+}
+```
+**Response (201 Created):**
+
+```json
+{
+"status": "success",
+"data": { "messageId": "67f1a2b3c4d5e6f7a8b9c0d4" },
+"message": "Message sent",
+"timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code                | Message                                      |
+| ------ | ------------------- | -------------------------------------------- |
+| 400    | VALIDATION_ERROR    | "recipientId, subject, body required"        |
+| 404    | NOT_FOUND           | "Recipient not found or not a planner/admin" |
+| 429    | RATE_LIMIT_EXCEEDED | "Too many messages. Please wait a moment."   |
+
+---
+
+### 11.7 Get my inbox
+
+**GET /api/messages/inbox**
+
+**Roles:** planner or admin
+
+**Query parameters:**
+
+- `page` – page number (default 1)
+- `limit` – items per page (default 20, max 100)
+
+**Response (200 OK):**
+
+```json
+{
+"status": "success",
+"data": {
+"messages": [
+{
+"_id": "67f1a2b3c4d5e6f7a8b9c0d4",
+"senderId": { "_id": "...", "email": "plannerA@example.com" },
+"recipientId": "67f1a2b3c4d5e6f7a8b9c0d3",
+"subject": "Policy collaboration request",
+"body": "I would like your help...",
+"read": false,
+"replyToId": null,
+"createdAt": "2026-05-09T12:00:00Z"
+}
+],
+"total": 5,
+"page": 1
+},
+"message": "Inbox retrieved",
+"timestamp": "..."
+}
+```
+
+---
+
+### 11.8 Get a single message (and mark as read)
+
+**GET /api/messages/:messageId**
+
+**Roles:** must be sender or recipient
+
+**Path parameter:**
+
+- `messageId` – Message ID
+
+**Behaviour:** Automatically sets `read: true` if the requesting user is the recipient and the message was unread.
+
+**Response (200 OK):** returns the full message object with populated sender and recipient.
+
+**Error responses:**
+
+| Status | Code      | Message             |
+| ------ | --------- | ------------------- |
+| 403    | FORBIDDEN | "Access denied"     |
+| 404    | NOT_FOUND | "Message not found" |
+
+---
+
+### 11.9 Reply to a message
+
+**POST /api/messages/:messageId/reply**
+
+**Roles:** must be sender or recipient of the original message
+
+**Path parameter:**
+
+- `messageId` – Original message ID
+
+**Request body:**
+
+```json
+{
+"body": "Sure, I can help. Let me review the policy first."
+}
+```
+
+**Response (201 Created):**
+
+```json
+{
+"status": "success",
+"data": { "messageId": "67f1a2b3c4d5e6f7a8b9c0d5" },
+"message": "Reply sent",
+"timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code             | Message                            |
+| ------ | ---------------- | ---------------------------------- |
+| 400    | VALIDATION_ERROR | "body required"                    |
+| 403    | FORBIDDEN        | "You cannot reply to this message" |
+| 404    | NOT_FOUND        | "Original message not found"       |
+
 ## Appendix: Rate Limiting Summary
 
 | Endpoint group                               | Limit        | Time window | Scope             |
@@ -2715,3 +3081,4 @@ These endpoints allow citizens to request planner status, admins to review and a
 | `GET /analytics/*` (all analytics endpoints) | 30 requests  | 1 minute    | Per user (by JWT) |
 | All other `/api` endpoints                   | 100 requests | 15 minutes  | Per IP            |
 | `/sms/receive`                               | 3 votes      | 24 hours    | Per phone number  |
+````

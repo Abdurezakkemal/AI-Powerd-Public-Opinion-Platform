@@ -121,7 +121,7 @@ const parseDate = (dateStr, paramName) => {
 };
 
 // ---------- Helper: permission check ----------
-const checkAnalyticsAccess = (policy, user) => {
+const checkAnalyticsAccess = async (policy, user) => {
   if (user.role === "admin") return { allowed: true };
   if (user.role !== "planner") {
     return {
@@ -131,11 +131,19 @@ const checkAnalyticsAccess = (policy, user) => {
       statusCode: 403,
     };
   }
-  // Planner: can view own policies and any active/paused/closed policy
   const isOwner = policy.createdBy.toString() === user.id.toString();
   if (isOwner) return { allowed: true };
-  if (["active", "paused", "closed"].includes(policy.status))
-    return { allowed: true };
+
+  // Check if user is an active associate with view_analytics permission
+  const PolicyAssociate = require("../models/PolicyAssociate");
+  const associate = await PolicyAssociate.findOne({
+    policyId: policy._id,
+    plannerId: user.id,
+    revokedAt: null,
+    permissions: "view_analytics",
+  });
+  if (associate) return { allowed: true };
+
   return {
     allowed: false,
     errorCode: "NOT_FOUND",
@@ -148,6 +156,15 @@ const checkAnalyticsAccess = (policy, user) => {
 exports.getAnalytics = async (req, res) => {
   try {
     const { policyId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(policyId)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid policy ID format",
+        null,
+        400,
+      );
+    }
     const {
       startDate,
       endDate,
@@ -171,7 +188,7 @@ exports.getAnalytics = async (req, res) => {
         404,
       );
 
-    const access = checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user);
     if (!access.allowed)
       return sendError(
         res,
@@ -225,6 +242,8 @@ exports.getAnalytics = async (req, res) => {
     );
     return sendSuccess(res, response, "Analytics retrieved successfully");
   } catch (err) {
+    console.error("Full error:", err);
+    console.error("Error stack:", err.stack);
     logger.error({ error: err.message }, "Get analytics error");
     return sendError(
       res,
@@ -240,6 +259,15 @@ exports.getAnalytics = async (req, res) => {
 exports.getTimeseries = async (req, res) => {
   try {
     const { policyId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(policyId)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid policy ID format",
+        null,
+        400,
+      );
+    }
     const { bucket = "day", startDate, endDate } = req.query;
 
     const start = parseDate(startDate, "startDate");
@@ -255,7 +283,7 @@ exports.getTimeseries = async (req, res) => {
         404,
       );
 
-    const access = checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user);
     if (!access.allowed)
       return sendError(
         res,
@@ -371,7 +399,7 @@ exports.getCorrelation = async (req, res) => {
       );
     }
 
-    const access = checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user);
     if (!access.allowed)
       return sendError(
         res,
@@ -549,7 +577,7 @@ exports.getDemographicBreakdown = async (req, res) => {
         404,
       );
 
-    const access = checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user);
     if (!access.allowed)
       return sendError(
         res,
@@ -643,7 +671,7 @@ exports.exportAnalytics = async (req, res) => {
         404,
       );
 
-    const access = checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user);
     if (!access.allowed)
       return sendError(
         res,
@@ -712,7 +740,7 @@ exports.getComments = async (req, res) => {
         404,
       );
 
-    const access = checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user);
     if (!access.allowed)
       return sendError(
         res,
@@ -826,7 +854,7 @@ exports.getHeatmap = async (req, res) => {
           404,
         );
       // Reuse existing access check
-      const access = checkAnalyticsAccess(policy, req.user);
+      const access = await checkAnalyticsAccess(policy, req.user);
       if (!access.allowed) {
         return sendError(
           res,

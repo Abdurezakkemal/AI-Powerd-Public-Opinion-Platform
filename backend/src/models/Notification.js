@@ -13,6 +13,8 @@ const notificationSchema = new mongoose.Schema({
       "POLICY_CLOSED",
       "POLICY_ACTIVATED",
       "POLICY_EXTENDED",
+      "ASSOCIATE_ASSIGNED",
+      "MESSAGE_RECEIVED",
       "COMMENT_REPLY",
       "COMMENT_FLAGGED",
       "COMMENT_APPEAL",
@@ -22,10 +24,7 @@ const notificationSchema = new mongoose.Schema({
   },
   title: { type: String, required: true },
   message: { type: String, required: true },
-  data: {
-    type: Object,
-    default: {},
-  },
+  data: { type: Object, default: {} },
   read: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
 });

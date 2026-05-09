@@ -1,5 +1,7 @@
 const User = require("../models/User");
 const PlannerRequest = require("../models/PlannerRequest");
+const Policy = require("../models/Policy");
+const PolicyAssociate = require("../models/PolicyAssociate");
 const { createAuditLog } = require("../utils/audit");
 const {
   sendSuccess,
@@ -9,7 +11,6 @@ const {
 const { sendEmail } = require("../utils/email");
 
 // ==================== CITIZEN REQUESTS TO BECOME PLANNER ====================
-
 exports.requestPlanner = async (req, res) => {
   try {
     const { organization, reason, proofFile } = req.body;
@@ -22,7 +23,6 @@ exports.requestPlanner = async (req, res) => {
         400,
       );
     }
-
     const userId = req.user.id;
     const existing = await PlannerRequest.findOne({
       userId,
@@ -37,7 +37,6 @@ exports.requestPlanner = async (req, res) => {
         409,
       );
     }
-
     const request = new PlannerRequest({
       userId,
       organization: organization || "",
@@ -45,7 +44,6 @@ exports.requestPlanner = async (req, res) => {
       proofFile: proofFile || null,
     });
     await request.save();
-
     await createAuditLog({
       userId,
       userRole: "citizen",
@@ -53,9 +51,6 @@ exports.requestPlanner = async (req, res) => {
       details: { organization, reasonPreview: reason.slice(0, 100) },
       req,
     });
-
-    // Optional: notify all admins (can be done via email or in‑app later)
-
     return sendSuccess(
       res,
       { requestId: request._id },
@@ -75,7 +70,6 @@ exports.requestPlanner = async (req, res) => {
 };
 
 // ==================== ADMIN ENDPOINTS ====================
-
 exports.listPendingRequests = async (req, res) => {
   try {
     const requests = await PlannerRequest.find({ status: "pending" })
@@ -101,7 +95,7 @@ exports.approveRequest = async (req, res) => {
   try {
     const { id } = req.params;
     const request = await PlannerRequest.findById(id);
-    if (!request) {
+    if (!request)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -109,8 +103,7 @@ exports.approveRequest = async (req, res) => {
         null,
         404,
       );
-    }
-    if (request.status !== "pending") {
+    if (request.status !== "pending")
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -118,23 +111,16 @@ exports.approveRequest = async (req, res) => {
         null,
         400,
       );
-    }
-
     const user = await User.findById(request.userId);
-    if (!user) {
+    if (!user)
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
-    }
-
-    // Update user role to planner
     user.role = "planner";
-    user.tokenVersion += 1; // invalidate old JWTs
+    user.tokenVersion += 1;
     await user.save();
-
     request.status = "approved";
     request.reviewedBy = req.user.id;
     request.reviewedAt = new Date();
     await request.save();
-
     await createAuditLog({
       userId: user._id,
       userRole: "admin",
@@ -142,14 +128,11 @@ exports.approveRequest = async (req, res) => {
       details: { approvedBy: req.user.id },
       req,
     });
-
-    // Send email notification
     await sendEmail({
       to: user.email,
       subject: "Planner Request Approved",
       html: `<p>Congratulations! You are now a planner. Please log in and complete the mandatory training before creating policies.</p>`,
     });
-
     return sendSuccess(
       res,
       null,
@@ -171,7 +154,7 @@ exports.rejectRequest = async (req, res) => {
   try {
     const { id } = req.params;
     const { rejectionReason } = req.body;
-    if (!rejectionReason || rejectionReason.length < 10) {
+    if (!rejectionReason || rejectionReason.length < 10)
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -179,10 +162,8 @@ exports.rejectRequest = async (req, res) => {
         null,
         400,
       );
-    }
-
     const request = await PlannerRequest.findById(id);
-    if (!request) {
+    if (!request)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -190,8 +171,7 @@ exports.rejectRequest = async (req, res) => {
         null,
         404,
       );
-    }
-    if (request.status !== "pending") {
+    if (request.status !== "pending")
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -199,14 +179,11 @@ exports.rejectRequest = async (req, res) => {
         null,
         400,
       );
-    }
-
     request.status = "rejected";
     request.reviewedBy = req.user.id;
     request.reviewedAt = new Date();
     request.rejectionReason = rejectionReason;
     await request.save();
-
     const user = await User.findById(request.userId);
     if (user) {
       await sendEmail({
@@ -215,7 +192,6 @@ exports.rejectRequest = async (req, res) => {
         html: `<p>Your request to become a planner was rejected. Reason: ${rejectionReason}</p>`,
       });
     }
-
     await createAuditLog({
       userId: req.user.id,
       userRole: "admin",
@@ -223,7 +199,6 @@ exports.rejectRequest = async (req, res) => {
       details: { requestId: id, reason: rejectionReason },
       req,
     });
-
     return sendSuccess(res, null, "Request rejected.");
   } catch (err) {
     console.error(err);
@@ -238,11 +213,10 @@ exports.rejectRequest = async (req, res) => {
 };
 
 // ==================== TRAINING COMPLETION (PLANNER ONLY) ====================
-
 exports.completeTraining = async (req, res) => {
   try {
     const user = await User.findById(req.user.id);
-    if (user.role !== "planner") {
+    if (user.role !== "planner")
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
@@ -250,8 +224,7 @@ exports.completeTraining = async (req, res) => {
         null,
         403,
       );
-    }
-    if (user.trainingCompletedAt) {
+    if (user.trainingCompletedAt)
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -259,10 +232,8 @@ exports.completeTraining = async (req, res) => {
         null,
         400,
       );
-    }
     user.trainingCompletedAt = new Date();
     await user.save();
-
     await createAuditLog({
       userId: user._id,
       userRole: "planner",
@@ -270,7 +241,6 @@ exports.completeTraining = async (req, res) => {
       details: {},
       req,
     });
-
     return sendSuccess(
       res,
       null,
@@ -282,6 +252,336 @@ exports.completeTraining = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to complete training",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== SEARCH PLANNERS BY LANGUAGE ==========
+exports.searchPlannersByLanguage = async (req, res) => {
+  try {
+    const { language } = req.query;
+    if (!language || !["am", "om", "ti", "en"].includes(language)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Valid language code required (am, om, ti, en)",
+        null,
+        400,
+      );
+    }
+    const planners = await User.find({
+      role: "planner",
+      active: true,
+      languagesSpoken: language,
+      deletedAt: null,
+    })
+      .select("email region languagesSpoken trainingCompletedAt")
+      .limit(50);
+    return sendSuccess(res, planners, "Planners found");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to search planners",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== ADD ASSOCIATE ==========
+exports.addAssociate = async (req, res) => {
+  try {
+    const { policyId } = req.params;
+    const { plannerEmail, permissions } = req.body;
+    if (!plannerEmail || !permissions || !permissions.length) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "plannerEmail and permissions array required",
+        null,
+        400,
+      );
+    }
+    const policy = await Policy.findById(policyId);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+
+    // FIX: use .toString() on both sides
+    const isOwner = policy.createdBy.toString() === req.user.id.toString();
+    if (req.user.role !== "admin" && !isOwner) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "Only policy owner can add associates",
+        null,
+        403,
+      );
+    }
+
+    const associateUser = await User.findOne({
+      email: plannerEmail,
+      role: "planner",
+      active: true,
+    });
+    if (!associateUser)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Planner not found with that email",
+        null,
+        404,
+      );
+    if (
+      associateUser._id.toString() === req.user.id.toString() &&
+      req.user.role !== "admin"
+    ) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "You cannot assign yourself as associate",
+        null,
+        400,
+      );
+    }
+
+    const existing = await PolicyAssociate.findOne({
+      policyId,
+      plannerId: associateUser._id,
+      revokedAt: null,
+    });
+    if (existing) {
+      return sendError(
+        res,
+        ErrorCodes.DUPLICATE,
+        "This planner is already an associate (active). Update permissions instead.",
+        null,
+        409,
+      );
+    }
+
+    const associate = new PolicyAssociate({
+      policyId,
+      plannerId: associateUser._id,
+      permissions,
+      assignedBy: req.user.id,
+    });
+    await associate.save();
+
+    // Notifications (skip if not ready)
+    try {
+      const { createNotification } = require("../services/notificationService");
+      await createNotification({
+        userId: associateUser._id,
+        type: "ASSOCIATE_ASSIGNED",
+        title: "Policy Associate Role",
+        message: `You have been assigned as an associate on policy "${policy.title}" with permissions: ${permissions.join(", ")}.`,
+        data: { policyId, permissions },
+      });
+    } catch (notifErr) {
+      console.error("Notification skipped:", notifErr.message);
+    }
+
+    await sendEmail({
+      to: associateUser.email,
+      subject: `You are now an associate for policy: ${policy.title}`,
+      html: `<p>You have been assigned by ${req.user.id} to help manage policy "${policy.title}".</p><p>Permissions: ${permissions.join(", ")}.</p>`,
+    });
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "ADD_ASSOCIATE",
+      targetType: "PolicyAssociate",
+      targetId: associate._id,
+      details: { policyId, plannerId: associateUser._id, permissions },
+      req,
+    });
+
+    return sendSuccess(res, associate, "Associate added successfully");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to add associate",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== LIST ASSOCIATES ==========
+exports.listAssociates = async (req, res) => {
+  try {
+    const { policyId } = req.params;
+    const policy = await Policy.findById(policyId);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    const isOwner = policy.createdBy.toString() === req.user.id.toString();
+    if (req.user.role !== "admin" && !isOwner) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "Only policy owner can view associates",
+        null,
+        403,
+      );
+    }
+    const associates = await PolicyAssociate.find({ policyId, revokedAt: null })
+      .populate("plannerId", "email region languagesSpoken")
+      .populate("assignedBy", "email");
+    return sendSuccess(res, associates, "Associates retrieved");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to list associates",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== UPDATE ASSOCIATE PERMISSIONS ==========
+exports.updateAssociatePermissions = async (req, res) => {
+  try {
+    const { policyId, associateId } = req.params;
+    const { permissions } = req.body;
+    if (!permissions || !permissions.length)
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "permissions array required",
+        null,
+        400,
+      );
+    const policy = await Policy.findById(policyId);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    const isOwner = policy.createdBy.toString() === req.user.id.toString();
+    if (req.user.role !== "admin" && !isOwner) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "Only policy owner can update permissions",
+        null,
+        403,
+      );
+    }
+    const associate = await PolicyAssociate.findOne({
+      _id: associateId,
+      policyId,
+      revokedAt: null,
+    });
+    if (!associate)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Active associate not found",
+        null,
+        404,
+      );
+    associate.permissions = permissions;
+    await associate.save();
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "UPDATE_ASSOCIATE_PERMISSIONS",
+      targetType: "PolicyAssociate",
+      targetId: associate._id,
+      details: { permissions },
+      req,
+    });
+    return sendSuccess(res, associate, "Permissions updated");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to update permissions",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== REVOKE ASSOCIATE ==========
+exports.revokeAssociate = async (req, res) => {
+  try {
+    const { policyId, associateId } = req.params;
+    const policy = await Policy.findById(policyId);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    const isOwner = policy.createdBy.toString() === req.user.id.toString();
+    if (req.user.role !== "admin" && !isOwner) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "Only policy owner can revoke associates",
+        null,
+        403,
+      );
+    }
+    const associate = await PolicyAssociate.findOne({
+      _id: associateId,
+      policyId,
+      revokedAt: null,
+    });
+    if (!associate)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Active associate not found",
+        null,
+        404,
+      );
+    associate.revokedAt = new Date();
+    await associate.save();
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "REVOKE_ASSOCIATE",
+      targetType: "PolicyAssociate",
+      targetId: associate._id,
+      details: { policyId, plannerId: associate.plannerId },
+      req,
+    });
+    return sendSuccess(res, null, "Associate revoked");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to revoke associate",
       null,
       500,
     );
