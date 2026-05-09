@@ -7,6 +7,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/error_view.dart';
+import '../../../../core/services/location_service.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../cubit/profile_cubit.dart';
 
@@ -23,6 +24,8 @@ class _AccountPageState extends State<AccountPage> {
   final _newPasswordController = TextEditingController();
   final _newEmailController = TextEditingController();
   final _emailCodeController = TextEditingController();
+  final _locationService = LocationService();
+  bool _isDetectingLocation = false;
 
   @override
   void dispose() {
@@ -146,28 +149,82 @@ class _AccountPageState extends State<AccountPage> {
               children: [
                 _SectionTitle(
                   icon: Icons.location_on_outlined,
-                  title: 'Region',
+                  title: 'Region Update',
                 ),
                 const SizedBox(height: 12),
-                AppTextField(
-                  controller: _regionController,
-                  label: 'Region',
-                  icon: Icons.map_outlined,
-                ),
-                const SizedBox(height: 12),
-                AppButton(
-                  label: 'Update region',
-                  icon: Icons.save_outlined,
-                  loading: busy,
-                  onPressed: () {
-                    if (_regionController.text.trim().isEmpty) {
-                      _showMessage('Region is required.');
-                      return;
-                    }
-                    context.read<ProfileCubit>().updateRegion(
-                      _regionController.text,
-                    );
-                  },
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppTheme.primary.withValues(alpha: 0.05),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppTheme.primary.withValues(alpha: 0.2),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            Icons.security,
+                            color: AppTheme.primary,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            'GPS Verification Required',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: AppTheme.primary,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'For security, region updates require GPS verification. Enable location services and tap the button below.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: AppTheme.mutedText,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: AppTextField(
+                              controller: _regionController,
+                              label: 'Current Region',
+                              icon: Icons.map_outlined,
+                              readOnly: true,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: AppTheme.primary,
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: IconButton(
+                              onPressed: _isDetectingLocation ? null : _detectLocation,
+                              icon: _isDetectingLocation
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
+                                    )
+                                  : const Icon(Icons.my_location, color: Colors.white),
+                              tooltip: 'Detect my location',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
@@ -332,6 +389,28 @@ class _AccountPageState extends State<AccountPage> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  Future<void> _detectLocation() async {
+    setState(() => _isDetectingLocation = true);
+    final region = await _locationService.getCurrentRegion();
+    if (region != null && mounted) {
+      final oldRegion = _regionController.text;
+      _regionController.text = region;
+      
+      // Automatically update region after detection
+      if (oldRegion != region) {
+        context.read<ProfileCubit>().updateRegion(region);
+        _showMessage('✅ Location detected and updated: $region');
+      } else {
+        _showMessage('✅ Location detected: $region (no change)');
+      }
+    } else if (mounted) {
+      _showMessage('📱 Please enable location in settings, then return and tap the location button again');
+    }
+    if (mounted) {
+      setState(() => _isDetectingLocation = false);
+    }
   }
 }
 
