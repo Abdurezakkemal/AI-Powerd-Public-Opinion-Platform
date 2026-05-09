@@ -1,8 +1,8 @@
 const cron = require("node-cron");
 const Policy = require("../models/Policy");
-const Notification = require("../models/Notification");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
+const { createNotification } = require("../services/notificationService");
 
 const autoActivatePolicies = async () => {
   try {
@@ -31,13 +31,14 @@ const autoActivatePolicies = async () => {
         req: null,
       });
 
-      await Notification.create({
+      await createNotification({
         userId: policy.createdBy,
-        userRole: "planner",
         type: "POLICY_ACTIVATED",
         title: "Policy Activated",
         message: `Your policy "${policy.title}" has been automatically activated and is now accepting votes.`,
         data: { policyId: policy._id, policyCode: policy.policyCode },
+        severity: "info",
+        source: "system",
       });
 
       logger.info(
@@ -53,7 +54,6 @@ const autoActivatePolicies = async () => {
 };
 
 const startAutoActivateWorker = () => {
-  // Run every minute
   cron.schedule("* * * * *", autoActivatePolicies);
   logger.info("Auto‑activation worker started (cron every minute)");
 };

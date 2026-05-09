@@ -1,6 +1,7 @@
 const Vote = require("../models/Vote");
 const Policy = require("../models/Policy");
 const User = require("../models/User");
+const PolicyAssociate = require("../models/PolicyAssociate");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
 const {
@@ -9,11 +10,10 @@ const {
   ErrorCodes,
 } = require("../utils/responseHelper");
 const { validateVoteValue, normalizeVoteValue } = require("../utils/pollTypes");
+const { recordVote, checkForAnomalies } = require("../services/alertDetection");
 
 exports.submitAppVote = async (req, res) => {
   try {
-    console.log("req.body:", req.body);
-    console.log("req.headers.content-type:", req.headers["content-type"]);
     const { policyId, value, comment } = req.body;
     if (!policyId || value === undefined) {
       return sendError(
@@ -26,8 +26,9 @@ exports.submitAppVote = async (req, res) => {
     }
 
     const user = await User.findById(req.user.id);
-    if (!user)
+    if (!user) {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+    }
     if (!user.verified) {
       return sendError(
         res,
@@ -39,7 +40,7 @@ exports.submitAppVote = async (req, res) => {
     }
 
     const policy = await Policy.findById(policyId);
-    if (!policy)
+    if (!policy) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -47,6 +48,7 @@ exports.submitAppVote = async (req, res) => {
         null,
         404,
       );
+    }
     if (policy.status !== "active") {
       let msg = "Policy not open for voting";
       if (policy.status === "paused") msg = "Voting is temporarily paused";
@@ -134,6 +136,26 @@ exports.submitAppVote = async (req, res) => {
       await commentDoc.save();
     }
 
+    // === Alert detection: record vote and check anomalies ===
+    await recordVote(policyId, normalizedValue);
+
+    // Get policy owner ID and associate IDs for notifications
+    const ownerId = policy.createdBy.toString();
+    const associates = await PolicyAssociate.find({
+      policyId,
+      revokedAt: null,
+      permissions: "view_analytics", // only notify those who can see analytics
+    }).select("plannerId");
+    const associateIds = associates.map((a) => a.plannerId.toString());
+
+    await checkForAnomalies(
+      policyId,
+      normalizedValue,
+      policy.title,
+      ownerId,
+      associateIds,
+    );
+
     await createAuditLog({
       userId: user._id,
       userRole: user.role,
@@ -152,6 +174,7 @@ exports.submitAppVote = async (req, res) => {
     logger.info(
       `User ${user._id} voted on policy ${policyId} (${policy.pollType})`,
     );
+
     return sendSuccess(
       res,
       { voteId: vote._id, commentId: commentDoc?._id || null },

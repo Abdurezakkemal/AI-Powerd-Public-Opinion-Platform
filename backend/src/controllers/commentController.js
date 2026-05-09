@@ -8,6 +8,7 @@ const {
   sendError,
   ErrorCodes,
 } = require("../utils/responseHelper");
+const { createNotification } = require("../services/notificationService");
 
 // ========== POST COMMENT (top‑level or reply) ==========
 exports.postComment = async (req, res) => {
@@ -82,15 +83,19 @@ exports.postComment = async (req, res) => {
         "userId",
         "email",
       );
-      if (parent && parent.userId._id.toString() !== req.user.id.toString()) {
-        const Notification = require("../models/Notification");
-        await Notification.create({
+      if (
+        parent &&
+        parent.userId &&
+        parent.userId._id.toString() !== req.user.id.toString()
+      ) {
+        await createNotification({
           userId: parent.userId._id,
-          userRole: "citizen",
           type: "COMMENT_REPLY",
           title: "New reply to your comment",
           message: `${req.user.id} replied: ${text.slice(0, 100)}...`,
           data: { policyId, commentId: comment._id },
+          severity: "info",
+          source: "system",
         });
       }
     }
@@ -163,14 +168,14 @@ exports.reportComment = async (req, res) => {
     if (comment.reportCount >= 3) {
       const policy = await Policy.findById(comment.policyId);
       if (policy) {
-        const Notification = require("../models/Notification");
-        await Notification.create({
+        await createNotification({
           userId: policy.createdBy,
-          userRole: "planner",
           type: "COMMENT_FLAGGED",
           title: "Comment flagged for review",
           message: `Comment #${commentId} has been reported ${comment.reportCount} times.`,
           data: { commentId, policyId: comment.policyId },
+          severity: "warning",
+          source: "system",
         });
       }
     }
@@ -308,14 +313,14 @@ exports.appealComment = async (req, res) => {
     };
     await comment.save();
 
-    const Notification = require("../models/Notification");
-    await Notification.create({
+    await createNotification({
       userId: comment.policyId.createdBy,
-      userRole: "planner",
       type: "COMMENT_APPEAL",
       title: "Comment appeal submitted",
       message: `User appeals the moderation of comment #${commentId}: ${reason.slice(0, 100)}`,
       data: { commentId, policyId: comment.policyId },
+      severity: "info",
+      source: "system",
     });
 
     await createAuditLog({
@@ -405,14 +410,14 @@ exports.resolveAppeal = async (req, res) => {
     comment.appeal.resolutionNote = note || "";
     await comment.save();
 
-    const Notification = require("../models/Notification");
-    await Notification.create({
+    await createNotification({
       userId: comment.userId,
-      userRole: "citizen",
       type: "APPEAL_RESOLVED",
       title: `Your appeal has been ${decision === "approve" ? "approved" : "rejected"}`,
       message: note || `The moderator decided to ${decision} your appeal.`,
       data: { commentId },
+      severity: "info",
+      source: "system",
     });
 
     await createAuditLog({

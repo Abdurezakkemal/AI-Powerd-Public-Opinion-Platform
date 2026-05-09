@@ -3,6 +3,7 @@ const PlannerRequest = require("../models/PlannerRequest");
 const Policy = require("../models/Policy");
 const PolicyAssociate = require("../models/PolicyAssociate");
 const { createAuditLog } = require("../utils/audit");
+const { createNotification } = require("../services/notificationService");
 const {
   sendSuccess,
   sendError,
@@ -386,6 +387,8 @@ exports.addAssociate = async (req, res) => {
         title: "Policy Associate Role",
         message: `You have been assigned as an associate on policy "${policy.title}" with permissions: ${permissions.join(", ")}.`,
         data: { policyId, permissions },
+        severity: "info",
+        source: "system",
       });
     } catch (notifErr) {
       console.error("Notification skipped:", notifErr.message);

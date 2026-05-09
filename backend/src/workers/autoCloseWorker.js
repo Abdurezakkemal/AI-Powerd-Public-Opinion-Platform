@@ -1,10 +1,10 @@
 const cron = require("node-cron");
 const Policy = require("../models/Policy");
 const Vote = require("../models/Vote");
-const Notification = require("../models/Notification");
 const SmsSubscription = require("../models/SmsSubscription");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
+const { createNotification } = require("../services/notificationService");
 
 const autoClosePolicies = async () => {
   try {
@@ -38,7 +38,10 @@ const autoClosePolicies = async () => {
       // Compute final statistics
       const allVotes = await Vote.find({ policyId: policy._id });
       const totalVotes = allVotes.length;
-      const totalRating = allVotes.reduce((sum, v) => sum + v.rating, 0);
+      const totalRating = allVotes.reduce((sum, v) => {
+        // v.value may be numeric for rating/likert, otherwise ignore
+        return sum + (typeof v.value === "number" ? v.value : 0);
+      }, 0);
       const avgRating =
         totalVotes > 0 ? (totalRating / totalVotes).toFixed(2) : 0;
 
@@ -47,9 +50,8 @@ const autoClosePolicies = async () => {
         ...new Set(allVotes.map((v) => v.userId).filter((id) => id)),
       ];
       for (const userId of distinctUserIds) {
-        await Notification.create({
+        await createNotification({
           userId,
-          userRole: "citizen",
           type: "POLICY_CLOSED",
           title: "Policy Closed",
           message: `Policy "${policy.title}" has closed. Final average rating: ${avgRating} stars (${totalVotes} votes).`,
@@ -59,13 +61,14 @@ const autoClosePolicies = async () => {
             averageRating: avgRating,
             totalVotes,
           },
+          severity: "info",
+          source: "system",
         });
       }
 
       // Notify policy owner (planner)
-      await Notification.create({
+      await createNotification({
         userId: policy.createdBy,
-        userRole: "planner",
         type: "POLICY_CLOSED",
         title: "Policy Closed",
         message: `Your policy "${policy.title}" has been automatically closed. Final average rating: ${avgRating} stars (${totalVotes} votes).`,
@@ -75,10 +78,11 @@ const autoClosePolicies = async () => {
           averageRating: avgRating,
           totalVotes,
         },
+        severity: "info",
+        source: "system",
       });
 
       // --- SMS notifications for subscribed SMS voters ---
-      // Collect all unique phone hashes from SMS votes
       const smsVoterPhoneHashes = [
         ...new Set(
           allVotes
@@ -86,7 +90,6 @@ const autoClosePolicies = async () => {
             .map((v) => v.phoneHash),
         ),
       ];
-      // Find which of these have an active subscription
       const subscribedHashes = await SmsSubscription.find(
         { phoneHash: { $in: smsVoterPhoneHashes }, subscribed: true },
         { phoneHash: 1 },
@@ -95,7 +98,6 @@ const autoClosePolicies = async () => {
 
       for (const phoneHash of smsVoterPhoneHashes) {
         if (!subscribedSet.has(phoneHash)) continue;
-        // Simulated SMS – replace with real gateway if needed
         logger.info(
           `[SIMULATED SMS] To subscribed phone hash ${phoneHash}: Policy "${policy.title}" closed. Final average rating: ${avgRating} stars (${totalVotes} votes).`,
         );
@@ -111,7 +113,6 @@ const autoClosePolicies = async () => {
 };
 
 const startAutoCloseWorker = () => {
-  // Run every minute
   cron.schedule("* * * * *", autoClosePolicies);
   logger.info("Auto‑close worker started (cron every minute)");
 };

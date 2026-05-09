@@ -2874,17 +2874,18 @@ All endpoints in this section require authentication with a planner or admin tok
 
 **Request body:**
 
-````json
+```json
 {
-"permissions": ["view_analytics"]
+  "permissions": ["view_analytics"]
 }
 ```
-| Permission          | Description                                      |
-| ------------------- | ------------------------------------------------ |
-| `view_analytics`    | View all analytics for the policy                |
-| `moderate_comments` | Edit, delete, approve, flag comments; retry AI  |
-| `reply_official`    | Post replies marked as official responses        |
-| `export_data`       | Download CSV exports of votes and comments       |
+
+| Permission          | Description                                    |
+| ------------------- | ---------------------------------------------- |
+| `view_analytics`    | View all analytics for the policy              |
+| `moderate_comments` | Edit, delete, approve, flag comments; retry AI |
+| `reply_official`    | Post replies marked as official responses      |
+| `export_data`       | Download CSV exports of votes and comments     |
 
 **Note:** The `permissions` array replaces the existing permissions entirely. To add a permission, include all existing ones plus the new one.
 
@@ -2912,10 +2913,10 @@ All endpoints in this section require authentication with a planner or admin tok
 
 ```json
 {
-"status": "success",
-"data": null,
-"message": "Associate revoked",
-"timestamp": "..."
+  "status": "success",
+  "data": null,
+  "message": "Associate revoked",
+  "timestamp": "..."
 }
 ```
 
@@ -2940,19 +2941,20 @@ All endpoints in this section require authentication with a planner or admin tok
 
 ```json
 {
-"recipientId": "67f1a2b3c4d5e6f7a8b9c0d3",
-"subject": "Policy collaboration request",
-"body": "I would like your help moderating comments on the Clean Water policy."
+  "recipientId": "67f1a2b3c4d5e6f7a8b9c0d3",
+  "subject": "Policy collaboration request",
+  "body": "I would like your help moderating comments on the Clean Water policy."
 }
 ```
+
 **Response (201 Created):**
 
 ```json
 {
-"status": "success",
-"data": { "messageId": "67f1a2b3c4d5e6f7a8b9c0d4" },
-"message": "Message sent",
-"timestamp": "..."
+  "status": "success",
+  "data": { "messageId": "67f1a2b3c4d5e6f7a8b9c0d4" },
+  "message": "Message sent",
+  "timestamp": "..."
 }
 ```
 
@@ -2981,25 +2983,25 @@ All endpoints in this section require authentication with a planner or admin tok
 
 ```json
 {
-"status": "success",
-"data": {
-"messages": [
-{
-"_id": "67f1a2b3c4d5e6f7a8b9c0d4",
-"senderId": { "_id": "...", "email": "plannerA@example.com" },
-"recipientId": "67f1a2b3c4d5e6f7a8b9c0d3",
-"subject": "Policy collaboration request",
-"body": "I would like your help...",
-"read": false,
-"replyToId": null,
-"createdAt": "2026-05-09T12:00:00Z"
-}
-],
-"total": 5,
-"page": 1
-},
-"message": "Inbox retrieved",
-"timestamp": "..."
+  "status": "success",
+  "data": {
+    "messages": [
+      {
+        "_id": "67f1a2b3c4d5e6f7a8b9c0d4",
+        "senderId": { "_id": "...", "email": "plannerA@example.com" },
+        "recipientId": "67f1a2b3c4d5e6f7a8b9c0d3",
+        "subject": "Policy collaboration request",
+        "body": "I would like your help...",
+        "read": false,
+        "replyToId": null,
+        "createdAt": "2026-05-09T12:00:00Z"
+      }
+    ],
+    "total": 5,
+    "page": 1
+  },
+  "message": "Inbox retrieved",
+  "timestamp": "..."
 }
 ```
 
@@ -3042,7 +3044,7 @@ All endpoints in this section require authentication with a planner or admin tok
 
 ```json
 {
-"body": "Sure, I can help. Let me review the policy first."
+  "body": "Sure, I can help. Let me review the policy first."
 }
 ```
 
@@ -3050,10 +3052,10 @@ All endpoints in this section require authentication with a planner or admin tok
 
 ```json
 {
-"status": "success",
-"data": { "messageId": "67f1a2b3c4d5e6f7a8b9c0d5" },
-"message": "Reply sent",
-"timestamp": "..."
+  "status": "success",
+  "data": { "messageId": "67f1a2b3c4d5e6f7a8b9c0d5" },
+  "message": "Reply sent",
+  "timestamp": "..."
 }
 ```
 
@@ -3064,6 +3066,119 @@ All endpoints in this section require authentication with a planner or admin tok
 | 400    | VALIDATION_ERROR | "body required"                    |
 | 403    | FORBIDDEN        | "You cannot reply to this message" |
 | 404    | NOT_FOUND        | "Original message not found"       |
+
+## 12. Notifications & Smart Alerts (Real‑time)
+
+### 12.1 Overview
+
+The platform generates in‑app notifications for important events: policy closures, comment replies, appeal resolutions, associate assignments, messages, and **smart alerts** (vote surges, rating drops, emerging topics).
+All notifications are stored in the database and can be retrieved via the endpoints described in section 7.8–7.10.
+
+In addition, the backend uses **Socket.IO** to push notifications instantly to connected front‑end clients (web or mobile). No polling is required.
+
+### 12.2 WebSocket Connection
+
+**Endpoint:** `ws://your-domain.com` (or `http://localhost:5000` for local development)
+Use the Socket.IO client library in your frontend.
+
+**Authentication:**
+Pass the user’s JWT token as an `auth` object during connection:
+
+```javascript
+const socket = io("http://localhost:5000", {
+  auth: { userId: "your_user_id" }, // userId is the MongoDB ObjectId
+});
+```
+
+**Note:** The backend expects `userId` in the handshake. It then joins a room named `user:<userId>` and sends all notifications for that user to that room only.
+
+**Events:**
+
+| Event name       | Payload                                | Description                                                         |
+| ---------------- | -------------------------------------- | ------------------------------------------------------------------- |
+| `notification`   | A full `Notification` object (JSON)    | Sent whenever a new notification is created for the connected user. |
+| (future) `alert` | Custom alert object (to be documented) | Reserved for future critical real‑time alerts.                      |
+
+**Example front‑end listener (Socket.IO v4):**
+
+```javascript
+socket.on("notification", (notification) => {
+  console.log("New notification:", notification);
+  // display in UI, update badge, etc.
+});
+```
+
+### 12.3 Notification Types (enum)
+
+The `type` field of a notification can be one of the following values:
+
+| Type                 | Trigger                                                                                           | Severity  |
+| -------------------- | ------------------------------------------------------------------------------------------------- | --------- |
+| `POLICY_ACTIVATED`   | Policy becomes active (auto‑activation or manual).                                                | `info`    |
+| `POLICY_CLOSED`      | Policy ends (auto‑closure or manual).                                                             | `info`    |
+| `POLICY_EXTENDED`    | End date of a policy is extended.                                                                 | `info`    |
+| `ASSOCIATE_ASSIGNED` | A planner is assigned as associate to another planner’s policy.                                   | `info`    |
+| `MESSAGE_RECEIVED`   | A new internal message is received.                                                               | `info`    |
+| `COMMENT_REPLY`      | Someone replies to a comment you wrote.                                                           | `info`    |
+| `COMMENT_FLAGGED`    | A comment reaches 3 reports and is flagged for moderation.                                        | `warning` |
+| `COMMENT_APPEAL`     | A citizen appeals a moderation decision.                                                          | `info`    |
+| `APPEAL_RESOLVED`    | A planner resolves an appeal.                                                                     | `info`    |
+| `VOTE_SURGE`         | Real‑time anomaly: vote rate exceeds 3× the baseline (last 6h).                                   | `warning` |
+| `RATING_DROP`        | Real‑time anomaly: average rating drops by more than 1.0 point within an hour.                    | `warning` |
+| `EMERGING_TOPIC`     | A keyword’s frequency increases >200% compared to the 7‑day baseline and appears >5 times in 24h. | `info`    |
+
+### 12.4 Notification Fields
+
+Each notification document returned by the API (section 7.8) contains the following fields:
+
+| Field       | Type    | Description                                                           |
+| ----------- | ------- | --------------------------------------------------------------------- |
+| `_id`       | string  | Unique notification ID.                                               |
+| `userId`    | string  | User for whom the notification is intended.                           |
+| `userRole`  | string  | `citizen`, `planner`, or `admin` (denormalised for easier filtering). |
+| `type`      | string  | One of the enum values above.                                         |
+| `title`     | string  | Short headline.                                                       |
+| `message`   | string  | Detailed text.                                                        |
+| `data`      | object  | Optional additional data (e.g., `{ policyId, commentId }`).           |
+| `read`      | boolean | `true` if the user has viewed the notification.                       |
+| `severity`  | string  | `info`, `warning`, or `critical`. Smart alerts are usually `warning`. |
+| `source`    | string  | `system` (regular user‑triggered) or `alert` (automated anomaly).     |
+| `createdAt` | string  | ISO timestamp.                                                        |
+
+### 12.5 Smart Alerts (Automated Anomaly Detection)
+
+The system continuously monitors voting activity in real time (after each vote) and runs a background cron job every 6 hours for emerging topics.
+
+#### 12.5.1 Vote Surge
+
+- **Detection:** After each vote, the backend counts the number of votes cast in the last hour and compares it to the average of the previous 6 hours (excluding the last hour).
+- **Threshold:** Surge = `current_hour_votes > 3 * baseline_hourly_rate`.
+- **Notification:** Sent to the policy owner and all associates with `view_analytics` permission.
+- **Example message:** _Policy “Clean Water Initiative” received 45 votes in the last hour (5× normal)._
+
+#### 12.5.2 Rating Drop
+
+- **Detection:** Only for numeric poll types (`rating`, `likert`). Compares the average rating of the last hour with the average of the previous 6 hours (excluding last hour).
+- **Threshold:** `baseline_avg - last_hour_avg > 1.0`.
+- **Notification:** Sent to the policy owner and all associates (same as surge).
+- **Example message:** _Policy “Clean Water Initiative” average rating dropped from 4.2 to 2.9 in the last hour._
+
+#### 12.5.3 Emerging Topics
+
+- **Detection:** Every 6 hours, the cron job analyses keywords from all approved comments of the last 24 hours.
+  Keywords are extracted from the AI analysis of top‑level comments.
+  It compares frequencies with a rolling 7‑day baseline stored in Redis.
+- **Threshold:** Keyword count > 5 and increase > 200% relative to baseline.
+- **Notification:** Sent to **all planners** (all planners receive a single notification about the emerging topic).
+- **Example message:** _New trending topic: “drought” (12 mentions, +300%)._
+
+### 12.6 Notification Endpoints (Already Documented)
+
+- `GET /users/me/notifications` – list notifications (7.8)
+- `PATCH /users/me/notifications/:id/read` – mark single as read (7.9)
+- `PATCH /users/me/notifications/read-all` – mark all as read (7.10)
+
+These endpoints work for all notification types, including smart alerts.
 
 ## Appendix: Rate Limiting Summary
 
@@ -3081,4 +3196,3 @@ All endpoints in this section require authentication with a planner or admin tok
 | `GET /analytics/*` (all analytics endpoints) | 30 requests  | 1 minute    | Per user (by JWT) |
 | All other `/api` endpoints                   | 100 requests | 15 minutes  | Per IP            |
 | `/sms/receive`                               | 3 votes      | 24 hours    | Per phone number  |
-````
