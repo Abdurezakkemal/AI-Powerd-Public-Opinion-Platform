@@ -1,5 +1,4 @@
 const Comment = require("../models/Comment");
-const Vote = require("..//models/Vote");
 const Policy = require("../models/Policy");
 const User = require("../models/User");
 const logger = require("../utils/logger");
@@ -10,148 +9,433 @@ const {
   ErrorCodes,
 } = require("../utils/responseHelper");
 
-// Add a comment to an existing vote (no rating needed)
-exports.addCommentToVote = async (req, res) => {
+// ========== POST COMMENT (top‑level or reply) ==========
+exports.postComment = async (req, res) => {
   try {
-    const { voteId } = req.params;
-    const { comment } = req.body;
-
-    if (!comment || comment.trim().length === 0) {
+    const { policyId, parentCommentId, text } = req.body;
+    if (!policyId || !text) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Comment text is required",
+        "policyId and text are required",
         null,
         400,
       );
     }
-    if (comment.length > 500) {
+    if (text.length < 1 || text.length > 2000) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Comment too long (max 500 characters)",
+        "Comment must be 1–2000 characters",
         null,
         400,
       );
     }
 
-    // Find the vote and check ownership
-    const vote = await Vote.findById(voteId).populate("policyId");
-    if (!vote) {
-      return sendError(res, ErrorCodes.NOT_FOUND, "Vote not found", null, 404);
-    }
-
-    // --- DEBUG LOGS ---
-    console.log("\n=== DEBUG OWNERSHIP ===");
-    console.log("vote.userId:", vote.userId);
-    console.log("typeof vote.userId:", typeof vote.userId);
-    console.log(
-      "vote.userId as string:",
-      vote.userId ? vote.userId.toString() : "null",
-    );
-    console.log("req.user.id:", req.user.id);
-    console.log("typeof req.user.id:", typeof req.user.id);
-    console.log("req.user.id as string:", req.user.id.toString());
-    console.log(
-      "Comparison (using .toString()):",
-      vote.userId && vote.userId.toString() === req.user.id.toString(),
-    );
-    console.log("========================\n");
-
-    // Convert both to strings for reliable comparison
-    const voteUserId = vote.userId?.toString();
-    const currentUserId = req.user.id?.toString();
-    if (!voteUserId || voteUserId !== currentUserId) {
+    const policy = await Policy.findById(policyId);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    if (!["active", "paused"].includes(policy.status)) {
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
-        "You can only comment on your own votes",
+        "Comments only allowed on active/paused policies",
         null,
         403,
       );
     }
-    // Check if a comment already exists for this vote
-    const existingComment = await Comment.findOne({ voteId });
-    if (existingComment) {
-      return sendError(
-        res,
-        ErrorCodes.ALREADY_VOTED,
-        "You have already commented on this vote",
-        null,
-        409,
-      );
+
+    if (parentCommentId) {
+      const parent = await Comment.findById(parentCommentId);
+      if (!parent || parent.policyId.toString() !== policyId) {
+        return sendError(
+          res,
+          ErrorCodes.NOT_FOUND,
+          "Parent comment not found in this policy",
+          null,
+          404,
+        );
+      }
     }
 
-    // Verify the policy is still active (optional)
-    const policy = vote.policyId;
-    if (policy.status !== "active") {
-      return sendError(
-        res,
-        ErrorCodes.FORBIDDEN,
-        "Cannot comment on a policy that is not active",
-        null,
-        403,
-      );
-    }
-    const now = new Date();
-    if (now < policy.startDate || now > policy.endDate) {
-      return sendError(
-        res,
-        ErrorCodes.VOTING_CLOSED,
-        "Voting period is closed, cannot add comment",
-        null,
-        400,
-      );
-    }
+    const status = parentCommentId ? "approved" : "processing";
 
-    // Create the comment linked to the vote
-    const commentDoc = new Comment({
-      voteId: vote._id,
-      policyId: vote.policyId,
+    const comment = new Comment({
+      policyId,
       userId: req.user.id,
-      rating: vote.rating,
-      comment: comment.trim(),
-      processed: false,
-      status: "processing",
+      parentCommentId: parentCommentId || null,
+      text,
+      status,
+      reportCount: 0,
     });
-    await commentDoc.save();
+    await comment.save();
+
+    // Notify parent comment author (if reply)
+    if (parentCommentId) {
+      const parent = await Comment.findById(parentCommentId).populate(
+        "userId",
+        "email",
+      );
+      if (parent && parent.userId._id.toString() !== req.user.id.toString()) {
+        const Notification = require("../models/Notification");
+        await Notification.create({
+          userId: parent.userId._id,
+          userRole: "citizen",
+          type: "COMMENT_REPLY",
+          title: "New reply to your comment",
+          message: `${req.user.id} replied: ${text.slice(0, 100)}...`,
+          data: { policyId, commentId: comment._id },
+        });
+      }
+    }
 
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
-      action: "ADD_COMMENT",
+      action: "POST_COMMENT",
       targetType: "Comment",
-      targetId: commentDoc._id,
-      details: {
-        voteId,
-        policyId: vote.policyId,
-        commentLength: comment.length,
-      },
+      targetId: comment._id,
+      details: { policyId, parentCommentId, textPreview: text.slice(0, 100) },
       req,
     });
 
-    logger.info(`User ${req.user.id} added comment to vote ${voteId}`);
-    return sendSuccess(
-      res,
-      { commentId: commentDoc._id },
-      "Comment added successfully. AI will process it.",
-      201,
-    );
+    logger.info(`User ${req.user.id} posted comment on policy ${policyId}`);
+    return sendSuccess(res, { commentId: comment._id }, "Comment posted", 201);
   } catch (err) {
-    if (err.code === 11000) {
-      return sendError(
-        res,
-        ErrorCodes.ALREADY_VOTED,
-        "A comment already exists for this vote",
-        null,
-        409,
-      );
-    }
-    logger.error({ error: err.message, stack: err.stack }, "Add comment error");
+    console.error("Full error in postComment:", err);
+    logger.error({ error: err.message }, "Post comment error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to add comment",
+      "Failed to post comment",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== REPORT COMMENT ==========
+exports.reportComment = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { reason } = req.body;
+    if (!reason)
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Reason required",
+        null,
+        400,
+      );
+
+    const comment = await Comment.findById(commentId);
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+
+    comment.reportCount += 1;
+    if (comment.reportCount >= 3) {
+      comment.status = "flagged";
+    }
+    await comment.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "REPORT_COMMENT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { reason, newReportCount: comment.reportCount },
+      req,
+    });
+
+    if (comment.reportCount >= 3) {
+      const policy = await Policy.findById(comment.policyId);
+      if (policy) {
+        const Notification = require("../models/Notification");
+        await Notification.create({
+          userId: policy.createdBy,
+          userRole: "planner",
+          type: "COMMENT_FLAGGED",
+          title: "Comment flagged for review",
+          message: `Comment #${commentId} has been reported ${comment.reportCount} times.`,
+          data: { commentId, policyId: comment.policyId },
+        });
+      }
+    }
+
+    return sendSuccess(res, null, "Comment reported. Moderators will review.");
+  } catch (err) {
+    logger.error({ error: err.message }, "Report comment error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to report comment",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== MODERATION ENDPOINTS (for planners/admins) ==========
+exports.moderateComment = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { status, sentiment, keywords, text } = req.body;
+    const allowedStatuses = ["approved", "flagged", "deleted"];
+    if (status && !allowedStatuses.includes(status)) {
+      return sendError(res, ErrorCodes.VALIDATION, "Invalid status", null, 400);
+    }
+
+    const comment = await Comment.findById(commentId).populate("policyId");
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+
+    const isAdmin = req.user.role === "admin";
+    const isOwner =
+      comment.policyId.createdBy.toString() === req.user.id.toString();
+    if (!isAdmin && !isOwner) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "No permission to moderate this comment",
+        null,
+        403,
+      );
+    }
+
+    if (status) comment.status = status;
+    if (sentiment) comment.sentiment = sentiment;
+    if (keywords) comment.keywords = keywords;
+    if (text !== undefined) {
+      if (!comment.editedHistory) comment.editedHistory = [];
+      comment.editedHistory.push({ text: comment.text, editedAt: new Date() });
+      comment.text = text;
+      comment.updatedAt = new Date();
+    }
+    await comment.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "MODERATE_COMMENT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { changes: { status, sentiment, keywords, textEdited: !!text } },
+      req,
+    });
+
+    return sendSuccess(
+      res,
+      { commentId: comment._id, status: comment.status },
+      "Comment moderated",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Moderate comment error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to moderate comment",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== APPEAL A MODERATION DECISION ==========
+exports.appealComment = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { reason } = req.body;
+    if (!reason)
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Appeal reason required",
+        null,
+        400,
+      );
+
+    const comment = await Comment.findById(commentId).populate("policyId");
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+    if (comment.userId.toString() !== req.user.id.toString()) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You can only appeal your own comments",
+        null,
+        403,
+      );
+    }
+    if (comment.status !== "flagged" && comment.status !== "deleted") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Only flagged or deleted comments can be appealed",
+        null,
+        400,
+      );
+    }
+
+    comment.appeal = {
+      reason,
+      status: "pending",
+      createdAt: new Date(),
+    };
+    await comment.save();
+
+    const Notification = require("../models/Notification");
+    await Notification.create({
+      userId: comment.policyId.createdBy,
+      userRole: "planner",
+      type: "COMMENT_APPEAL",
+      title: "Comment appeal submitted",
+      message: `User appeals the moderation of comment #${commentId}: ${reason.slice(0, 100)}`,
+      data: { commentId, policyId: comment.policyId },
+    });
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "APPEAL_COMMENT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { reason },
+      req,
+    });
+
+    return sendSuccess(
+      res,
+      null,
+      "Appeal submitted. The policy maker will review.",
+    );
+  } catch (err) {
+    console.error("Full error in appealComment:", err);
+    logger.error({ error: err.message, stack: err.stack }, "Appeal error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to submit appeal",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== RESOLVE APPEAL (planner only) ==========
+exports.resolveAppeal = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { decision, note } = req.body;
+    if (!["approve", "reject"].includes(decision)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Decision must be approve or reject",
+        null,
+        400,
+      );
+    }
+
+    const comment = await Comment.findById(commentId).populate("policyId");
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+    if (!comment.appeal || comment.appeal.status !== "pending") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "No pending appeal for this comment",
+        null,
+        400,
+      );
+    }
+
+    const isAdmin = req.user.role === "admin";
+    const isOwner =
+      comment.policyId.createdBy.toString() === req.user.id.toString();
+    if (!isAdmin && !isOwner) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "No permission to resolve this appeal",
+        null,
+        403,
+      );
+    }
+
+    if (decision === "approve") {
+      comment.status = "approved";
+      comment.appeal.status = "resolved_approved";
+    } else {
+      comment.status = "flagged";
+      comment.appeal.status = "resolved_rejected";
+    }
+    comment.appeal.resolvedAt = new Date();
+    comment.appeal.resolvedBy = req.user.id;
+    comment.appeal.resolutionNote = note || "";
+    await comment.save();
+
+    const Notification = require("../models/Notification");
+    await Notification.create({
+      userId: comment.userId,
+      userRole: "citizen",
+      type: "APPEAL_RESOLVED",
+      title: `Your appeal has been ${decision === "approve" ? "approved" : "rejected"}`,
+      message: note || `The moderator decided to ${decision} your appeal.`,
+      data: { commentId },
+    });
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "RESOLVE_APPEAL",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { decision, note },
+      req,
+    });
+
+    return sendSuccess(
+      res,
+      null,
+      `Appeal ${decision}d. Comment status updated.`,
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Resolve appeal error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to resolve appeal",
       null,
       500,
     );

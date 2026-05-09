@@ -66,6 +66,29 @@ const limiters = {
     keyPrefix: "rl:planner:request",
     keyGenerator: (req) => req.user?.id || req.ip,
   }),
+  // Report comment: 5 per minute per user
+  reportComment: createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 5,
+    keyPrefix: "rl:report:comment",
+    keyGenerator: (req) => req.user?.id || req.ip,
+  }),
+
+  // Appeal comment: 3 per day per user
+  appealComment: createRateLimiter({
+    windowMs: 24 * 60 * 60 * 1000,
+    max: 3,
+    keyPrefix: "rl:appeal:comment",
+    keyGenerator: (req) => req.user?.id || req.ip,
+  }),
+
+  // Moderate comment: 30 per minute per user (planners/admin only)
+  moderateComment: createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 30,
+    keyPrefix: "rl:moderate:comment",
+    keyGenerator: (req) => req.user?.id || req.ip,
+  }),
 };
 
 module.exports = limiters;

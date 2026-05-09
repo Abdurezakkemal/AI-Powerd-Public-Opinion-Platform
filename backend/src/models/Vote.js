@@ -6,27 +6,30 @@ const voteSchema = new mongoose.Schema({
     ref: "Policy",
     required: true,
   },
-  region: { type: String, default: null },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
-  phoneHash: { type: String },
+  phoneHash: { type: String, default: null },
   channel: { type: String, enum: ["app", "sms"], required: true },
-  rating: { type: Number, min: 1, max: 5, required: true },
+  value: { type: mongoose.Schema.Types.Mixed, required: true }, // depends on pollType
+  region: { type: String, default: null }, // snapshot
+  demographics: {
+    ageRange: String,
+    gender: String,
+    occupation: String,
+    education: String,
+  },
   createdAt: { type: Date, default: Date.now },
 });
 
-// Partial unique index for app votes (only when userId is an ObjectId, i.e., not null)
+// Partial unique indexes
 voteSchema.index(
   { policyId: 1, userId: 1 },
   { unique: true, partialFilterExpression: { userId: { $type: "objectId" } } },
 );
-
-// Partial unique index for SMS votes (only when phoneHash is a string, i.e., not null)
 voteSchema.index(
   { policyId: 1, phoneHash: 1 },
   { unique: true, partialFilterExpression: { phoneHash: { $type: "string" } } },
 );
-
-// Optional: index for date queries
 voteSchema.index({ createdAt: -1 });
+voteSchema.index({ policyId: 1, createdAt: -1 }); // for timeseries
 
 module.exports = mongoose.model("Vote", voteSchema);

@@ -411,18 +411,7 @@ Query parameters (all optional):
         "startDate": "2026-05-01T00:00:00Z",
         "endDate": "2026-06-30T23:59:59Z",
         "status": "active",
-        "averageRating": 0,
-        "totalVotes": 0
-      },
-      {
-        "id": "67f1a2b3c4d5e6f7a8b9c0d2",
-        "title": "Temporary Pause Test",
-        "description": "Policy temporarily suspended",
-        "policyCode": "PAUSE123",
-        "targetRegions": ["Addis Ababa"],
-        "startDate": "2026-05-01T00:00:00Z",
-        "endDate": "2026-06-30T23:59:59Z",
-        "status": "paused",
+        "pollType": "rating",
         "averageRating": 0,
         "totalVotes": 0
       }
@@ -431,32 +420,21 @@ Query parameters (all optional):
     "page": 1
   },
   "message": "Policies retrieved successfully",
-  "timestamp": "..."
+  "timestamp": "2026-05-09T12:00:00Z"
 }
 ```
-
-**Error responses:**
-
-| Status | Code                    | Message                               |
-| ------ | ----------------------- | ------------------------------------- |
-| 401    | `UNAUTHORIZED`          | `"Access denied. No token provided."` |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve policies"`       |
 
 ### 3.2 Get single policy
 
 **`GET /policies/:id`**
 
-Path parameter:
+**Path parameter:**
 
 | Parameter | Type   | Description                  |
 | --------- | ------ | ---------------------------- |
 | `id`      | string | Policy ID (MongoDB ObjectId) |
 
-**Access rules:**
-
-- **Citizens**: can only view policies that are `active` or `paused` **and** target their region. All other policies return **`404 Not Found`**.
-- **Planners**: view their own policies (any status) and other planners' `active`, `paused`, `closed` policies. Other planners' `draft` or `published` policies return **`404 Not Found`**.
-- **Admins**: can view any policy.
+**Access rules:** Same as visibility table.
 
 **Response (200 OK):**
 
@@ -464,56 +442,111 @@ Path parameter:
 {
   "status": "success",
   "data": {
-    "id": "...",
-    "title": "...",
-    "description": "...",
-    "policyCode": "...",
-    "targetRegions": ["..."],
-    "startDate": "...",
-    "endDate": "...",
-    "status": "...",
+    "id": "67f1a2b3c4d5e6f7a8b9c0d1",
+    "title": "Clean Water Initiative",
+    "description": "Improving access to clean water in rural areas",
+    "policyCode": "CLEAN123",
+    "targetRegions": ["Addis Ababa", "Oromia"],
+    "startDate": "2026-05-01T00:00:00Z",
+    "endDate": "2026-06-30T23:59:59Z",
+    "status": "active",
+    "pollType": "multipleChoice",
+    "pollOptions": [
+      { "id": "edu", "text": "Education", "shortCode": "1" },
+      { "id": "health", "text": "Healthcare", "shortCode": "2" }
+    ],
+    "maxSelections": 2,
+    "likertLabels": [
+      "Very Dissatisfied",
+      "Dissatisfied",
+      "Neutral",
+      "Satisfied",
+      "Very Satisfied"
+    ],
+    "rankedChoiceMaxRank": 3,
+    "relevanceFactors": {
+      "women": false,
+      "youth": true,
+      "farmers": false,
+      "urban": false,
+      "rural": false,
+      "privateSector": false,
+      "government": false
+    },
+    "citizenAnalyticsVisibility": {
+      "showResults": true,
+      "showBreakdown": false,
+      "showComments": false,
+      "showSentiment": false,
+      "allowTimeFilter": false
+    },
+    "topics": ["Water", "Infrastructure"],
     "createdBy": "planner@example.com",
-    "createdAt": "..."
+    "createdAt": "2026-05-01T10:00:00Z"
   },
   "message": "Policy retrieved successfully",
-  "timestamp": "..."
+  "timestamp": "2026-05-09T12:00:00Z"
 }
 ```
 
-**Error responses (updated):**
-
-| Status | Code           | Message                                                                                                                                                              |
-| ------ | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 401    | `UNAUTHORIZED` | `"Access denied. No token provided."`                                                                                                                                |
-| 404    | `NOT_FOUND`    | `"Policy not found"` (policy does not exist, citizen tries to access non‑active/paused or wrong‑region policy, or planner tries to access another's draft/published) |
-
-**Note:** Citizens never receive a `403` for inaccessible policies – only `404` to hide existence.
+**Error responses (404):** Policy not found (or hidden due to visibility rules).
 
 ### 3.3 Create policy
 
 **`POST /policies`**
 
-Roles: planner, admin
+**Roles:** planner, admin
+**Request body:**
 
-Request body:
-
-| Field           | Type              | Required | Description                                   |
-| --------------- | ----------------- | -------- | --------------------------------------------- |
-| `title`         | string            | yes      | Max 200 characters                            |
-| `description`   | string            | yes      | Max 2000 characters                           |
-| `targetRegions` | array of strings  | yes      | At least one region (e.g., `["Addis Ababa"]`) |
-| `startDate`     | string (ISO 8601) | yes      | Must be in the future and before `endDate`    |
-| `endDate`       | string (ISO 8601) | yes      | Must be after `startDate`                     |
+```json
+{
+  "title": "Binary Test 2026",
+  "description": "Vote yes/no",
+  "targetRegions": ["Addis Ababa"],
+  "startDate": "2026-06-01T00:00:00Z",
+  "endDate": "2026-12-31T23:59:59Z",
+  "pollType": "binary", // one of: binary, multipleChoice, likert, approval, rating, rankedChoice
+  "pollOptions": [
+    // required for multipleChoice and rankedChoice
+    { "id": "opt1", "text": "Option 1", "shortCode": "1" }
+  ],
+  "maxSelections": 1, // for multipleChoice
+  "likertLabels": [
+    // for likert, 5 strings
+    "Very Dissatisfied",
+    "Dissatisfied",
+    "Neutral",
+    "Satisfied",
+    "Very Satisfied"
+  ],
+  "rankedChoiceMaxRank": 3, // for rankedChoice
+  "relevanceFactors": {
+    // all default false
+    "women": false,
+    "youth": true,
+    "farmers": false,
+    "urban": false,
+    "rural": false,
+    "privateSector": false,
+    "government": false
+  },
+  "citizenAnalyticsVisibility": {
+    "showResults": true,
+    "showBreakdown": false,
+    "showComments": false,
+    "showSentiment": false,
+    "allowTimeFilter": false
+  },
+  "topics": ["Agriculture", "Water"]
+}
+```
 
 **Response (201 Created):**
 
 ```json
 {
   "status": "success",
-  "data": {
-    "id": "...",
-    "policyCode": "CLEAN123"
-  },
+  "data": { "id": "67f1a2b3...", "policyCode": "CLEAN123" },
   "message": "Policy created as draft. You can edit it before activating.",
   "timestamp": "..."
 }
@@ -521,268 +554,198 @@ Request body:
 
 **Error responses:**
 
-| Status | Code                    | Message                                                                            |
-| ------ | ----------------------- | ---------------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`      | `"All fields are required: title, description, targetRegions, startDate, endDate"` |
-| 400    | `VALIDATION_ERROR`      | `"Start date cannot be in the past. Please set a future start date."`              |
-| 400    | `VALIDATION_ERROR`      | `"Start date must be before end date"`                                             |
-| 403    | `FORBIDDEN`             | `"Access denied. Insufficient permissions."` (if role not planner/admin)           |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Unable to generate a unique policy code. Please try again."`                     |
+| Status | Code               | Message                                                                            |
+| ------ | ------------------ | ---------------------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Missing required fields: title, description, targetRegions, startDate, endDate"` |
+| 400    | `VALIDATION_ERROR` | `"Start date cannot be in the past."`                                              |
+| 400    | `VALIDATION_ERROR` | `"Start date must be before end date"`                                             |
+| 400    | `VALIDATION_ERROR` | `"multipleChoice requires pollOptions and maxSelections >=1"`                      |
+| 400    | `VALIDATION_ERROR` | `"likertLabels must have exactly 5 strings"`                                       |
+| 409    | `DUPLICATE_ENTRY`  | `"Policy code already exists"` (rare)                                              |
+| 500    | `INTERNAL`         | `"Failed to create policy"`                                                        |
 
-### 3.4 Update policy
+### 3.4 Update policy (draft only)
 
 **`PUT /policies/:id`**
 
-**Roles:** creator planner or admin  
-**Conditions:** Policy must be in `draft` status
+**Roles:** policy owner (planner) or admin  
+**Condition:** Policy status must be `draft`.
 
-**Request body** (all fields optional):
-
-| Field           | Type   | Description                                        |
-| --------------- | ------ | -------------------------------------------------- |
-| `title`         | string | New title                                          |
-| `description`   | string | New description                                    |
-| `targetRegions` | array  | New target regions                                 |
-| `startDate`     | string | New start date (must be future and before endDate) |
-| `endDate`       | string | New end date (must be after startDate)             |
+**Request body:** same fields as create (all optional). Partial updates allowed.
 
 **Response (200 OK):** returns the updated policy object (same shape as `GET /policies/:id`).
 
 **Error responses:**
 
-| Status | Code               | Message                                                                                                  |
-| ------ | ------------------ | -------------------------------------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Start date cannot be in the past."`                                                                    |
-| 400    | `VALIDATION_ERROR` | `"Start date must be before end date."`                                                                  |
-| 400    | `VALIDATION_ERROR` | `"End date must be after start date."`                                                                   |
-| 403    | `FORBIDDEN`        | `"Only draft policies can be edited. Published, active, paused, or closed policies cannot be modified."` |
-| 403    | `FORBIDDEN`        | `"You do not have permission to edit this policy"` (not creator)                                         |
-| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or the policy is draft/published and you are not the owner)     |
+| Status | Code               | Message                                                  |
+| ------ | ------------------ | -------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Start date cannot be in the past."`                    |
+| 400    | `VALIDATION_ERROR` | `"Start date must be before end date"`                   |
+| 403    | `FORBIDDEN`        | `"Only draft policies can be edited."`                   |
+| 403    | `FORBIDDEN`        | `"You do not have permission to edit this policy"`       |
+| 404    | `NOT_FOUND`        | `"Policy not found"` (or hidden due to visibility rules) |
 
 ### 3.5 Publish policy (draft → published/active)
 
 **`PATCH /policies/:id/publish`**
 
-**Roles:** planner, admin  
-**Condition:** Policy status must be `draft`.  
+**Roles:** policy owner (planner) or admin  
+**Condition:** Policy status must be `draft`.
+
 **Behaviour:**
 
-- If the current date is within the policy's `startDate` and `endDate`, the policy becomes **active** immediately.
-- If the current date is before `startDate`, the policy becomes **published** (will be auto-activated by the worker when `startDate` is reached).
-- If the current date is after `endDate`, an error is returned.
-
-**Request body:** none
+- If current date is within `startDate` and `endDate` → status becomes `active` immediately.
+- If current date is before `startDate` → status becomes `published` (auto‑activation will happen later).
+- If current date is after `endDate` → error (cannot publish ended policy).
 
 **Response (200 OK):**
 
 ```json
 {
   "status": "success",
-  "data": {
-    "id": "...",
-    "status": "active" // or "published"
-  },
-  "message": "Policy activated immediately because its start date has already passed." // or "Policy published. It will be automatically activated on its start date."
+  "data": { "id": "...", "status": "active" },
+  "message": "Policy activated immediately because its start date has already passed.",
+  "timestamp": "..."
 }
 ```
 
 **Error responses:**
 
-| Status | Code               | Message                                                                                              |
-| ------ | ------------------ | ---------------------------------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only draft policies can be published. Current status: ..."`                                        |
-| 400    | `VALIDATION_ERROR` | `"Cannot publish a policy that has already ended."`                                                  |
-| 403    | `FORBIDDEN`        | `"You do not have permission to publish this policy"`                                                |
-| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or the policy is draft/published and you are not the owner) |
+| Status | Code               | Message                                                       |
+| ------ | ------------------ | ------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Only draft policies can be published. Current status: ..."` |
+| 400    | `VALIDATION_ERROR` | `"Cannot publish a policy that has already ended."`           |
+| 403    | `FORBIDDEN`        | `"You do not have permission to publish this policy"`         |
+| 404    | `NOT_FOUND`        | `"Policy not found"`                                          |
 
 ### 3.6 Unpublish policy (published → draft)
 
 **`PATCH /policies/:id/unpublish`**
 
-**Roles:** planner, admin  
-**Condition:** Policy status must be `published`.  
-**Behaviour:** Moves the policy back to `draft` status. This allows the planner to edit or delete the policy.
-
-**Request body:** none
+**Roles:** policy owner (planner) or admin  
+**Condition:** Policy status must be `published`.
 
 **Response (200 OK):**
 
 ```json
 {
   "status": "success",
-  "data": {
-    "id": "...",
-    "status": "draft"
-  },
+  "data": { "id": "...", "status": "draft" },
   "message": "Policy unpublished and moved back to draft.",
   "timestamp": "..."
 }
 ```
 
-**Error responses:**
+### 3.7 Activate policy (published → active)
 
-| Status | Code               | Message                                                                                              |
-| ------ | ------------------ | ---------------------------------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only published policies can be unpublished. Current status: ..."`                                  |
-| 403    | `FORBIDDEN`        | `"You do not have permission to unpublish this policy"`                                              |
-| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or the policy is draft/published and you are not the owner) |
+**`PATCH /policies/:id/activate`**
 
-### 3.7 Close policy
-
-**`POST /policies/:id/close`**
-
-**Roles:** creator planner or admin  
-**Conditions:** Policy status must be `active` or `paused`.  
-**Behaviour:** Changes status to `closed`. No more votes accepted.
+**Roles:** policy owner (planner) or admin  
+**Condition:** Policy status must be `published`. Current date must be within `startDate` and `endDate`.
 
 **Response (200 OK):**
 
 ```json
 {
   "status": "success",
-  "data": {
-    "id": "...",
-    "status": "closed"
-  },
+  "data": { "id": "...", "status": "active" },
+  "message": "Policy activated successfully. Voting is now open.",
+  "timestamp": "..."
+}
+```
+
+### 3.8 Pause policy (active → paused)
+
+**`PATCH /policies/:id/pause`**
+
+**Roles:** policy owner (planner) or admin  
+**Condition:** Policy status must be `active`.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": { "id": "...", "status": "paused" },
+  "message": "Policy paused. Voting temporarily disabled.",
+  "timestamp": "..."
+}
+```
+
+### 3.9 Resume policy (paused → active)
+
+**`PATCH /policies/:id/resume`**
+
+**Roles:** policy owner (planner) or admin  
+**Condition:** Policy status must be `paused`. Current date must be within `startDate` and `endDate`.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": { "id": "...", "status": "active" },
+  "message": "Policy resumed. Voting enabled.",
+  "timestamp": "..."
+}
+```
+
+### 3.10 Close policy (active/paused → closed)
+
+**`POST /policies/:id/close`**
+
+**Roles:** policy owner (planner) or admin  
+**Condition:** Policy status must be `active` or `paused`.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": { "id": "...", "status": "closed" },
   "message": "Policy closed successfully. No more votes will be accepted.",
   "timestamp": "..."
 }
 ```
 
-**Error responses:**
-
-| Status | Code               | Message                                                                    |
-| ------ | ------------------ | -------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only active or paused policies can be closed. Current status: draft"`    |
-| 403    | `FORBIDDEN`        | `"You do not have permission to close this policy"` (not creator)          |
-| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
-
-### 3.8 Activate policy (draft → active)
-
-**`PATCH /policies/:id/activate`**
-
-**Roles:** creator planner or admin  
-**Condition:** Policy status must be `published`.  
-**Behaviour:** Manually activates a published policy before its start date (if needed). Voting will be allowed only if the current date is within `startDate` and `endDate`. Auto‑activation also turns `published` → `active` on the start date.
-
-**Response (200 OK):**
-
-```json
-{
-  "status": "success",
-  "data": {
-    "id": "...",
-    "status": "active"
-  },
-  "message": "Policy activated successfully. Citizens can now vote.",
-  "timestamp": "..."
-}
-```
-
-**Error responses:**
-
-| Status | Code               | Message                                                                    |
-| ------ | ------------------ | -------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only draft policies can be activated. Current status: ..."`              |
-| 400    | `VALIDATION_ERROR` | `"Cannot activate a policy whose end date has already passed"`             |
-| 403    | `FORBIDDEN`        | `"You do not have permission to activate this policy"`                     |
-| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
-
-### 3.9 Pause policy (active → paused)
-
-**`PATCH /policies/:id/pause`**
-
-**Roles:** creator planner or admin  
-**Condition:** Policy status must be `active`.  
-**Behaviour:** Temporarily suspends voting (status becomes `paused`). Citizens will see the policy but cannot vote until it is resumed.
-
-**Response (200 OK):**
-
-```json
-{
-  "status": "success",
-  "data": {
-    "id": "...",
-    "status": "paused"
-  },
-  "message": "Policy paused. Voting is now disabled until resumed.",
-  "timestamp": "..."
-}
-```
-
-**Error responses:**
-
-| Status | Code               | Message                                                                    |
-| ------ | ------------------ | -------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only active policies can be paused. Current status: ..."`                |
-| 403    | `FORBIDDEN`        | `"You do not have permission to pause this policy"`                        |
-| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
-
-### 3.10 Resume policy (paused → active)
-
-**`PATCH /policies/:id/resume`**
-
-**Roles:** creator planner or admin  
-**Condition:** Policy status must be `paused`.  
-**Behaviour:** Reactivates voting (status becomes `active`). The current date must still be within the policy’s `startDate` and `endDate`; otherwise an error is returned.
-
-**Response (200 OK):**
-
-```json
-{
-  "status": "success",
-  "data": {
-    "id": "...",
-    "status": "active"
-  },
-  "message": "Policy resumed. Voting is now active.",
-  "timestamp": "..."
-}
-```
-
-**Error responses:**
-
-| Status | Code               | Message                                                                    |
-| ------ | ------------------ | -------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Only paused policies can be resumed. Current status: ..."`               |
-| 400    | `VALIDATION_ERROR` | `"Cannot resume policy because the voting period has ended."`              |
-| 403    | `FORBIDDEN`        | `"You do not have permission to resume this policy"`                       |
-| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
-
 ### 3.11 Extend policy end date
 
 **`PATCH /policies/:id/extend`**
 
-**Roles:** creator planner or admin  
-**Condition:** Policy status must be `active` or `paused`.  
-**Behaviour:** Changes the `endDate` of the policy. You can extend the deadline (make it later) or shorten it (make it earlier), as long as the new date is after the `startDate` and not in the past.
+**Roles:** policy owner (planner) or admin  
+**Condition:** Policy status must be `active` or `paused`.
 
 **Request body:**
 
 ```json
+{ "newEndDate": "2026-07-31T23:59:59Z" }
+```
+
+**Response (200 OK):**
+
+```json
 {
-  "newEndDate": "2026-07-31T23:59:59Z"
+  "status": "success",
+  "data": { "id": "...", "endDate": "2026-07-31T23:59:59Z" },
+  "message": "Policy end date updated successfully.",
+  "timestamp": "..."
 }
 ```
 
 **Error responses:**
 
-| Status | Code               | Message                                                                    |
-| ------ | ------------------ | -------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Policy must be active or paused to modify end date"`                     |
-| 400    | `VALIDATION_ERROR` | `"newEndDate must be a valid ISO date string"`                             |
-| 400    | `VALIDATION_ERROR` | `"New end date must be after start date"`                                  |
-| 400    | `VALIDATION_ERROR` | `"New end date cannot be in the past"`                                     |
-| 403    | `FORBIDDEN`        | `"You do not have permission to modify this policy"`                       |
-| 404    | `NOT_FOUND`        | `"Policy not found"` (policy ID invalid, or hidden draft/published policy) |
+| Status | Code               | Message                                                |
+| ------ | ------------------ | ------------------------------------------------------ |
+| 400    | `VALIDATION_ERROR` | `"newEndDate must be after start date"`                |
+| 400    | `VALIDATION_ERROR` | `"New end date cannot be in the past"`                 |
+| 403    | `FORBIDDEN`        | `"Only active or paused policies can change end date"` |
 
-### 3.12 Delete draft policy (draft or published)
+### 3.12 Delete policy (draft or published only)
 
 **`DELETE /policies/:id`**
 
-**Roles:** creator planner or admin  
-**Condition:** Policy status must be `draft` or `published`.  
-**Behaviour:** Permanently removes the policy document. For `active` or `paused` policies, use the close endpoint instead. `Closed` policies cannot be deleted.
+**Roles:** policy owner (planner) or admin  
+**Condition:** Policy status must be `draft` or `published` (not `active`, `paused`, or `closed`).
 
 **Response (200 OK):**
 
@@ -795,72 +758,37 @@ Request body:
 }
 ```
 
-**Error responses:**
-
-| Status | Code        | Message                                                                                                     |
-| ------ | ----------- | ----------------------------------------------------------------------------------------------------------- |
-| 403    | `FORBIDDEN` | `"Only draft or published policies can be deleted. For active or paused policies, use the close endpoint."` |
-| 403    | `FORBIDDEN` | `"You do not have permission to delete this policy"` (not creator)                                          |
-| 404    | `NOT_FOUND` | `"Policy not found"` (policy ID invalid, or hidden draft/published policy)                                  |
-
 ### 3.13 Clone policy
 
 **`POST /policies/:id/clone`**
 
 **Roles:** planner or admin (any policy they can view)
 
-**Behaviour:**  
-Creates a new draft policy as a copy of an existing one.
+**Behaviour:**
 
-- Title becomes `original.title + " (Copy)"` (truncated to 200 chars if needed).
+- Creates a new draft policy as a copy of the original.
+- Title becomes `original.title + " (Copy)"` (truncated to 200 chars).
 - A fresh, unique policy code is generated.
 - The logged‑in user becomes the `createdBy` owner.
-- Status is set to `draft`.
-- An audit log entry with action `CLONE_POLICY` is recorded.
-
-**Path parameter:**
-
-| Parameter | Type   | Description               |
-| --------- | ------ | ------------------------- |
-| `id`      | string | ID of the original policy |
-
-**Visibility note:** A planner can only clone policies they are allowed to see. Attempting to clone another planner's draft/published policy returns **`404 Not Found`**.
+- All fields (pollType, pollOptions, relevanceFactors, etc.) are copied.
+- Status set to `draft`.
 
 **Response (201 Created):**
 
 ```json
 {
   "status": "success",
-  "data": {
-    "id": "67f1a2b3c4d5e6f7a8b9c0d1",
-    "policyCode": "NEWCODE"
-  },
+  "data": { "id": "...", "policyCode": "NEWCODE" },
   "message": "Policy cloned successfully. Edit the copy before activating.",
-  "timestamp": "2026-04-29T12:00:00Z"
+  "timestamp": "..."
 }
 ```
-
-**Error responses:**
-
-| Status | Code                    | Message                                                                                          |
-| ------ | ----------------------- | ------------------------------------------------------------------------------------------------ |
-| 404    | `NOT_FOUND`             | `"Original policy not found"` or `"Invalid policy ID format"` (or hidden draft/published policy) |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to clone policy"`                                                                       |
 
 ### 3.14 Policy history
 
 **`GET /policies/:id/history`**
 
-**Roles:** planner (only for policies they own) or admin (any policy)
-**Visibility note:** A planner can only view history of policies they own. Attempting to view history of another planner's draft/published policy returns **`404 Not Found`**.
-**Behaviour:**  
-Returns a chronological list of audit events for the policy (creation, activation, pause, resume, close, clone, deletion, etc.) based on the `auditlogs` collection.
-
-**Path parameter:**
-
-| Parameter | Type   | Description |
-| --------- | ------ | ----------- |
-| `id`      | string | Policy ID   |
+**Roles:** policy owner (planner) or admin
 
 **Response (200 OK):**
 
@@ -877,50 +805,53 @@ Returns a chronological list of audit events for the policy (creation, activatio
           "title": "Clean Water Initiative",
           "policyCode": "CLEAN123"
         },
-        "timestamp": "2026-04-01T10:00:00Z"
+        "timestamp": "2026-05-01T10:00:00Z"
       },
       {
         "action": "ACTIVATE_POLICY",
         "userId": "67f1a2b3...",
         "userRole": "planner",
-        "details": {
-          "policyCode": "CLEAN123",
-          "title": "Clean Water Initiative"
-        },
-        "timestamp": "2026-04-02T11:00:00Z"
+        "details": { "policyCode": "CLEAN123" },
+        "timestamp": "2026-05-02T11:00:00Z"
       }
     ]
   },
   "message": "Policy history retrieved successfully",
-  "timestamp": "2026-04-29T12:00:00Z"
+  "timestamp": "..."
 }
 ```
-
-**Error responses:**
-
-| Status | Code                    | Message                                                                                 |
-| ------ | ----------------------- | --------------------------------------------------------------------------------------- |
-| 403    | `FORBIDDEN`             | `"You do not have permission to view history of this policy"`                           |
-| 404    | `NOT_FOUND`             | `"Policy not found"` or `"Invalid policy ID format"` (or hidden draft/published policy) |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve policy history"`                                                   |
 
 ## 4. Voting & Comment Endpoints
 
-All endpoints in this section require authentication with a citizen token.
+All endpoints in this section require authentication with a valid JWT token (citizen, planner, or admin as noted).
 
-### 4.1 Submit a vote (rating only, with optional immediate comment)
+### 4.1 Submit a vote (supports all poll types)
 
 **`POST /votes`**
 
-Records a user’s rating for a policy. If the `comment` field is provided, a `Comment` document is automatically created and linked to this vote (the AI worker will process it asynchronously).
+**Roles:** citizen  
+**Rate limit:** 30 votes per hour per user (already in global table)
 
 **Request body:**
 
-| Field      | Type    | Required | Description                                           |
-| ---------- | ------- | -------- | ----------------------------------------------------- |
-| `policyId` | string  | yes      | ID of an active policy                                |
-| `rating`   | integer | yes      | 1 to 5 stars                                          |
-| `comment`  | string  | no       | Max 500 characters (if present, a Comment is created) |
+```json
+    {
+      "policyId": "67f1a2b3c4d5e6f7a8b9c0d1",
+      "value": ... ,   // format depends on pollType (see table below)
+      "comment": "Optional comment (max 2000 characters)"
+    }
+```
+
+**`value` formats per poll type**
+
+| Poll Type        | `value` format                                                                  | Example                    |
+| ---------------- | ------------------------------------------------------------------------------- | -------------------------- |
+| `binary`         | `"yes"` or `"no"`                                                               | `"yes"`                    |
+| `multipleChoice` | Array of option IDs (strings)                                                   | `["opt1", "opt3"]`         |
+| `likert`         | Integer 1‑5                                                                     | `4`                        |
+| `approval`       | `"approve"`, `"reject"`, or `"abstain"`                                         | `"approve"`                |
+| `rating`         | Integer 1‑5                                                                     | `5`                        |
+| `rankedChoice`   | Array of option IDs in order of preference (max length = `rankedChoiceMaxRank`) | `["opt2", "opt1", "opt3"]` |
 
 **Response (201 Created):**
 
@@ -928,71 +859,248 @@ Records a user’s rating for a policy. If the `comment` field is provided, a `C
 {
   "status": "success",
   "data": {
-    "voteId": "67f1a2b3c4d5e6f7a8b9c0d1",
-    "commentId": null, // or the comment ID if comment was provided
-    "rating": 5
+    "voteId": "67f1a2b3...",
+    "commentId": "67f1a2b3...", // or null if no comment provided
+    "value": "yes"
   },
-  "message": "Vote recorded successfully" // or "Vote and comment recorded. AI will process comment."
+  "message": "Vote recorded successfully",
+  "timestamp": "..."
 }
 ```
 
 **Error responses:**
 
-| Status | Code                    | Message                                                                                |
-| ------ | ----------------------- | -------------------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`      | `"policyId and rating are required"`                                                   |
-| 400    | `VALIDATION_ERROR`      | `"Rating must be between 1 and 5"`                                                     |
-| 400    | `VALIDATION_ERROR`      | `"Comment too long (max 500 characters)"`                                              |
-| 400    | `VOTING_CLOSED`         | `"Voting is not allowed for this policy at this time. Please check the policy dates."` |
-| 403    | `NOT_VERIFIED`          | `"Please verify your phone number before voting"`                                      |
-| 403    | `FORBIDDEN`             | `"Voting is temporarily paused for this policy"` (status = `paused`)                   |
-| 403    | `FORBIDDEN`             | `"This policy is closed for voting"` (status = `closed`)                               |
-| 404    | `NOT_FOUND`             | `"Policy not found"` (also for `draft` or `published` policies)                        |
-| 409    | `ALREADY_VOTED`         | `"You have already voted on this policy. Each user can vote only once."`               |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to submit vote"`                                                              |
+| Status | Code                    | Message                                                              |
+| ------ | ----------------------- | -------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Invalid vote value for poll type binary"` (or other type mismatch) |
+| 400    | `VALIDATION_ERROR`      | `"Comment too long (max 2000 characters)"`                           |
+| 403    | `NOT_VERIFIED`          | `"Please verify your phone number first"`                            |
+| 403    | `FORBIDDEN`             | `"Voting is temporarily paused for this policy"` (status = `paused`) |
+| 403    | `FORBIDDEN`             | `"This policy is closed for voting"` (status = `closed`)             |
+| 404    | `NOT_FOUND`             | `"Policy not found"` (or policy is not `active`/`paused`)            |
+| 409    | `ALREADY_VOTED`         | `"You have already voted on this policy"`                            |
+| 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many votes. Please wait X minutes."`                           |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to submit vote"`                                            |
 
-### 4.2 Add a comment to an existing vote
+### 4.2 Post a comment (top‑level or reply)
 
-**`POST /comments/:voteId`**
+**`POST /comments`**
 
-Adds a detailed comment to a vote that was previously cast without one (or allows a user to amend their comment – only one comment per vote is allowed). The AI worker will process the comment asynchronously.
+**Roles:** citizen, planner, admin  
+**Rate limit:** 10 per minute per user
+
+**Request body:**
+
+```json
+{
+  "policyId": "67f1a2b3c4d5e6f7a8b9c0d1",
+  "parentCommentId": null, // or an existing comment ID to reply to
+  "text": "This is a comment (1‑2000 characters)"
+}
+```
+
+**Behaviour:**
+
+- Top‑level comments (`parentCommentId` = `null`) are queued for AI processing (sentiment, keywords). Status initially `processing`.
+- Replies (`parentCommentId` provided) are immediately `approved` (no AI processing, but subject to profanity filter).
+- If reply, the parent comment author receives an in‑app notification (`type: "COMMENT_REPLY"`).
+
+**Response (201 Created):**
+
+```json
+{
+  "status": "success",
+  "data": { "commentId": "67f1a2b3..." },
+  "message": "Comment posted",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code                  | Message                                                        |
+| ------ | --------------------- | -------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`    | `"policyId and text are required"`                             |
+| 400    | `VALIDATION_ERROR`    | `"Comment must be 1–2000 characters"`                          |
+| 403    | `FORBIDDEN`           | `"Comments only allowed on active/paused policies"`            |
+| 404    | `NOT_FOUND`           | `"Policy not found"` or `"Parent comment not found in policy"` |
+| 429    | `RATE_LIMIT_EXCEEDED` | `"Too many comments. Please wait a moment."`                   |
+
+### 4.3 Report a comment
+
+**`POST /comments/:commentId/report`**
+
+**Roles:** any authenticated user  
+**Rate limit:** 5 reports per minute per user
 
 **Path parameter:**
 
-| Parameter | Type   | Description                              |
-| --------- | ------ | ---------------------------------------- |
-| `voteId`  | string | ID of an existing vote owned by the user |
+| Parameter   | Type   | Description |
+| ----------- | ------ | ----------- |
+| `commentId` | string | Comment ID  |
 
 **Request body:**
 
-| Field     | Type   | Required | Description        |
-| --------- | ------ | -------- | ------------------ |
-| `comment` | string | yes      | Max 500 characters |
+```json
+{ "reason": "spam" } // one of: spam, hate speech, off‑topic, other
+```
 
-**Response (201 Created):**
+**Behaviour:**
+
+- Increments `reportCount` on the comment.
+- When `reportCount >= 3`, comment status changes to `flagged` and moderators (policy owner + associates) receive a notification (`type: "COMMENT_FLAGGED"`).
+
+**Response (200 OK):**
 
 ```json
 {
   "status": "success",
-  "data": {
-    "commentId": "67f1a2b3c4d5e6f7a8b9c0d2"
-  },
-  "message": "Comment added successfully. AI will process it."
+  "data": null,
+  "message": "Comment reported. Moderators will review.",
+  "timestamp": "..."
 }
 ```
 
 **Error responses:**
 
-| Status | Code                    | Message                                           |
-| ------ | ----------------------- | ------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`      | `"Comment text is required"`                      |
-| 400    | `VALIDATION_ERROR`      | `"Comment too long (max 500 characters)"`         |
-| 403    | `FORBIDDEN`             | `"You can only comment on your own votes"`        |
-| 403    | `FORBIDDEN`             | `"Cannot comment on a policy that is not active"` |
-| 400    | `VOTING_CLOSED`         | `"Voting period is closed, cannot add comment"`   |
-| 404    | `NOT_FOUND`             | `"Vote not found"`                                |
-| 409    | `ALREADY_VOTED`         | `"You have already commented on this vote"`       |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to add comment"`                         |
+| Status | Code                  | Message                            |
+| ------ | --------------------- | ---------------------------------- |
+| 400    | `VALIDATION_ERROR`    | `"Reason required"`                |
+| 404    | `NOT_FOUND`           | `"Comment not found"`              |
+| 429    | `RATE_LIMIT_EXCEEDED` | `"Too many reports. Please wait."` |
+
+### 4.4 Moderate a comment (planner/admin only)
+
+**`PUT /comments/:commentId/moderate`**
+
+**Roles:** policy owner (planner) or admin  
+**Rate limit:** 30 per minute per user
+
+**Path parameter:**
+
+| Parameter   | Type   | Description |
+| ----------- | ------ | ----------- |
+| `commentId` | string | Comment ID  |
+
+**Request body (all fields optional):**
+
+```json
+{
+  "status": "approved", // or "flagged", "deleted"
+  "sentiment": { "label": "positive", "confidence": 0.95 },
+  "keywords": ["water", "access"],
+  "text": "New comment text (if editing)"
+}
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": { "commentId": "...", "status": "approved" },
+  "message": "Comment moderated",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code        | Message                                    |
+| ------ | ----------- | ------------------------------------------ |
+| 403    | `FORBIDDEN` | `"No permission to moderate this comment"` |
+| 404    | `NOT_FOUND` | `"Comment not found"`                      |
+
+### 4.5 Appeal a moderation decision (citizen)
+
+**`POST /comments/:commentId/appeal`**
+
+**Roles:** only the original author of the comment  
+**Rate limit:** 3 appeals per day per user
+
+**Path parameter:**
+
+| Parameter   | Type   | Description |
+| ----------- | ------ | ----------- |
+| `commentId` | string | Comment ID  |
+
+**Request body:**
+
+```json
+{ "reason": "The comment was not offensive. Please reinstate." }
+```
+
+**Behaviour:**
+
+- Creates an embedded appeal record on the comment with status `pending`.
+- Notifies the policy owner (`type: "COMMENT_APPEAL"`).
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Appeal submitted. The policy maker will review.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code                  | Message                                              |
+| ------ | --------------------- | ---------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`    | `"Appeal reason required"`                           |
+| 403    | `FORBIDDEN`           | `"You can only appeal your own comments"`            |
+| 400    | `VALIDATION_ERROR`    | `"Only flagged or deleted comments can be appealed"` |
+| 429    | `RATE_LIMIT_EXCEEDED` | `"Too many appeals. Please try again tomorrow."`     |
+
+### 4.6 Resolve an appeal (planner/admin)
+
+**`POST /comments/:commentId/resolve-appeal`**
+
+**Roles:** policy owner (planner) or admin
+
+**Path parameter:**
+
+| Parameter   | Type   | Description |
+| ----------- | ------ | ----------- |
+| `commentId` | string | Comment ID  |
+
+**Request body:**
+
+```json
+{
+  "decision": "approve", // or "reject"
+  "note": "After review, the comment is acceptable."
+}
+```
+
+**Behaviour:**
+
+- If `approve`: comment status becomes `approved` and appeal status `resolved_approved`.
+- If `reject`: comment status remains `flagged` and appeal status `resolved_rejected`.
+- Notifies the comment author (`type: "APPEAL_RESOLVED"`).
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": null,
+  "message": "Appeal approved. Comment status updated.",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code               | Message                                  |
+| ------ | ------------------ | ---------------------------------------- |
+| 400    | `VALIDATION_ERROR` | `"Decision must be approve or reject"`   |
+| 403    | `FORBIDDEN`        | `"No permission to resolve this appeal"` |
+| 404    | `NOT_FOUND`        | `"Comment not found"`                    |
+| 400    | `VALIDATION_ERROR` | `"No pending appeal for this comment"`   |
 
 ## 5. Analytics Endpoints
 
@@ -1012,100 +1120,137 @@ Adds a detailed comment to a vote that was previously cast without one (or allow
 
 **`GET /analytics/:policyId`**
 
-Returns a high‑level summary of voting and sentiment for a single policy, optionally restricted to a date range.
-
 **Query parameters (all optional):**
 
-| Parameter   | Type   | Description                                                                            |
-| ----------- | ------ | -------------------------------------------------------------------------------------- |
-| `startDate` | string | ISO date (e.g., `2026-04-01`). Filters votes & comments created on or after this date. |
-| `endDate`   | string | ISO date. Filters votes & comments created on or before this date.                     |
+| Parameter    | Type   | Description                                                                                     |
+| ------------ | ------ | ----------------------------------------------------------------------------------------------- |
+| `startDate`  | string | ISO date (e.g., `2026-04-01`). Filters votes & comments created on or after this date.          |
+| `endDate`    | string | ISO date. Filters votes & comments created on or before this date.                              |
+| `gender`     | string | `male`, `female`, `non-binary`, `prefer-not-to-say`                                             |
+| `ageRange`   | string | `18-24`, `25-34`, `35-44`, `45-54`, `55+`                                                       |
+| `occupation` | string | `student`, `farmer`, `merchant`, `government-employee`, `private-sector`, `unemployed`, `other` |
+| `education`  | string | `no-formal`, `primary`, `secondary`, `diploma`, `bachelors`, `postgraduate`                     |
+| `region`     | string | Region name (e.g., `Addis Ababa`)                                                               |
 
-**Response (200 OK):**
+**Response (200 OK) – example for `binary` policy:**
 
 ```json
 {
   "status": "success",
   "data": {
     "policyId": "67f1a2b3c4d5e6f7a8b9c0d1",
-    "title": "Clean Water Initiative",
-    "averageRating": 3.8,
-    "ratingDistribution": {
-      "1": 0,
-      "2": 1,
-      "3": 5,
-      "4": 2,
-      "5": 4
-    },
-    "sentimentCounts": {
-      "positive": 5,
-      "negative": 2,
-      "neutral": 3
-    },
-    "topKeywords": [
-      { "keyword": "water", "count": 4 },
-      { "keyword": "access", "count": 2 }
-    ],
-    "totalVotes": 12,
-    "appVotes": 8,
-    "smsVotes": 4
+    "title": "Binary Test 2026",
+    "pollType": "binary",
+    "totalVotes": 1,
+    "yesCount": 1,
+    "noCount": 0,
+    "yesPercentage": "100.0",
+    "noPercentage": "0.0",
+    "sentimentCounts": { "positive": 0, "negative": 0, "neutral": 0 },
+    "topKeywords": []
   },
   "message": "Analytics retrieved successfully",
   "timestamp": "..."
 }
 ```
 
-**Error responses :**
+**Response for `multipleChoice` policy:**
 
-| Status | Code               | Message                                                                     |
-| ------ | ------------------ | --------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Policy is not active yet (no analytics available)"` (own draft/published) |
-| 400    | `VALIDATION_ERROR` | `"Invalid startDate: ..."` or `"Invalid endDate: ..."`                      |
-| 403    | `FORBIDDEN`        | `"Access denied. Only planners and admins can view analytics."`             |
-| 404    | `NOT_FOUND`        | `"Policy not found"` (other planner's draft/published or non‑existent)      |
+```json
+    {
+      "status": "success",
+      "data": {
+        "policyId": "...",
+        "title": "Sector Funding",
+        "pollType": "multipleChoice",
+        "totalVotes": 100,
+        "results": [
+          { "id": "edu", "text": "Education", "count": 45, "percentage": "45.0" },
+          { "id": "health", "text": "Healthcare", "count": 30, "percentage": "30.0" }
+        ],
+        "sentimentCounts": { ... },
+        "topKeywords": [...]
+      }
+    }
+```
+
+**Response for `likert`/`rating` policy:**
+
+```json
+{
+  "data": {
+    "pollType": "rating",
+    "totalVotes": 120,
+    "average": 4.2,
+    "distribution": { "1": 5, "2": 10, "3": 20, "4": 35, "5": 50 }
+  }
+}
+```
+
+**Response for `approval` policy:**
+
+```json
+{
+  "data": {
+    "pollType": "approval",
+    "totalVotes": 80,
+    "approveCount": 40,
+    "rejectCount": 25,
+    "abstainCount": 15,
+    "approvePercentage": "50.0",
+    "rejectPercentage": "31.2",
+    "abstainPercentage": "18.8",
+    "netApproval": 15
+  }
+}
+```
+
+**Response for `rankedChoice` policy (simplified):**
+
+```json
+{
+  "data": {
+    "pollType": "rankedChoice",
+    "totalVotes": 60,
+    "firstChoiceResults": [
+      {
+        "id": "opt1",
+        "text": "Roads",
+        "firstChoiceCount": 20,
+        "percentage": "33.3"
+      }
+    ]
+  }
+}
+```
 
 ### 5.2 Export analytics as CSV
 
 **`GET /analytics/:policyId/export`**
 
-Downloads a CSV file containing each individual vote (rating, channel, date, region). Region is only available for app votes.
-
-**Query parameters:** same as 5.1 (`startDate`, `endDate`).
+**Query parameters:** same as 5.1 (`startDate`, `endDate`, `gender`, `ageRange`, `occupation`, `education`, `region`).
 
 **Response:** `text/csv` file attachment. Example content:
 
-```csv
-rating,channel,date,region
-5,app,2026-04-01,Addis Ababa
-4,app,2026-04-02,Oromia
-3,sms,2026-04-03,
-```
+    voteId,channel,value,region,ageRange,gender,occupation,education,createdAt
+    67f1a2b3...,app,opt1|opt2,Addis Ababa,25-34,male,private-sector,bachelors,2026-05-09T01:05:48.370Z
 
-**Error responses:**
-
-| Status | Code                    | Message                                                                     |
-| ------ | ----------------------- | --------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`      | `"Policy is not active yet (no analytics available)"` (own draft/published) |
-| 400    | `VALIDATION_ERROR`      | `"Invalid startDate: ..."` or `"Invalid endDate: ..."`                      |
-| 403    | `FORBIDDEN`             | `"Access denied. Only planners and admins can view analytics."`             |
-| 404    | `NOT_FOUND`             | `"Policy not found"` (other planner's draft/published or non‑existent)      |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to export analytics"`                                              |
-
-## 5.3 Get paginated comments (with filters)
+### 5.3 Get paginated comments (with filters)
 
 **`GET /analytics/:policyId/comments`**
 
-Returns comments posted for a policy, with optional filtering by sentiment, date range, pagination. **User emails are never included** for privacy.
-
 **Query parameters (all optional):**
 
-| Parameter   | Type    | Default | Description                                    |
-| ----------- | ------- | ------- | ---------------------------------------------- |
-| `page`      | integer | 1       | Page number (1‑based)                          |
-| `limit`     | integer | 20      | Items per page (max 100)                       |
-| `sentiment` | string  | none    | Filter by `positive`, `negative`, or `neutral` |
-| `startDate` | string  | none    | ISO date (filter comments created after)       |
-| `endDate`   | string  | none    | ISO date (filter comments created before)      |
+| Parameter         | Type    | Default | Description                                          |
+| ----------------- | ------- | ------- | ---------------------------------------------------- |
+| `page`            | integer | 1       | Page number (1‑based)                                |
+| `limit`           | integer | 20      | Items per page (max 100)                             |
+| `sentiment`       | string  | none    | Filter by `positive`, `negative`, or `neutral`       |
+| `status`          | string  | none    | Filter by `approved`, `flagged`, `deleted`           |
+| `language`        | string  | none    | Filter by detected language (`am`, `om`, `ti`, `en`) |
+| `parentCommentId` | string  | none    | Filter replies to a specific top‑level comment       |
+| `startDate`       | string  | none    | ISO date                                             |
+| `endDate`         | string  | none    | ISO date                                             |
 
 **Response (200 OK):**
 
@@ -1115,12 +1260,14 @@ Returns comments posted for a policy, with optional filtering by sentiment, date
   "data": {
     "comments": [
       {
-        "id": "67f1a2b3c4d5e6f7a8b9c0d3",
+        "id": "67f1a2b3...",
         "text": "This policy is excellent!",
-        "sentiment": "positive",
-        "confidence": 0.95,
+        "sentiment": { "label": "positive", "confidence": 0.95 },
         "keywords": ["excellent"],
-        "createdAt": "2026-04-01T10:00:00Z"
+        "status": "approved",
+        "isOfficialReply": false,
+        "createdAt": "2026-05-09T01:17:31.540Z",
+        "userEmail": "citizen@example.com"
       }
     ],
     "total": 50,
@@ -1131,47 +1278,26 @@ Returns comments posted for a policy, with optional filtering by sentiment, date
 }
 ```
 
-**Error responses:**
-
-| Status | Code                    | Message                                                                     |
-| ------ | ----------------------- | --------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`      | `"Policy is not active yet (no analytics available)"` (own draft/published) |
-| 400    | `VALIDATION_ERROR`      | `"Invalid startDate: ..."` or `"Invalid endDate: ..."`                      |
-| 403    | `FORBIDDEN`             | `"Access denied. Only planners and admins can view analytics."`             |
-| 404    | `NOT_FOUND`             | `"Policy not found"` (other planner's draft/published or non‑existent)      |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve comments"`                                             |
-
-## 5.4 Heatmap (unified geographic & time‑series)
+### 5.4 Heatmap (unified geographic & time‑series)
 
 **`GET /analytics/heatmap`**
 
-This is the **primary analytics endpoint** for visualising voting patterns over time and across Ethiopian regions. It can produce:
-
-- **Global time series** (vote volume + sentiment aggregated per time bucket, no regional breakdown).
-- **Geographic heatmap** (vote volume, average rating, and sentiment per region, per time bucket).
+This endpoint aggregates voting data over time and optionally by region.
 
 **Roles:** planner, admin
 
-### Query parameters (all optional)
+**Query parameters (all optional):**
 
 | Parameter   | Type    | Default | Description                                                                                                                                                   |
 | ----------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `startDate` | string  | none    | ISO date (e.g., `2026-04-01`). Filters votes and comments created on or after this date.                                                                      |
+| `startDate` | string  | none    | ISO date. Filters votes and comments created on or after this date.                                                                                           |
 | `endDate`   | string  | none    | ISO date. Filters votes and comments created on or before this date.                                                                                          |
 | `interval`  | string  | `week`  | Grouping interval: `day`, `week`, or `month`.                                                                                                                 |
 | `policyId`  | string  | none    | If provided, only votes/comments belonging to that policy are included. Otherwise, data for **all policies** (subject to planner's visibility) is aggregated. |
 | `byRegion`  | boolean | `false` | If `true`, the response is grouped by region within each time bucket (geographic heatmap). If `false`, the response is a simple time series (global totals).  |
-| `regions`   | string  | none    | Comma‑separated list of region names, e.g., `Addis Ababa,Oromia`. Only applicable when `byRegion=true`. Filters both votes and sentiment to those regions.    |
+| `regions`   | string  | none    | Comma‑separated list of region names, e.g., `Addis Ababa,Oromia`. Only applicable when `byRegion=true`.                                                       |
 
-### Important notes about data sources
-
-- Only **app votes** (with a region snapshot) are included in the geographic parts. SMS votes never appear in region breakdowns because they have no region.
-- Sentiment counts are derived from **comments** linked to votes. If a vote has no comment, it contributes only to `totalVotes` and `averageRating`, not to sentiment.
-- When `byRegion=false`, the global `totalVotes` includes **SMS votes** as well.
-
----
-
-### 5.4.1 Response when `byRegion=false` (global time series)
+**Response when `byRegion=false` (global time series):**
 
 ```json
 {
@@ -1180,36 +1306,19 @@ This is the **primary analytics endpoint** for visualising voting patterns over 
     "interval": "week",
     "data": [
       {
-        "period": "2026-14",
+        "period": "2026-19",
         "totalVotes": 8,
         "averageRating": 4.1,
-        "positive": 5,
-        "negative": 1,
-        "neutral": 2
-      },
-      {
-        "period": "2026-15",
-        "totalVotes": 12,
-        "averageRating": 3.9,
-        "positive": 7,
-        "negative": 2,
-        "neutral": 3
+        "yesPercentage": "62.5" // for binary policies
       }
     ]
   },
-  "message": "Heatmap data retrieved successfully",
+  "message": "Heatmap retrieved",
   "timestamp": "..."
 }
 ```
 
-Fields:
-
-- `period`: time bucket label. For `day`: `YYYY-MM-DD`; for `week`: `YYYY-VV` (ISO week number); for `month`: `YYYY-MM`.
-- `totalVotes`: total votes (app + SMS) in that period.
-- `averageRating`: average rating (all votes).
-- `positive`, `negative`, `neutral`: sentiment counts from comments that fell inside that period.
-
-### 5.4.2 Response when `byRegion=true` (geographic heatmap)
+**Response when `byRegion=true` (geographic heatmap):**
 
 ```json
 {
@@ -1218,76 +1327,121 @@ Fields:
     "interval": "week",
     "data": [
       {
-        "period": "2026-14",
-        "startDate": "2026-04-01",
-        "endDate": "2026-04-07",
-        "regions": [
-          {
-            "region": "Addis Ababa",
-            "totalVotes": 3,
-            "averageRating": 4.2,
-            "sentimentCounts": {
-              "positive": 2,
-              "negative": 0,
-              "neutral": 1
-            }
-          },
-          {
-            "region": "Oromia",
-            "totalVotes": 5,
-            "averageRating": 3.8,
-            "sentimentCounts": {
-              "positive": 2,
-              "negative": 1,
-              "neutral": 2
-            }
-          }
-        ]
-      },
-      {
-        "period": "2026-15",
-        "startDate": "2026-04-08",
-        "endDate": "2026-04-14",
-        "regions": [ ... ]
+        "period": "2026-19",
+        "region": "Addis Ababa",
+        "totalVotes": 6,
+        "averageRating": "4.50",
+        "yesPercentage": "16.7"
       }
     ]
   },
-  "message": "Heatmap data retrieved successfully",
+  "message": "Heatmap retrieved",
   "timestamp": "..."
 }
 ```
 
-**Additional fields:**
+### 5.5 Timeseries (vote count and ratings over time)
 
-- `startDate` and `endDate` are human‑readable dates for the period (only for `week` and `month` intervals; for `day` they are the same as `period`).
-- Each `region` object contains:
-  - `totalVotes`: number of app votes from that region.
-  - `averageRating`: average rating of those votes.
-  - `sentimentCounts`: aggregated sentiment from comments attached to those votes (only votes with comments contribute to sentiment).
+**`GET /analytics/:policyId/timeseries`**
 
-**Note:** If a region appears in the response with `totalVotes: 0` but non‑zero sentiment, it is possible (only comments exist, votes outside date range? In practice, the heatmap merges votes and comments, so a region should not appear without votes unless the `regions` filter explicitly includes it and only comments match – that would be rare. The implementation ensures consistency.)
+**Roles:** planner, admin
 
-### 5.4.3 Common use cases
+**Query parameters (all optional):**
 
-| What you want                                                                 | Example request                                                                                      |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| Global weekly vote volume and sentiment for the last 30 days                  | `GET /analytics/heatmap?interval=week&startDate=2026-03-01&endDate=2026-03-31`                       |
-| Geographic heatmap for a single policy, daily intervals                       | `GET /analytics/heatmap?policyId=...&byRegion=true&interval=day`                                     |
-| Geographic heatmap limited to two regions                                     | `GET /analytics/heatmap?byRegion=true&regions=Addis%20Ababa,Oromia&interval=week`                    |
-| Monthly global trend for all policies                                         | `GET /analytics/heatmap?interval=month`                                                              |
-| Time series for a specific policy without region breakdown (replaces /trends) | `GET /analytics/heatmap?policyId=...&interval=week` (byRegion defaults to false)                     |
-| Geographic snapshot of a policy (replaces /geographic)                        | `GET /analytics/heatmap?policyId=...&byRegion=true&startDate=...&endDate=...` (take earliest period) |
+| Parameter   | Type   | Default | Description                       |
+| ----------- | ------ | ------- | --------------------------------- |
+| `bucket`    | string | `day`   | `hour`, `day`, `week`, or `month` |
+| `startDate` | string | none    | ISO date                          |
+| `endDate`   | string | none    | ISO date                          |
 
-### 5.4.4 Error responses
+**Response (200 OK) – for binary policy:**
 
-| Status | Code                    | Message                                                                                                       |
-| ------ | ----------------------- | ------------------------------------------------------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`      | `"Invalid startDate: ..."` or `"Invalid endDate: ..."`                                                        |
-| 400    | `VALIDATION_ERROR`      | `"Invalid policyId format"`                                                                                   |
-| 400    | `VALIDATION_ERROR`      | `"Policy is not active yet (no analytics available)"` (policyId supplied, user is creator of draft/published) |
-| 403    | `FORBIDDEN`             | `"Access denied. Only planners and admins can view heatmap."`                                                 |
-| 404    | `NOT_FOUND`             | `"Policy not found"` (policyId supplied and user is not creator or policy does not exist)                     |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve heatmap data"`                                                                           |
+```json
+{
+  "status": "success",
+  "data": {
+    "bucket": "week",
+    "data": [
+      { "bucket": "2026-19", "totalVotes": 5, "yesCount": 3, "noCount": 2 }
+    ]
+  },
+  "message": "Timeseries retrieved",
+  "timestamp": "..."
+}
+```
+
+**Response for rating/likert policy:**
+
+```json
+{
+  "data": {
+    "bucket": "day",
+    "data": [{ "bucket": "2026-05-09", "totalVotes": 10, "averageRating": 4.2 }]
+  }
+}
+```
+
+### 5.6 Correlation (for multipleChoice policies only)
+
+**`GET /analytics/:policyId/correlation`**
+
+**Roles:** planner, admin
+
+**Query parameters:**
+
+| Parameter    | Type    | Default | Description                            |
+| ------------ | ------- | ------- | -------------------------------------- |
+| `minSupport` | integer | 10      | Minimum co‑occurrence count to include |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "correlations": [
+      {
+        "optionA": "edu",
+        "optionB": "health",
+        "coOccurrenceCount": 15,
+        "percentage": "25.0"
+      }
+    ],
+    "totalVotes": 100
+  },
+  "message": "Correlation matrix retrieved",
+  "timestamp": "..."
+}
+```
+
+### 5.7 Demographic breakdown
+
+**`GET /analytics/:policyId/demographics`**
+
+**Roles:** planner, admin
+
+**Query parameters:**
+
+| Parameter   | Type   | Required | Description (one of)                                      |
+| ----------- | ------ | -------- | --------------------------------------------------------- |
+| `dimension` | string | yes      | `ageRange`, `gender`, `occupation`, `education`, `region` |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "dimension": "ageRange",
+    "data": [
+      { "ageRange": "25-34", "totalVotes": 20, "averageRating": 4.2 },
+      { "ageRange": "35-44", "totalVotes": 12, "averageRating": 3.8 }
+    ]
+  },
+  "message": "Demographic breakdown retrieved",
+  "timestamp": "..."
+}
+```
 
 ## 6. Admin Endpoints
 
@@ -2248,6 +2402,17 @@ Unsubscribed users who send any command other than `SUBSCRIBE` or `STOP` receive
 | `RESULTS`  | `RESULTS <code>`    | Get final results of a closed policy               |
 | `HELP`     | `HELP`              | Show this help message                             |
 
+**SMS vote limitations by poll type:**
+
+| Poll Type        | SMS support | Behaviour                                                                           |
+| ---------------- | ----------- | ----------------------------------------------------------------------------------- |
+| `binary`         | Yes         | `RATE CODE YES` or `RATE CODE NO`                                                   |
+| `multipleChoice` | **No**      | `"This policy requires multiple choice voting. Please use the mobile app to vote."` |
+| `likert`         | Yes         | `RATE CODE 1` to `5`                                                                |
+| `approval`       | Yes         | `RATE CODE APPROVE`, `REJECT`, or `ABSTAIN`                                         |
+| `rating`         | Yes         | `RATE CODE 1` to `5`                                                                |
+| `rankedChoice`   | **No**      | `"This policy requires ranked choice voting. Please use the mobile app to vote."`   |
+
 **Subscription commands (always allowed, even for unsubscribed numbers):**
 
 | Command     | Description                                       |
@@ -2536,13 +2701,17 @@ These endpoints allow citizens to request planner status, admins to review and a
 
 ## Appendix: Rate Limiting Summary
 
-| Endpoint group                    | Limit        | Time window | Scope             |
-| --------------------------------- | ------------ | ----------- | ----------------- |
-| `/auth/login`, `/auth/verify-otp` | 10 requests  | 15 minutes  | Per IP            |
-| `/auth/send-otp`                  | 3 requests   | 1 hour      | Per IP            |
-| `/auth/forgot-password`           | 3 requests   | 1 hour      | Per IP            |
-| `/auth/reset-password`            | 5 requests   | 15 minutes  | Per IP            |
-| `/votes` (POST)                   | 30 requests  | 1 hour      | Per user (by JWT) |
-| `/comments` (POST)                | 10 requests  | 1 minute    | Per user (by JWT) |
-| All other `/api` endpoints        | 100 requests | 15 minutes  | Per IP            |
-| `/sms/receive`                    | 3 votes      | 24 hours    | Per phone number  |
+| Endpoint group                               | Limit        | Time window | Scope             |
+| -------------------------------------------- | ------------ | ----------- | ----------------- |
+| `/auth/login`, `/auth/verify-otp`            | 10 requests  | 15 minutes  | Per IP            |
+| `/auth/send-otp`                             | 3 requests   | 1 hour      | Per IP            |
+| `/auth/forgot-password`                      | 3 requests   | 1 hour      | Per IP            |
+| `/auth/reset-password`                       | 5 requests   | 15 minutes  | Per IP            |
+| `/votes` (POST)                              | 30 requests  | 1 hour      | Per user (by JWT) |
+| `/comments` (POST)                           | 10 requests  | 1 minute    | Per user (by JWT) |
+| `POST /comments/:commentId/report`           | 5 requests   | 1 minute    | Per user (by JWT) |
+| `POST /comments/:commentId/appeal`           | 3 requests   | 24 hours    | Per user (by JWT) |
+| `PUT /comments/:commentId/moderate`          | 30 requests  | 1 minute    | Per user (by JWT) |
+| `GET /analytics/*` (all analytics endpoints) | 30 requests  | 1 minute    | Per user (by JWT) |
+| All other `/api` endpoints                   | 100 requests | 15 minutes  | Per IP            |
+| `/sms/receive`                               | 3 votes      | 24 hours    | Per phone number  |

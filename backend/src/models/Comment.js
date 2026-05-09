@@ -1,43 +1,50 @@
 const mongoose = require("mongoose");
 
 const commentSchema = new mongoose.Schema({
-  voteId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Vote",
-    required: true,
-    unique: true, // one comment per vote
-  },
   policyId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "Policy",
     required: true,
   },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  rating: { type: Number, min: 1, max: 5, required: true }, // duplicate rating for simplicity
-  comment: { type: String, maxlength: 500, default: "" },
+  parentCommentId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: "Comment",
+    default: null,
+  },
+  text: { type: String, required: true, maxlength: 2000 },
+  language: { type: String, default: null },
   sentiment: {
     label: {
       type: String,
       enum: ["positive", "negative", "neutral"],
-      default: "neutral",
+      default: null,
     },
-    confidence: { type: Number, default: 0 },
+    confidence: { type: Number, default: null },
   },
   keywords: { type: [String], default: [] },
-  processed: { type: Boolean, default: false },
   status: {
     type: String,
-    enum: ["processing", "processed", "pending_review"],
+    enum: ["processing", "approved", "flagged", "pending_review", "deleted"],
     default: "processing",
   },
-  retryCount: { type: Number, default: 0 },
-  nextRetry: { type: Date, default: null },
+  isOfficialReply: { type: Boolean, default: false },
+  reportCount: { type: Number, default: 0 },
+  aiPrediction: { type: mongoose.Schema.Types.Mixed, default: null },
+  appeal: {
+    reason: String,
+    status: {
+      type: String,
+      enum: ["pending", "resolved_approved", "resolved_rejected"],
+    },
+    createdAt: Date,
+    resolvedAt: Date,
+    resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    resolutionNote: String,
+  },
+  editedHistory: [{ text: String, editedAt: Date }],
   createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now },
 });
-
-// Unique index to enforce one comment per vote
-commentSchema.index({ voteId: 1 }, { unique: true });
-// Index for queries by policy and user (useful for analytics/admin)
-commentSchema.index({ policyId: 1, userId: 1 });
 
 module.exports = mongoose.model("Comment", commentSchema);

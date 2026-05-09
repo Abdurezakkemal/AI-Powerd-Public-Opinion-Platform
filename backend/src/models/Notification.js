@@ -9,20 +9,27 @@ const notificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ["POLICY_CLOSED", "POLICY_ACTIVATED", "POLICY_EXTENDED"],
+    enum: [
+      "POLICY_CLOSED",
+      "POLICY_ACTIVATED",
+      "POLICY_EXTENDED",
+      "COMMENT_REPLY",
+      "COMMENT_FLAGGED",
+      "COMMENT_APPEAL",
+      "APPEAL_RESOLVED",
+    ],
     required: true,
   },
   title: { type: String, required: true },
   message: { type: String, required: true },
   data: {
     type: Object,
-    default: {}, // will store policyId, avgRating, totalVotes, etc.
+    default: {},
   },
   read: { type: Boolean, default: false },
   createdAt: { type: Date, default: Date.now },
 });
 
-// Index for efficient queries
 notificationSchema.index({ userId: 1, createdAt: -1 });
 notificationSchema.index({ read: 1 });
 
