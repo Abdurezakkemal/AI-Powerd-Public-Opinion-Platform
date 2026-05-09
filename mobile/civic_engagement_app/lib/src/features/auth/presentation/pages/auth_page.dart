@@ -5,6 +5,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/services/location_service.dart';
 import '../cubit/auth_cubit.dart';
 
 enum _AuthMode { login, register, verify, reset }
@@ -22,10 +23,18 @@ class _AuthPageState extends State<AuthPage> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
-  final _regionController = TextEditingController(text: 'Addis Ababa');
+  final _regionController = TextEditingController();
   final _otpController = TextEditingController();
   final _resetTokenController = TextEditingController();
   final _newPasswordController = TextEditingController();
+  final _locationService = LocationService();
+  bool _isDetectingLocation = false;
+
+  @override
+  void initState() {
+    super.initState();
+    // Don't auto-detect on load - require user to explicitly enable GPS
+  }
 
   @override
   void dispose() {
@@ -37,6 +46,32 @@ class _AuthPageState extends State<AuthPage> {
     _resetTokenController.dispose();
     _newPasswordController.dispose();
     super.dispose();
+  }
+
+  Future<void> _detectLocation() async {
+    setState(() => _isDetectingLocation = true);
+    final region = await _locationService.getCurrentRegion();
+    if (region != null && mounted) {
+      _regionController.text = region;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ Location detected: $region'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else if (mounted) {
+      _regionController.text = '';
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📱 Please enable location in settings, then return here and tap the location button again'),
+          backgroundColor: Colors.orange,
+          duration: Duration(seconds: 5),
+        ),
+      );
+    }
+    if (mounted) {
+      setState(() => _isDetectingLocation = false);
+    }
   }
 
   @override
@@ -90,7 +125,9 @@ class _AuthPageState extends State<AuthPage> {
                           phoneController: _phoneController,
                           regionController: _regionController,
                           loading: state.isBusy,
+                          isDetectingLocation: _isDetectingLocation,
                           onSubmit: _register,
+                          onDetectLocation: _detectLocation,
                         ),
                         _AuthMode.verify => _VerifyForm(
                           key: const ValueKey('verify'),
@@ -135,10 +172,22 @@ class _AuthPageState extends State<AuthPage> {
   void _register() {
     if (!_ensure(_emailController, 'Email is required') ||
         !_ensure(_passwordController, 'Password is required') ||
-        !_ensure(_phoneController, 'Phone is required') ||
-        !_ensure(_regionController, 'Region is required')) {
+        !_ensure(_phoneController, 'Phone is required')) {
       return;
     }
+    
+    // Strict region validation - must be detected via GPS
+    if (_regionController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📍 Location is required. Please enable GPS and tap the location button.'),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
+        ),
+      );
+      return;
+    }
+    
     context.read<AuthCubit>().register(
       email: _emailController.text,
       password: _passwordController.text,
@@ -314,7 +363,9 @@ class _RegisterForm extends StatelessWidget {
     required this.phoneController,
     required this.regionController,
     required this.loading,
+    required this.isDetectingLocation,
     required this.onSubmit,
+    required this.onDetectLocation,
     super.key,
   });
 
@@ -323,7 +374,9 @@ class _RegisterForm extends StatelessWidget {
   final TextEditingController phoneController;
   final TextEditingController regionController;
   final bool loading;
+  final bool isDetectingLocation;
   final VoidCallback onSubmit;
+  final VoidCallback onDetectLocation;
 
   @override
   Widget build(BuildContext context) {
@@ -352,10 +405,79 @@ class _RegisterForm extends StatelessWidget {
           keyboardType: TextInputType.phone,
         ),
         const SizedBox(height: 12),
-        AppTextField(
-          controller: regionController,
-          label: 'Region',
-          icon: Icons.location_on_outlined,
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: AppTheme.primary.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: AppTheme.primary.withValues(alpha: 0.2),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    Icons.location_on,
+                    color: AppTheme.primary,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Location Verification',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: AppTheme.primary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'For security, we verify your region using GPS. Please enable location services.',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: AppTheme.mutedText,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: AppTextField(
+                      controller: regionController,
+                      label: 'Detected Region',
+                      icon: Icons.map_outlined,
+                      readOnly: true,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: AppTheme.primary,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: IconButton(
+                      onPressed: isDetectingLocation ? null : onDetectLocation,
+                      icon: isDetectingLocation
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Icon(Icons.my_location, color: Colors.white),
+                      tooltip: 'Detect my location',
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
         const SizedBox(height: 18),
         AppButton(

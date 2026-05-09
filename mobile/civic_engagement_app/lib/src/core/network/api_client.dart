@@ -125,9 +125,13 @@ class ApiClient {
       throw ApiException(message: 'The server took too long to respond.');
     } on ApiException {
       rethrow;
-    } on FormatException {
-      throw ApiException(message: 'The server returned an invalid response.');
-    } on Exception {
+    } on FormatException catch (e) {
+      print('FormatException: $e');
+      throw ApiException(
+        message: 'The server returned an invalid response. ${e.message}',
+      );
+    } on Exception catch (e) {
+      print('Exception: $e');
       throw ApiException(
         message: 'Could not connect to the server. Check your connection.',
       );
@@ -157,6 +161,10 @@ class ApiClient {
   }
 
   ApiResult _handleResponse(http.Response response) {
+    // Add debug logging
+    print('Response status: ${response.statusCode}');
+    print('Response body: ${response.body}');
+
     final decoded = response.body.isEmpty ? null : jsonDecode(response.body);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
