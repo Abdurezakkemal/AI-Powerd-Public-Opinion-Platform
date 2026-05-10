@@ -1,33 +1,100 @@
 const nodemailer = require("nodemailer");
+const logger = require("./logger");
 
 let transporter = null;
+let mockMode = false;
+let mockReason = null;
 
 const getTransporter = () => {
+  if (mockMode) return null;
   if (!transporter) {
+    const host = process.env.EMAIL_HOST;
+    const user = process.env.EMAIL_USER;
+    const pass = process.env.EMAIL_PASS;
+    const port = parseInt(process.env.EMAIL_PORT || "587");
+
+    if (!host || !user || !pass) {
+      mockMode = true;
+      mockReason =
+        "Missing SMTP credentials (EMAIL_HOST/EMAIL_USER/EMAIL_PASS)";
+      logger.warn(`Email: ${mockReason}. Switching to mock mode.`);
+      return null;
+    }
+
     transporter = nodemailer.createTransport({
-      host: process.env.EMAIL_HOST,
-      port: parseInt(process.env.EMAIL_PORT),
-      secure: process.env.EMAIL_PORT === "465",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
+      host,
+      port,
+      secure: port === 465,
+      auth: { user, pass },
+    });
+
+    // Verify connection (optional, but catches errors early)
+    transporter.verify((error) => {
+      if (error) {
+        mockMode = true;
+        mockReason = `SMTP connection failed: ${error.message}`;
+        logger.warn(`Email: ${mockReason}. Switching to mock mode.`);
+        transporter = null;
+      } else {
+        logger.info("SMTP configured and ready.");
+      }
     });
   }
   return transporter;
 };
 
+/**
+ * Send an email.
+ * Usage: sendEmail(to, subject, text, html)
+ *    or: sendEmail({ to, subject, text, html })
+ */
 const sendEmail = async (to, subject, text, html) => {
+  // Normalize params
+  if (typeof to === "object") {
+    const obj = to;
+    to = obj.to;
+    subject = obj.subject;
+    text = obj.text;
+    html = obj.html;
+  }
+
+  if (!to) {
+    logger.error("sendEmail called without recipient (to field missing)");
+    return;
+  }
+
+  // If in mock mode, just log
+  if (mockMode) {
+    logger.info(
+      `[MOCK EMAIL] To: ${to}, Subject: ${subject}, Body: ${text || (html ? html.replace(/<[^>]*>/g, "").slice(0, 200) : "(empty)")}`,
+    );
+    return;
+  }
+
   const transporter = getTransporter();
-  await transporter.sendMail({
-    from: process.env.EMAIL_USER,
-    to,
-    subject,
-    text,
-    html,
-  });
+  if (!transporter) {
+    // Fallback to mock if transporter not available
+    logger.info(`[MOCK EMAIL (fallback)] To: ${to}, Subject: ${subject}`);
+    return;
+  }
+
+  try {
+    await transporter.sendMail({
+      from: process.env.EMAIL_USER,
+      to,
+      subject,
+      text,
+      html,
+    });
+    logger.info(`Email sent to ${to} (${subject})`);
+  } catch (err) {
+    logger.error(`Failed to send email to ${to}: ${err.message}`);
+    // Fallback to mock on error
+    logger.info(`[MOCK EMAIL (error fallback)] To: ${to}, Subject: ${subject}`);
+  }
 };
 
+// Convenience wrappers
 const sendOtpEmail = async (to, otp) => {
   await sendEmail(
     to,

@@ -56,10 +56,20 @@ const authMiddleware = (roles = []) => {
         );
       }
 
+      // Attach full user data for personalized feed and other features
       req.user = {
         id: user._id,
         role: user.role,
         region: user.region,
+        ageRange: user.ageRange,
+        gender: user.gender,
+        occupation: user.occupation,
+        education: user.education,
+        phoneHash: user.phoneHash,
+        verified: user.verified,
+        active: user.active,
+        languagesSpoken: user.languagesSpoken,
+        trainingCompletedAt: user.trainingCompletedAt,
       };
 
       next();

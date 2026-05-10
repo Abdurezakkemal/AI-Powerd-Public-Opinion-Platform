@@ -27,4 +27,6 @@ router.patch(
   userController.markAllNotificationsRead,
 );
 
+router.post("/me/phone/request", userController.requestPhoneChange);
+router.post("/me/phone/verify", userController.verifyPhoneChange);
 module.exports = router;

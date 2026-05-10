@@ -124,18 +124,49 @@ exports.getDashboardStats = async (req, res) => {
 // GET /admin/trends?interval=day&days=30
 exports.getTrends = async (req, res) => {
   try {
-    const { interval = "day", days = 30 } = req.query;
+    const {
+      interval = "day",
+      days = 30,
+      startDate: startDateParam,
+      endDate: endDateParam,
+    } = req.query;
+
+    const now = new Date();
     const daysInt = parseInt(days);
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - daysInt);
+    let startDate;
+    let endDate;
+
+    if (startDateParam) {
+      startDate = new Date(startDateParam);
+    } else {
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - daysInt);
+    }
+
+    if (endDateParam) {
+      endDate = new Date(endDateParam);
+    } else {
+      endDate = new Date(now);
+    }
+
+    if (isNaN(startDate.getTime())) {
+      startDate = new Date(now);
+      startDate.setDate(startDate.getDate() - daysInt);
+    }
+    if (isNaN(endDate.getTime())) {
+      endDate = new Date(now);
+    }
 
     let groupFormat;
     if (interval === "week") groupFormat = "%Y-%U";
     else if (interval === "month") groupFormat = "%Y-%m";
     else groupFormat = "%Y-%m-%d";
 
+    const votesMatch = { createdAt: { $gte: startDate } };
+    if (endDate) votesMatch.createdAt.$lte = endDate;
+
     const votesTrend = await Vote.aggregate([
-      { $match: { createdAt: { $gte: startDate } } },
+      { $match: votesMatch },
       {
         $group: {
           _id: { $dateToString: { format: groupFormat, date: "$createdAt" } },
@@ -146,8 +177,11 @@ exports.getTrends = async (req, res) => {
       { $sort: { _id: 1 } },
     ]);
 
+    const usersMatch = { role: "citizen", createdAt: { $gte: startDate } };
+    if (endDate) usersMatch.createdAt.$lte = endDate;
+
     const usersTrend = await User.aggregate([
-      { $match: { role: "citizen", createdAt: { $gte: startDate } } },
+      { $match: usersMatch },
       {
         $group: {
           _id: { $dateToString: { format: groupFormat, date: "$createdAt" } },
@@ -183,9 +217,23 @@ exports.getTrends = async (req, res) => {
     const data = Array.from(trendMap.values()).sort((a, b) =>
       a.date.localeCompare(b.date),
     );
+
+    const totalVotes = data.reduce((sum, item) => sum + (item.votes || 0), 0);
+    const totalNewUsers = data.reduce((sum, item) => sum + (item.newUsers || 0), 0);
+    const averageRating = totalVotes
+      ? data.reduce((sum, item) => sum + (item.votes || 0) * (item.avgRating || 0), 0) / totalVotes
+      : 0;
+
     return sendSuccess(
       res,
-      { interval, data },
+      {
+        interval,
+        data,
+        totalVotes,
+        newUsers: totalNewUsers,
+        averageRating: parseFloat(averageRating.toFixed(2)),
+        votesTimeSeries: data,
+      },
       "Trends retrieved successfully",
     );
   } catch (err) {
@@ -208,12 +256,14 @@ exports.getAuditLogs = async (req, res) => {
       limit = 20,
       action,
       userId,
+      userRole,
       startDate,
       endDate,
     } = req.query;
     const filter = {};
-    if (action) filter.action = action;
+    if (action) filter.action = new RegExp(action, "i");
     if (userId) filter.userId = userId;
+    if (userRole) filter.userRole = userRole;
     if (startDate || endDate) {
       filter.timestamp = {};
       if (startDate) filter.timestamp.$gte = new Date(startDate);
@@ -258,10 +308,11 @@ exports.getAuditLogs = async (req, res) => {
 // GET /admin/audit-logs/export
 exports.exportAuditLogs = async (req, res) => {
   try {
-    const { action, userId, startDate, endDate } = req.query;
+    const { action, userId, userRole, startDate, endDate } = req.query;
     const filter = {};
-    if (action) filter.action = action;
+    if (action) filter.action = new RegExp(action, "i");
     if (userId) filter.userId = userId;
+    if (userRole) filter.userRole = userRole;
     if (startDate || endDate) {
       filter.timestamp = {};
       if (startDate) filter.timestamp.$gte = new Date(startDate);

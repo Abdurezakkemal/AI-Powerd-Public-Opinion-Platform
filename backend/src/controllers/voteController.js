@@ -1,7 +1,7 @@
 const Vote = require("../models/Vote");
-const Comment = require("../models/Comment");
 const Policy = require("../models/Policy");
 const User = require("../models/User");
+const PolicyAssociate = require("../models/PolicyAssociate");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
 const {
@@ -9,25 +9,17 @@ const {
   sendError,
   ErrorCodes,
 } = require("../utils/responseHelper");
+const { validateVoteValue, normalizeVoteValue } = require("../utils/pollTypes");
+const { recordVote, checkForAnomalies } = require("../services/alertDetection");
 
-// Submit vote from app (authenticated user) – optional comment
 exports.submitAppVote = async (req, res) => {
   try {
-    const { policyId, rating, comment } = req.body;
-    if (!policyId || !rating) {
+    const { policyId, value, comment } = req.body;
+    if (!policyId || value === undefined) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "policyId and rating are required",
-        null,
-        400,
-      );
-    }
-    if (rating < 1 || rating > 5) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Rating must be between 1 and 5",
+        "policyId and value are required",
         null,
         400,
       );
@@ -35,7 +27,6 @@ exports.submitAppVote = async (req, res) => {
 
     const user = await User.findById(req.user.id);
     if (!user) {
-      logger.warn(`Vote attempt for non-existent user: ${req.user.id}`);
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
     }
     if (!user.verified) {
@@ -58,16 +49,6 @@ exports.submitAppVote = async (req, res) => {
         404,
       );
     }
-    if (policy.status === "draft" || policy.status === "published") {
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Policy not found",
-        null,
-        404,
-      );
-    }
-
     if (policy.status !== "active") {
       let msg = "Policy not open for voting";
       if (policy.status === "paused") msg = "Voting is temporarily paused";
@@ -88,15 +69,23 @@ exports.submitAppVote = async (req, res) => {
       );
     }
 
-    // Check existing vote by userId OR phoneHash (SMS pre‑registration)
+    // Validate vote value against poll type
+    if (!validateVoteValue(policy.pollType, value, policy)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Invalid vote value for poll type ${policy.pollType}`,
+        null,
+        400,
+      );
+    }
+
+    // Check duplicate
     const existing = await Vote.findOne({
       policyId,
       $or: [{ userId: user._id }, { phoneHash: user.phoneHash }],
     });
     if (existing) {
-      logger.warn(
-        `Duplicate vote attempt for policy ${policyId} by user ${user._id}`,
-      );
       return sendError(
         res,
         ErrorCodes.ALREADY_VOTED,
@@ -106,41 +95,66 @@ exports.submitAppVote = async (req, res) => {
       );
     }
 
-    // Create the vote (always has userId and phoneHash)
+    const normalizedValue = normalizeVoteValue(policy.pollType, value);
+
     const vote = new Vote({
       policyId,
       userId: user._id,
       phoneHash: user.phoneHash,
       channel: "app",
-      rating,
+      value: normalizedValue,
       region: user.region,
+      demographics: {
+        ageRange: user.ageRange,
+        gender: user.gender,
+        occupation: user.occupation,
+        education: user.education,
+      },
     });
     await vote.save();
 
+    // Optional comment (new comment model without voteId)
     let commentDoc = null;
     if (comment && comment.trim().length > 0) {
-      if (comment.length > 500) {
-        // Clean up vote if comment too long
+      if (comment.length > 2000) {
         await Vote.deleteOne({ _id: vote._id });
         return sendError(
           res,
           ErrorCodes.VALIDATION,
-          "Comment too long (max 500 characters)",
+          "Comment too long (max 2000 characters)",
           null,
           400,
         );
       }
+      const Comment = require("../models/Comment");
       commentDoc = new Comment({
-        voteId: vote._id,
         policyId,
         userId: user._id,
-        rating,
-        comment: comment.trim(),
-        processed: false,
+        text: comment.trim(),
         status: "processing",
       });
       await commentDoc.save();
     }
+
+    // === Alert detection: record vote and check anomalies ===
+    await recordVote(policyId, normalizedValue);
+
+    // Get policy owner ID and associate IDs for notifications
+    const ownerId = policy.createdBy.toString();
+    const associates = await PolicyAssociate.find({
+      policyId,
+      revokedAt: null,
+      permissions: "view_analytics", // only notify those who can see analytics
+    }).select("plannerId");
+    const associateIds = associates.map((a) => a.plannerId.toString());
+
+    await checkForAnomalies(
+      policyId,
+      normalizedValue,
+      policy.title,
+      ownerId,
+      associateIds,
+    );
 
     await createAuditLog({
       userId: user._id,
@@ -148,20 +162,29 @@ exports.submitAppVote = async (req, res) => {
       action: "SUBMIT_VOTE",
       targetType: "Vote",
       targetId: vote._id,
-      details: { policyId, rating, hasComment: !!commentDoc },
+      details: {
+        policyId,
+        pollType: policy.pollType,
+        value: normalizedValue,
+        hasComment: !!commentDoc,
+      },
       req,
     });
 
-    logger.info(`User ${user._id} voted ${rating} on policy ${policyId}`);
+    logger.info(
+      `User ${user._id} voted on policy ${policyId} (${policy.pollType})`,
+    );
+
     return sendSuccess(
       res,
-      { voteId: vote._id, commentId: commentDoc?._id || null, rating },
+      { voteId: vote._id, commentId: commentDoc?._id || null },
       commentDoc
         ? "Vote and comment recorded. AI will process comment."
         : "Vote recorded successfully",
       201,
     );
   } catch (err) {
+    console.error("Full vote error:", err);
     if (err.code === 11000) {
       return sendError(
         res,

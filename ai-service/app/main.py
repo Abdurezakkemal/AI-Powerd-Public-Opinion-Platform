@@ -9,11 +9,32 @@ from .utils.language_detector import detect_language, detect_language_full
 from .utils.preprocess import normalize_text
 from .models.sentiment import ModelManager
 from .models.keywords import KeywordManager
+from .models.topic import get_topic_model
 from .middleware.authMiddleware import InternalAPIKeyMiddleware
 
 app = FastAPI(title="AI Service for Multilingual Sentiment Analysis")
 
 app.add_middleware(InternalAPIKeyMiddleware)
+
+# Default topics for zero‑shot suggestion
+DEFAULT_TOPICS = [
+    # Core public services
+    "Health", "Education", "Water Supply", "Electricity", "Housing", "Transport",
+    # Infrastructure
+    "Roads", "Bridges", "Railways", "Airports", "Digital Infrastructure",
+    # Agriculture & Environment
+    "Agriculture", "Irrigation", "Livestock", "Forestry", "Environment", "Climate Change",
+    # Economy & Jobs
+    "Economy", "Employment", "Small Business", "Industry", "Trade", "Tourism",
+    # Social Welfare
+    "Social Protection", "Pension", "Disability Support", "Food Security", "Poverty Reduction",
+    # Governance & Security
+    "Governance", "Justice", "Police", "Defense", "Public Safety",
+    # Urban & Rural Development
+    "Urban Planning", "Rural Development", "Land Administration", "Migration",
+    # Other
+    "Sports", "Culture", "Youth", "Women Affairs", "Diaspora"
+]
 
 # ------------------- Request/Response Models -------------------
 
@@ -26,8 +47,8 @@ class AnalyzeResponse(BaseModel):
     confidence: float
     keywords: List[str]
     language: str
-    sentiment_model: str          # NEW: name of sentiment model used
-    keyword_model: str            # NEW: name of keyword model used
+    sentiment_model: str
+    keyword_model: str
 
 class BenchmarkRequest(BaseModel):
     text: str
@@ -39,8 +60,15 @@ class BenchmarkResponse(BaseModel):
     detection_raw_label: Optional[str] = None
     detection_confidence: Optional[float] = None
     results: List[Dict[str, Any]]
-    keywords: List[str]           # NEW: keywords extracted by default keyword model
-    keyword_model: str            # NEW: name of keyword model used
+    keywords: List[str]
+    keyword_model: str
+
+class SuggestTopicsRequest(BaseModel):
+    text: str
+    candidate_topics: Optional[List[str]] = None
+
+class SuggestTopicsResponse(BaseModel):
+    topics: List[Dict[str, Any]]   # [{"topic": "Agriculture", "confidence": 0.85}, ...]
 
 # ------------------- Endpoints -------------------
 
@@ -115,6 +143,16 @@ async def benchmark_models(request: BenchmarkRequest):
         keywords=keywords,
         keyword_model=keyword_model_name
     )
+
+@app.post("/suggest-topics", response_model=SuggestTopicsResponse)
+async def suggest_topics(request: SuggestTopicsRequest):
+    cleaned_text = normalize_text(request.text)
+    model = get_topic_model()
+    candidate = request.candidate_topics or DEFAULT_TOPICS
+    suggestions = model.suggest(cleaned_text, candidate)
+    # Return top 3 (you can adjust limit)
+    top_suggestions = suggestions[:3] if len(suggestions) >= 3 else suggestions
+    return SuggestTopicsResponse(topics=top_suggestions)
 
 @app.get("/health")
 async def health():

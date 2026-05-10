@@ -429,6 +429,111 @@ exports.verifyEmailChange = async (req, res) => {
     );
   }
 };
+
+// ==================== PHONE NUMBER CHANGE (with verification) ====================
+exports.requestPhoneChange = async (req, res) => {
+  try {
+    const { newPhone } = req.body;
+    if (!newPhone)
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "New phone number required",
+        null,
+        400,
+      );
+
+    const user = await User.findById(req.user.id);
+    if (!user)
+      return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+
+    // Check if phone already in use
+    const existing = await User.findOne({ phoneHash: hashPhone(newPhone) });
+    if (existing && existing._id.toString() !== user._id.toString()) {
+      return sendError(
+        res,
+        ErrorCodes.DUPLICATE,
+        "Phone number already in use",
+        null,
+        409,
+      );
+    }
+
+    const otp = generateOTP();
+    const key = `phone_change:otp:${req.user.id}:${newPhone}`;
+    await redisClient.setEx(key, 300, otp);
+
+    // Send OTP via SMS (mock: console.log)
+    logger.info(`[MOCK SMS] Phone change OTP for ${newPhone}: ${otp}`);
+
+    return sendSuccess(res, null, "OTP sent to new phone number");
+  } catch (err) {
+    logger.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to request phone change",
+      null,
+      500,
+    );
+  }
+};
+
+exports.verifyPhoneChange = async (req, res) => {
+  try {
+    const { newPhone, otp } = req.body;
+    if (!newPhone || !otp)
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "New phone and OTP required",
+        null,
+        400,
+      );
+
+    const key = `phone_change:otp:${req.user.id}:${newPhone}`;
+    const stored = await redisClient.get(key);
+    if (!stored || stored !== otp) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid or expired OTP",
+        null,
+        400,
+      );
+    }
+
+    const user = await User.findById(req.user.id);
+    if (!user)
+      return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+
+    const newPhoneHash = hashPhone(newPhone);
+    user.phoneHash = newPhoneHash;
+    user.tokenVersion += 1; // invalidate existing JWTs
+    await user.save();
+
+    await redisClient.del(key);
+
+    await createAuditLog({
+      userId: user._id,
+      userRole: user.role,
+      action: "PHONE_CHANGE",
+      details: { oldPhoneHash: user.phoneHash, newPhoneHash },
+      req,
+    });
+
+    return sendSuccess(res, null, "Phone number updated successfully");
+  } catch (err) {
+    logger.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to verify phone change",
+      null,
+      500,
+    );
+  }
+};
 // ==================== NOTIFICATIONS ====================
 
 // GET /users/me/notifications

@@ -23,13 +23,42 @@ const {
 
 exports.register = async (req, res) => {
   try {
-    const { email, password, phone, region } = req.body;
-    if (!email || !password || !phone || !region) {
+    const {
+      email,
+      password,
+      phone,
+      region,
+      ageRange,
+      gender,
+      occupation,
+      education,
+    } = req.body;
+    if (
+      !email ||
+      !password ||
+      !phone ||
+      !region ||
+      !ageRange ||
+      !gender ||
+      !occupation ||
+      !education
+    ) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Missing required fields: email, password, phone, region are all required",
-        { required: ["email", "password", "phone", "region"] },
+        "Missing required fields: email, password, phone, region, and all demographics (ageRange, gender, occupation, education) are required",
+        {
+          required: [
+            "email",
+            "password",
+            "phone",
+            "region",
+            "ageRange",
+            "gender",
+            "occupation",
+            "education",
+          ],
+        },
         400,
       );
     }
@@ -56,6 +85,10 @@ exports.register = async (req, res) => {
       passwordHash,
       phoneHash,
       region,
+      ageRange,
+      gender,
+      occupation,
+      education,
       role: "citizen",
       verified: false,
       active: true,
@@ -63,10 +96,9 @@ exports.register = async (req, res) => {
     await user.save();
 
     const otp = generateOTP();
+    console.log(`[DEV] OTP for ${email}: ${otp}`); // temporary
     const otpKey = `otp:email:${email}`;
-    const attemptsKey = `otp:verify:${email}`;
     await client.setEx(otpKey, 300, otp);
-    await client.del(attemptsKey);
 
     await sendOtpEmail(email, otp);
 
@@ -125,47 +157,10 @@ exports.sendOtp = async (req, res) => {
       );
     }
 
-    const otpKey = `otp:email:${email}`;
-    const attemptsKey = `otp:verify:${email}`;
-
-    // Check rate limit (max 3 requests per 5 minutes)
-    const attempts = await client.get(attemptsKey);
-    if (attempts && parseInt(attempts) >= 3) {
-      logger.warn(`OTP request rate limit exceeded for ${email}`);
-      return sendError(
-        res,
-        ErrorCodes.RATE_LIMIT,
-        "Too many OTP requests. Please wait 5 minutes.",
-        null,
-        429,
-      );
-    }
-
-    // IMPROVED: allow resend after 30 seconds (if OTP exists and has > 4.5 min left -> reject, else allow overwrite)
-    const existingOtp = await client.get(otpKey);
-    if (existingOtp) {
-      const ttl = await client.ttl(otpKey);
-      // if more than 270 seconds remain (4.5 min), reject to prevent abuse
-      if (ttl > 270) {
-        logger.warn(
-          `OTP still valid for ${email}, reject resend (ttl ${ttl}s)`,
-        );
-        return sendError(
-          res,
-          ErrorCodes.RATE_LIMIT,
-          `An OTP has already been sent and is valid for ${ttl} more seconds. Please use that code or wait for it to expire.`,
-          null,
-          429,
-        );
-      } else {
-        logger.info(`Resending OTP to ${email}, old OTP expires in ${ttl}s`);
-      }
-    }
-
     const otp = generateOTP();
+    console.log(`[DEV] OTP for ${email}: ${otp}`); // temporary
+    const otpKey = `otp:email:${email}`;
     await client.setEx(otpKey, 300, otp);
-    await client.incr(attemptsKey);
-    await client.expire(attemptsKey, 300);
 
     await sendOtpEmail(email, otp);
 
@@ -204,20 +199,6 @@ exports.verifyOtp = async (req, res) => {
     }
 
     const otpKey = `otp:email:${email}`;
-    const attemptsKey = `otp:verify:${email}`;
-    const attempts = await client.incr(attemptsKey);
-    if (attempts > 3) {
-      logger.warn(`OTP verify rate limit exceeded for ${email}`);
-      return sendError(
-        res,
-        ErrorCodes.RATE_LIMIT,
-        "Too many verification attempts. Please wait 5 minutes.",
-        null,
-        429,
-      );
-    }
-    await client.expire(attemptsKey, 300);
-
     const stored = await client.get(otpKey);
     if (!stored || stored !== code) {
       logger.warn(`Failed OTP verification for ${email}`);
@@ -231,7 +212,6 @@ exports.verifyOtp = async (req, res) => {
     }
 
     await client.del(otpKey);
-    await client.del(attemptsKey);
 
     const user = await User.findOne({ email });
     if (!user) {

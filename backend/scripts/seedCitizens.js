@@ -23,6 +23,25 @@ const regions = [
   "Bahir Dar",
   "Mekelle",
 ];
+const ageRanges = ["18-24", "25-34", "35-44", "45-54", "55+"];
+const genders = ["male", "female", "non-binary", "prefer-not-to-say"];
+const occupations = [
+  "student",
+  "farmer",
+  "merchant",
+  "government-employee",
+  "private-sector",
+  "unemployed",
+  "other",
+];
+const educations = [
+  "no-formal",
+  "primary",
+  "secondary",
+  "diploma",
+  "bachelors",
+  "postgraduate",
+];
 
 const randomItem = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
@@ -42,16 +61,20 @@ async function seedCitizens() {
       const email = `citizen${i}@test.com`;
       const phone = `+25191234${String(1000 + i).slice(-4)}`;
       const phoneHash = hashPhone(phone);
-      const region = randomItem(regions);
-
       citizens.push({
         email,
         passwordHash,
         phoneHash,
-        region,
+        region: randomItem(regions),
+        ageRange: randomItem(ageRanges),
+        gender: randomItem(genders),
+        occupation: randomItem(occupations),
+        education: randomItem(educations),
         role: "citizen",
         verified: true,
         active: true,
+        tokenVersion: 0,
+        deletedAt: null,
       });
     }
 
@@ -63,7 +86,6 @@ async function seedCitizens() {
 
     console.log("Logging in citizens to obtain tokens...\n");
     const tokens = [];
-
     for (let i = 1; i <= 15; i++) {
       const email = `citizen${i}@test.com`;
       try {
@@ -71,7 +93,6 @@ async function seedCitizens() {
           email,
           password: DEFAULT_PASSWORD,
         });
-
         let token, role;
         if (response.data.status === "success") {
           token = response.data.data.token;
@@ -80,7 +101,6 @@ async function seedCitizens() {
           token = response.data.token;
           role = response.data.role;
         }
-
         tokens.push({ email, token, role });
         console.log(`${email} logged in.`);
       } catch (err) {
@@ -91,14 +111,8 @@ async function seedCitizens() {
       }
     }
 
-    // Create tokens directory if it doesn't exist
     const tokensDir = path.join(__dirname, "../tokens");
-    if (!fs.existsSync(tokensDir)) {
-      fs.mkdirSync(tokensDir);
-      console.log("Created tokens directory.");
-    }
-
-    // Save tokens to tokens/citizen_tokens.json
+    if (!fs.existsSync(tokensDir)) fs.mkdirSync(tokensDir);
     const tokenFilePath = path.join(tokensDir, "citizen_tokens.json");
     fs.writeFileSync(tokenFilePath, JSON.stringify(tokens, null, 2));
     console.log(`\nTokens saved to ${tokenFilePath}`);

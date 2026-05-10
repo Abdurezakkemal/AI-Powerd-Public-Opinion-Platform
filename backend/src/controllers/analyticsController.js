@@ -9,110 +9,177 @@ const {
   ErrorCodes,
 } = require("../utils/responseHelper");
 
-// Helper to get rating distribution from votes
-const getRatingDistribution = (votes) => {
-  const dist = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
-  votes.forEach((v) => dist[v.rating]++);
-  return dist;
-};
+// ---------- Helper: poll‑type aggregation ----------
+const getPollTypeAggregation = async (policy, voteFilter) => {
+  const votes = await Vote.find(voteFilter);
+  const totalVotes = votes.length;
 
-// Helper to get sentiment counts from comments
-const getSentimentCounts = (comments) => {
-  const counts = { positive: 0, negative: 0, neutral: 0 };
-  comments.forEach((c) => {
-    if (c.sentiment && c.sentiment.label) {
-      counts[c.sentiment.label] = (counts[c.sentiment.label] || 0) + 1;
+  switch (policy.pollType) {
+    case "binary": {
+      const yesCount = votes.filter((v) => v.value === "yes").length;
+      const noCount = totalVotes - yesCount;
+      return {
+        totalVotes,
+        yesCount,
+        noCount,
+        yesPercentage: totalVotes
+          ? ((yesCount / totalVotes) * 100).toFixed(1)
+          : 0,
+        noPercentage: totalVotes
+          ? ((noCount / totalVotes) * 100).toFixed(1)
+          : 0,
+      };
     }
-  });
-  return counts;
-};
-
-// Helper to get top keywords from comments
-const getTopKeywords = (comments, limit = 10) => {
-  const freq = {};
-  comments.forEach((c) => {
-    if (c.keywords && Array.isArray(c.keywords)) {
-      c.keywords.forEach((kw) => {
-        freq[kw] = (freq[kw] || 0) + 1;
+    case "multipleChoice": {
+      const optionCounts = {};
+      policy.pollOptions.forEach((opt) => {
+        optionCounts[opt.id] = 0;
       });
+      votes.forEach((v) => {
+        if (Array.isArray(v.value)) {
+          v.value.forEach((optId) => {
+            if (optionCounts[optId] !== undefined) optionCounts[optId]++;
+          });
+        }
+      });
+      const results = policy.pollOptions.map((opt) => ({
+        id: opt.id,
+        text: opt.text,
+        count: optionCounts[opt.id],
+        percentage: totalVotes
+          ? ((optionCounts[opt.id] / totalVotes) * 100).toFixed(1)
+          : 0,
+      }));
+      return { totalVotes, results };
     }
-  });
-  return Object.entries(freq)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([keyword, count]) => ({ keyword, count }));
+    case "likert":
+    case "rating": {
+      const values = votes.map((v) => v.value);
+      const sum = values.reduce((a, b) => a + b, 0);
+      const avg = totalVotes ? (sum / totalVotes).toFixed(2) : 0;
+      const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+      values.forEach((v) => {
+        distribution[v] = (distribution[v] || 0) + 1;
+      });
+      return { totalVotes, average: parseFloat(avg), distribution };
+    }
+    case "approval": {
+      const approveCount = votes.filter((v) => v.value === "approve").length;
+      const rejectCount = votes.filter((v) => v.value === "reject").length;
+      const abstainCount = votes.filter((v) => v.value === "abstain").length;
+      const netApproval = approveCount - rejectCount;
+      return {
+        totalVotes,
+        approveCount,
+        rejectCount,
+        abstainCount,
+        approvePercentage: totalVotes
+          ? ((approveCount / totalVotes) * 100).toFixed(1)
+          : 0,
+        rejectPercentage: totalVotes
+          ? ((rejectCount / totalVotes) * 100).toFixed(1)
+          : 0,
+        abstainPercentage: totalVotes
+          ? ((abstainCount / totalVotes) * 100).toFixed(1)
+          : 0,
+        netApproval,
+      };
+    }
+    case "rankedChoice": {
+      // Simplified: just return the first‑preference counts
+      const firstPref = {};
+      policy.pollOptions.forEach((opt) => {
+        firstPref[opt.id] = 0;
+      });
+      votes.forEach((v) => {
+        if (Array.isArray(v.value) && v.value.length > 0) {
+          const first = v.value[0];
+          if (firstPref[first] !== undefined) firstPref[first]++;
+        }
+      });
+      const results = policy.pollOptions.map((opt) => ({
+        id: opt.id,
+        text: opt.text,
+        firstChoiceCount: firstPref[opt.id],
+        percentage: totalVotes
+          ? ((firstPref[opt.id] / totalVotes) * 100).toFixed(1)
+          : 0,
+      }));
+      return { totalVotes, firstChoiceResults: results };
+    }
+    default:
+      return { totalVotes };
+  }
 };
 
-// Helper to validate date parameters
-const validateDateParam = (dateStr, paramName) => {
+// ---------- Helper: date validation ----------
+const parseDate = (dateStr, paramName) => {
   if (!dateStr) return null;
-  const date = new Date(dateStr);
-  if (isNaN(date.getTime())) {
-    throw new Error(`Invalid ${paramName}: ${dateStr}`);
-  }
-  return date;
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) throw new Error(`Invalid ${paramName}: ${dateStr}`);
+  return d;
 };
 
-// Helper to check if user can view policy analytics
-// Returns: { allowed: boolean, errorCode?: string, errorMessage?: string, statusCode?: number }
-const checkPolicyAnalyticsAccess = (policy, user) => {
-  // Admin always gets access (but will be handled by status check later)
-  if (user.role === "admin") {
-    return { allowed: true };
-  }
-
-  // Only planners can view analytics (citizens cannot)
+// ---------- Helper: permission check ----------
+const checkAnalyticsAccess = async (policy, user) => {
+  if (user.role === "admin") return { allowed: true };
   if (user.role !== "planner") {
     return {
       allowed: false,
       errorCode: "FORBIDDEN",
-      errorMessage:
-        "Access denied. Only planners and admins can view analytics.",
+      errorMessage: "Only planners can view analytics",
       statusCode: 403,
     };
   }
+  const isOwner = policy.createdBy.toString() === user.id.toString();
+  if (isOwner) return { allowed: true };
 
-  // For draft/published policies
-  if (policy.status === "draft" || policy.status === "published") {
-    // Creator gets a validation error (policy not active yet)
-    if (policy.createdBy.toString() === user.id.toString()) {
-      return {
-        allowed: false,
-        errorCode: "VALIDATION_ERROR",
-        errorMessage: "Policy is not active yet (no analytics available)",
-        statusCode: 400,
-      };
-    }
-    // Other planners get 404 (policy hidden)
-    return {
-      allowed: false,
-      errorCode: "NOT_FOUND",
-      errorMessage: "Policy not found",
-      statusCode: 404,
-    };
-  }
+  // Check if user is an active associate with view_analytics permission
+  const PolicyAssociate = require("../models/PolicyAssociate");
+  const associate = await PolicyAssociate.findOne({
+    policyId: policy._id,
+    plannerId: user.id,
+    revokedAt: null,
+    permissions: "view_analytics",
+  });
+  if (associate) return { allowed: true };
 
-  // For active/paused/closed policies: any planner can view
-  return { allowed: true };
+  return {
+    allowed: false,
+    errorCode: "NOT_FOUND",
+    errorMessage: "Policy not found",
+    statusCode: 404,
+  };
 };
 
-// GET /analytics/:policyId
+// ---------- Main analytics endpoint with optional demographic filters ----------
 exports.getAnalytics = async (req, res) => {
   try {
     const { policyId } = req.params;
-    const { startDate, endDate } = req.query;
-
-    let start, end;
-    try {
-      start = validateDateParam(startDate, "startDate");
-      end = validateDateParam(endDate, "endDate");
-    } catch (err) {
-      return sendError(res, ErrorCodes.VALIDATION, err.message, null, 400);
+    if (!mongoose.Types.ObjectId.isValid(policyId)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid policy ID format",
+        null,
+        400,
+      );
     }
+    const {
+      startDate,
+      endDate,
+      gender,
+      ageRange,
+      occupation,
+      education,
+      region,
+    } = req.query;
+
+    const start = parseDate(startDate, "startDate");
+    const end = parseDate(endDate, "endDate");
 
     const policy = await Policy.findById(policyId);
-    if (!policy) {
-      logger.warn(`Analytics requested for non-existent policy: ${policyId}`);
+    if (!policy)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -120,64 +187,64 @@ exports.getAnalytics = async (req, res) => {
         null,
         404,
       );
-    }
 
-    // Check permission
-    const { allowed, errorCode, errorMessage, statusCode } =
-      checkPolicyAnalyticsAccess(policy, req.user);
-    if (!allowed) {
-      logger.warn(
-        `Access denied to analytics for policy ${policyId} by user ${req.user.id}`,
+    const access = await checkAnalyticsAccess(policy, req.user);
+    if (!access.allowed)
+      return sendError(
+        res,
+        access.errorCode,
+        access.errorMessage,
+        null,
+        access.statusCode,
       );
-      return sendError(res, errorCode, errorMessage, null, statusCode);
-    }
 
-    // Build date filters for votes and comments
-    const voteFilter = { policyId };
-    const commentFilter = { policyId };
+    // Build vote filter
+    let voteFilter = { policyId: policy._id };
     if (start) voteFilter.createdAt = { $gte: start };
     if (end) voteFilter.createdAt = { ...voteFilter.createdAt, $lte: end };
-    if (start) commentFilter.createdAt = { $gte: start };
-    if (end)
-      commentFilter.createdAt = { ...commentFilter.createdAt, $lte: end };
+    if (gender) voteFilter["demographics.gender"] = gender;
+    if (ageRange) voteFilter["demographics.ageRange"] = ageRange;
+    if (occupation) voteFilter["demographics.occupation"] = occupation;
+    if (education) voteFilter["demographics.education"] = education;
+    if (region) voteFilter.region = region;
 
-    const votes = await Vote.find(voteFilter);
-    const totalVotes = votes.length;
-    const appVotes = votes.filter((v) => v.channel === "app").length;
-    const smsVotes = votes.filter((v) => v.channel === "sms").length;
-    const ratings = votes.map((v) => v.rating);
-    const averageRating = ratings.length
-      ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(2)
-      : 0;
-    const ratingDistribution = getRatingDistribution(votes);
+    const [voteAgg, comments] = await Promise.all([
+      getPollTypeAggregation(policy, voteFilter),
+      Comment.find({ policyId: policy._id, status: "approved" }).lean(),
+    ]);
 
-    const comments = await Comment.find(commentFilter);
-    const sentimentCounts = getSentimentCounts(comments);
-    const topKeywords = getTopKeywords(comments);
+    const sentimentCounts = { positive: 0, negative: 0, neutral: 0 };
+    const keywordFreq = {};
+    comments.forEach((c) => {
+      if (c.sentiment?.label) sentimentCounts[c.sentiment.label]++;
+      if (c.keywords) {
+        c.keywords.forEach((kw) => {
+          keywordFreq[kw] = (keywordFreq[kw] || 0) + 1;
+        });
+      }
+    });
+    const topKeywords = Object.entries(keywordFreq)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([keyword, count]) => ({ keyword, count }));
+
+    const response = {
+      policyId: policy._id,
+      title: policy.title,
+      pollType: policy.pollType,
+      ...voteAgg,
+      sentimentCounts,
+      topKeywords,
+    };
 
     logger.info(
       `Analytics delivered for policy ${policyId} to user ${req.user.id}`,
     );
-    return sendSuccess(
-      res,
-      {
-        policyId: policy._id,
-        title: policy.title,
-        averageRating: Number(averageRating),
-        ratingDistribution,
-        sentimentCounts,
-        topKeywords,
-        totalVotes,
-        appVotes,
-        smsVotes,
-      },
-      "Analytics retrieved successfully",
-    );
+    return sendSuccess(res, response, "Analytics retrieved successfully");
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Get analytics error",
-    );
+    console.error("Full error:", err);
+    console.error("Error stack:", err.stack);
+    logger.error({ error: err.message }, "Get analytics error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -188,23 +255,26 @@ exports.getAnalytics = async (req, res) => {
   }
 };
 
-// GET /analytics/:policyId/export (CSV)
-exports.exportAnalytics = async (req, res) => {
+// ---------- Timeseries endpoint ----------
+exports.getTimeseries = async (req, res) => {
   try {
     const { policyId } = req.params;
-    const { startDate, endDate } = req.query;
-
-    let start, end;
-    try {
-      start = validateDateParam(startDate, "startDate");
-      end = validateDateParam(endDate, "endDate");
-    } catch (err) {
-      return sendError(res, ErrorCodes.VALIDATION, err.message, null, 400);
+    if (!mongoose.Types.ObjectId.isValid(policyId)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid policy ID format",
+        null,
+        400,
+      );
     }
+    const { bucket = "day", startDate, endDate } = req.query;
+
+    const start = parseDate(startDate, "startDate");
+    const end = parseDate(endDate, "endDate");
 
     const policy = await Policy.findById(policyId);
-    if (!policy) {
-      logger.warn(`CSV export requested for non-existent policy: ${policyId}`);
+    if (!policy)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -212,77 +282,106 @@ exports.exportAnalytics = async (req, res) => {
         null,
         404,
       );
-    }
 
-    // Check permission
-    const { allowed, errorCode, errorMessage, statusCode } =
-      checkPolicyAnalyticsAccess(policy, req.user);
-    if (!allowed) {
-      logger.warn(
-        `Access denied to CSV export for policy ${policyId} by user ${req.user.id}`,
+    const access = await checkAnalyticsAccess(policy, req.user);
+    if (!access.allowed)
+      return sendError(
+        res,
+        access.errorCode,
+        access.errorMessage,
+        null,
+        access.statusCode,
       );
-      return sendError(res, errorCode, errorMessage, null, statusCode);
+
+    let dateFormat;
+    switch (bucket) {
+      case "hour":
+        dateFormat = "%Y-%m-%d %H:00";
+        break;
+      case "day":
+        dateFormat = "%Y-%m-%d";
+        break;
+      case "week":
+        dateFormat = "%Y-%V";
+        break;
+      case "month":
+        dateFormat = "%Y-%m";
+        break;
+      default:
+        dateFormat = "%Y-%m-%d";
     }
 
-    const voteFilter = { policyId };
+    const voteFilter = { policyId: policy._id };
     if (start) voteFilter.createdAt = { $gte: start };
     if (end) voteFilter.createdAt = { ...voteFilter.createdAt, $lte: end };
 
-    const votes = await Vote.find(voteFilter)
-      .populate("userId", "region")
-      .lean();
+    let groupStage;
+    if (policy.pollType === "binary") {
+      groupStage = {
+        $group: {
+          _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+          total: { $sum: 1 },
+          yes: { $sum: { $cond: [{ $eq: ["$value", "yes"] }, 1, 0] } },
+        },
+      };
+    } else if (["rating", "likert"].includes(policy.pollType)) {
+      groupStage = {
+        $group: {
+          _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+          total: { $sum: 1 },
+          avg: { $avg: "$value" },
+        },
+      };
+    } else {
+      groupStage = {
+        $group: {
+          _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+          total: { $sum: 1 },
+        },
+      };
+    }
 
-    let csv = "rating,channel,date,region\n";
-    votes.forEach((v) => {
-      const date = v.createdAt.toISOString().split("T")[0];
-      let region = "";
-      if (v.channel === "app" && v.userId) {
-        region = v.userId.region || "";
-      }
-      csv += `${v.rating},${v.channel},${date},${region}\n`;
-    });
+    const timeseries = await Vote.aggregate([
+      { $match: voteFilter },
+      groupStage,
+      { $sort: { _id: 1 } },
+    ]);
 
-    logger.info(
-      `CSV exported for policy ${policyId} by user ${req.user.id} (${votes.length} rows)`,
+    const formatted = timeseries.map((t) => ({
+      bucket: t._id,
+      totalVotes: t.total,
+      ...(t.yes !== undefined && { yesCount: t.yes, noCount: t.total - t.yes }),
+      ...(t.avg !== undefined && {
+        averageRating: parseFloat(t.avg.toFixed(2)),
+      }),
+    }));
+
+    logger.info(`Timeseries for policy ${policyId} (${bucket}) delivered`);
+    return sendSuccess(
+      res,
+      { bucket, data: formatted },
+      "Timeseries retrieved",
     );
-    res.setHeader("Content-Type", "text/csv");
-    res.setHeader(
-      "Content-Disposition",
-      `attachment; filename="policy-${policyId}-analytics.csv"`,
-    );
-    return res.send(csv);
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Export analytics error",
-    );
+    logger.error({ error: err.message }, "Timeseries error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to export analytics",
+      "Failed to retrieve timeseries",
       null,
       500,
     );
   }
 };
 
-// GET /analytics/:policyId/comments
-exports.getComments = async (req, res) => {
+// ---------- Correlation for multipleChoice policies ----------
+exports.getCorrelation = async (req, res) => {
   try {
     const { policyId } = req.params;
-    const { page = 1, limit = 20, sentiment, startDate, endDate } = req.query;
-
-    let start, end;
-    try {
-      start = validateDateParam(startDate, "startDate");
-      end = validateDateParam(endDate, "endDate");
-    } catch (err) {
-      return sendError(res, ErrorCodes.VALIDATION, err.message, null, 400);
-    }
+    const { minSupport = 10 } = req.query;
 
     const policy = await Policy.findById(policyId);
-    if (!policy) {
-      logger.warn(`Comments requested for non-existent policy: ${policyId}`);
+    if (!policy)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -290,55 +389,403 @@ exports.getComments = async (req, res) => {
         null,
         404,
       );
-    }
-
-    // Check permission
-    const { allowed, errorCode, errorMessage, statusCode } =
-      checkPolicyAnalyticsAccess(policy, req.user);
-    if (!allowed) {
-      logger.warn(
-        `Access denied to comments for policy ${policyId} by user ${req.user.id}`,
+    if (policy.pollType !== "multipleChoice") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Correlation only available for multipleChoice policies",
+        null,
+        400,
       );
-      return sendError(res, errorCode, errorMessage, null, statusCode);
     }
 
-    const filter = { policyId };
+    const access = await checkAnalyticsAccess(policy, req.user);
+    if (!access.allowed)
+      return sendError(
+        res,
+        access.errorCode,
+        access.errorMessage,
+        null,
+        access.statusCode,
+      );
+
+    const votes = await Vote.find({ policyId: policy._id }, "value");
+    const optionIds = policy.pollOptions.map((o) => o.id);
+
+    // Build co‑occurrence matrix
+    const coOccur = {};
+    optionIds.forEach((a) => {
+      coOccur[a] = {};
+      optionIds.forEach((b) => {
+        coOccur[a][b] = 0;
+      });
+    });
+    let totalPairs = 0;
+    votes.forEach((v) => {
+      const selected = v.value;
+      if (Array.isArray(selected) && selected.length > 1) {
+        for (let i = 0; i < selected.length; i++) {
+          for (let j = i + 1; j < selected.length; j++) {
+            const a = selected[i];
+            const b = selected[j];
+            coOccur[a][b]++;
+            coOccur[b][a]++;
+            totalPairs++;
+          }
+        }
+      }
+    });
+
+    const correlations = [];
+    for (let i = 0; i < optionIds.length; i++) {
+      for (let j = i + 1; j < optionIds.length; j++) {
+        const a = optionIds[i];
+        const b = optionIds[j];
+        const count = coOccur[a][b];
+        if (count >= minSupport) {
+          correlations.push({
+            optionA: a,
+            optionB: b,
+            coOccurrenceCount: count,
+            percentage: totalPairs
+              ? ((count / totalPairs) * 100).toFixed(1)
+              : 0,
+          });
+        }
+      }
+    }
+
+    logger.info(`Correlation for policy ${policyId} delivered`);
+    return sendSuccess(
+      res,
+      { correlations, totalVotes: votes.length },
+      "Correlation matrix retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Correlation error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to compute correlation",
+      null,
+      500,
+    );
+  }
+};
+
+// // ---------- Compare two policies ----------
+// exports.comparePolicies = async (req, res) => {
+//   try {
+//     const { policyId1, policyId2 } = req.query;
+//     if (!policyId1 || !policyId2) {
+//       return sendError(
+//         res,
+//         ErrorCodes.VALIDATION,
+//         "policyId1 and policyId2 are required",
+//         null,
+//         400,
+//       );
+//     }
+
+//     const [policy1, policy2] = await Promise.all([
+//       Policy.findById(policyId1),
+//       Policy.findById(policyId2),
+//     ]);
+//     if (!policy1 || !policy2)
+//       return sendError(
+//         res,
+//         ErrorCodes.NOT_FOUND,
+//         "One or both policies not found",
+//         null,
+//         404,
+//       );
+
+//     // Check access for both
+//     const access1 = checkAnalyticsAccess(policy1, req.user);
+//     const access2 = checkAnalyticsAccess(policy2, req.user);
+//     if (!access1.allowed || !access2.allowed) {
+//       return sendError(
+//         res,
+//         ErrorCodes.FORBIDDEN,
+//         "Access denied to one or both policies",
+//         null,
+//         403,
+//       );
+//     }
+
+//     const [agg1, agg2] = await Promise.all([
+//       getPollTypeAggregation(policy1, { policyId: policy1._id }),
+//       getPollTypeAggregation(policy2, { policyId: policy2._id }),
+//     ]);
+
+//     const response = {
+//       policy1: {
+//         id: policy1._id,
+//         title: policy1.title,
+//         pollType: policy1.pollType,
+//         ...agg1,
+//       },
+//       policy2: {
+//         id: policy2._id,
+//         title: policy2.title,
+//         pollType: policy2.pollType,
+//         ...agg2,
+//       },
+//     };
+
+//     logger.info(`Comparison between ${policyId1} and ${policyId2} delivered`);
+//     return sendSuccess(res, response, "Comparison retrieved");
+//   } catch (err) {
+//     console.error("=== COMPARE POLICIES ERROR ===");
+//     console.error("Error name:", err.name);
+//     console.error("Error message:", err.message);
+//     console.error("Error stack:", err.stack);
+//     if (err.errors) console.error("Validation errors:", err.errors);
+//     logger.error({ error: err.message, stack: err.stack }, "Compare error");
+//     return sendError(
+//       res,
+//       ErrorCodes.INTERNAL,
+//       `Failed to compare policies: ${err.message}`,
+//       null,
+//       500,
+//     );
+//   }
+// };
+
+// ---------- Demographic breakdown (for planners) ----------
+exports.getDemographicBreakdown = async (req, res) => {
+  try {
+    const { policyId } = req.params;
+    const { dimension } = req.query; // one of: ageRange, gender, occupation, education, region
+    if (!dimension) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "dimension parameter required (ageRange/gender/occupation/education/region)",
+        null,
+        400,
+      );
+    }
+
+    const policy = await Policy.findById(policyId);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+
+    const access = await checkAnalyticsAccess(policy, req.user);
+    if (!access.allowed)
+      return sendError(
+        res,
+        access.errorCode,
+        access.errorMessage,
+        null,
+        access.statusCode,
+      );
+
+    const allowedDims = [
+      "ageRange",
+      "gender",
+      "occupation",
+      "education",
+      "region",
+    ];
+    if (!allowedDims.includes(dimension)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Invalid dimension. Allowed: ${allowedDims.join(", ")}`,
+        null,
+        400,
+      );
+    }
+
+    let groupField;
+    if (dimension === "region") groupField = "$region";
+    else groupField = `$demographics.${dimension}`;
+
+    const breakdown = await Vote.aggregate([
+      { $match: { policyId: policy._id } },
+      {
+        $group: {
+          _id: groupField,
+          count: { $sum: 1 },
+          avgRating: { $avg: "$value" },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const formatted = breakdown.map((b) => ({
+      [dimension]: b._id || "unknown",
+      totalVotes: b.count,
+      averageRating: b.avgRating ? parseFloat(b.avgRating.toFixed(2)) : null,
+    }));
+
+    logger.info(`Demographic breakdown for ${policyId} by ${dimension}`);
+    return sendSuccess(
+      res,
+      { dimension, data: formatted },
+      "Demographic breakdown retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Demographic breakdown error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve breakdown",
+      null,
+      500,
+    );
+  }
+};
+
+// ---------- CSV Export (enhanced) ----------
+exports.exportAnalytics = async (req, res) => {
+  try {
+    const { policyId } = req.params;
+    const {
+      startDate,
+      endDate,
+      gender,
+      ageRange,
+      occupation,
+      education,
+      region,
+    } = req.query;
+
+    const start = parseDate(startDate, "startDate");
+    const end = parseDate(endDate, "endDate");
+
+    const policy = await Policy.findById(policyId);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+
+    const access = await checkAnalyticsAccess(policy, req.user);
+    if (!access.allowed)
+      return sendError(
+        res,
+        access.errorCode,
+        access.errorMessage,
+        null,
+        access.statusCode,
+      );
+
+    let voteFilter = { policyId: policy._id };
+    if (start) voteFilter.createdAt = { $gte: start };
+    if (end) voteFilter.createdAt = { ...voteFilter.createdAt, $lte: end };
+    if (gender) voteFilter["demographics.gender"] = gender;
+    if (ageRange) voteFilter["demographics.ageRange"] = ageRange;
+    if (occupation) voteFilter["demographics.occupation"] = occupation;
+    if (education) voteFilter["demographics.education"] = education;
+    if (region) voteFilter.region = region;
+
+    const votes = await Vote.find(voteFilter).lean();
+
+    let csv =
+      "voteId,channel,value,region,ageRange,gender,occupation,education,createdAt\n";
+    votes.forEach((v) => {
+      const valueStr = Array.isArray(v.value) ? v.value.join("|") : v.value;
+      csv += `${v._id},${v.channel},${valueStr},${v.region || ""},${v.demographics?.ageRange || ""},${v.demographics?.gender || ""},${v.demographics?.occupation || ""},${v.demographics?.education || ""},${v.createdAt.toISOString()}\n`;
+    });
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="policy-${policyId}-export.csv"`,
+    );
+    return res.send(csv);
+  } catch (err) {
+    logger.error({ error: err.message }, "Export error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to export data",
+      null,
+      500,
+    );
+  }
+};
+
+// ---------- Comments list (with filtering) ----------
+exports.getComments = async (req, res) => {
+  try {
+    const { policyId } = req.params;
+    const {
+      page = 1,
+      limit = 20,
+      sentiment,
+      status,
+      language,
+      parentCommentId = null,
+    } = req.query;
+
+    const policy = await Policy.findById(policyId);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+
+    const access = await checkAnalyticsAccess(policy, req.user);
+    if (!access.allowed)
+      return sendError(
+        res,
+        access.errorCode,
+        access.errorMessage,
+        null,
+        access.statusCode,
+      );
+
+    const filter = { policyId: policy._id };
+    if (parentCommentId === "null") filter.parentCommentId = null;
+    else if (parentCommentId) filter.parentCommentId = parentCommentId;
     if (sentiment) filter["sentiment.label"] = sentiment;
-    if (start) filter.createdAt = { $gte: start };
-    if (end) filter.createdAt = { ...filter.createdAt, $lte: end };
+    if (status) filter.status = status;
+    if (language) filter.language = language;
 
     const comments = await Comment.find(filter)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit))
-      .select("comment sentiment keywords createdAt userId")
       .populate("userId", "email")
       .lean();
 
     const total = await Comment.countDocuments(filter);
 
-    const formattedComments = comments.map((c) => ({
+    const formatted = comments.map((c) => ({
       id: c._id,
-      text: c.comment,
-      sentiment: c.sentiment?.label || null,
-      confidence: c.sentiment?.confidence || null,
-      keywords: c.keywords || [],
+      text: c.text,
+      sentiment: c.sentiment?.label,
+      confidence: c.sentiment?.confidence,
+      keywords: c.keywords,
+      status: c.status,
+      isOfficialReply: c.isOfficialReply,
       createdAt: c.createdAt,
+      userEmail: c.userId?.email,
+      isEdited: (c.editedHistory && c.editedHistory.length > 0) || false,
     }));
 
-    logger.info(
-      `Comments retrieved for policy ${policyId} by user ${req.user.id} (page ${page}, total ${total})`,
-    );
     return sendSuccess(
       res,
-      { comments: formattedComments, total, page: Number(page) },
-      "Comments retrieved successfully",
+      { comments: formatted, total, page: Number(page) },
+      "Comments retrieved",
     );
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Get comments error",
-    );
+    logger.error({ error: err.message }, "Get comments error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -349,7 +796,6 @@ exports.getComments = async (req, res) => {
   }
 };
 
-// GET /analytics/heatmap
 exports.getHeatmap = async (req, res) => {
   try {
     const {
@@ -366,19 +812,17 @@ exports.getHeatmap = async (req, res) => {
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
-        "Access denied. Only planners and admins can view heatmap.",
+        "Only planners and admins can view heatmap",
         null,
         403,
       );
     }
 
-    // -------- 1. Validate and parse date parameters ----------
     const parseDate = (dateStr, paramName) => {
       if (!dateStr) return null;
       const d = new Date(dateStr);
-      if (isNaN(d.getTime())) {
+      if (isNaN(d.getTime()))
         throw new Error(`Invalid ${paramName}: ${dateStr}`);
-      }
       return d;
     };
 
@@ -390,7 +834,6 @@ exports.getHeatmap = async (req, res) => {
       return sendError(res, ErrorCodes.VALIDATION, err.message, null, 400);
     }
 
-    // -------- 2. Validate policyId and check access ----------
     let policy = null;
     if (policyId) {
       if (!mongoose.Types.ObjectId.isValid(policyId)) {
@@ -403,7 +846,7 @@ exports.getHeatmap = async (req, res) => {
         );
       }
       policy = await Policy.findById(policyId);
-      if (!policy) {
+      if (!policy)
         return sendError(
           res,
           ErrorCodes.NOT_FOUND,
@@ -411,18 +854,19 @@ exports.getHeatmap = async (req, res) => {
           null,
           404,
         );
-      }
-
-      const access = checkPolicyAnalyticsAccess(policy, req.user);
-      console.log("access object:", access);
-      const { allowed, errorCode, errorMessage, statusCode } =
-        checkPolicyAnalyticsAccess(policy, req.user);
-      if (!allowed) {
-        return sendError(res, errorCode, errorMessage, null, statusCode);
+      // Reuse existing access check
+      const access = await checkAnalyticsAccess(policy, req.user);
+      if (!access.allowed) {
+        return sendError(
+          res,
+          access.errorCode,
+          access.errorMessage,
+          null,
+          access.statusCode,
+        );
       }
     }
 
-    // -------- 3. Build vote match (app votes with region) ----------
     const voteMatch = { channel: "app", region: { $ne: null } };
     if (policyId) voteMatch.policyId = new mongoose.Types.ObjectId(policyId);
     if (start) voteMatch.createdAt = { $gte: start };
@@ -432,14 +876,6 @@ exports.getHeatmap = async (req, res) => {
       voteMatch.region = { $in: regionList };
     }
 
-    // -------- 4. Build comment match (for sentiment) ----------
-    const commentMatch = {};
-    if (policyId) commentMatch.policyId = new mongoose.Types.ObjectId(policyId);
-    if (start) commentMatch.createdAt = { $gte: start };
-    if (end) commentMatch.createdAt = { ...commentMatch.createdAt, $lte: end };
-    // Note: comments themselves do not have a region field; we will join with votes later
-
-    // -------- 5. Date format based on interval ----------
     let dateFormat;
     switch (interval) {
       case "day":
@@ -447,7 +883,7 @@ exports.getHeatmap = async (req, res) => {
         break;
       case "week":
         dateFormat = "%Y-%V";
-        break; // ISO week number
+        break;
       case "month":
         dateFormat = "%Y-%m";
         break;
@@ -456,9 +892,8 @@ exports.getHeatmap = async (req, res) => {
     }
 
     let results;
-
     if (byRegionFlag) {
-      // -------- 5a. Vote aggregation (time + region) ----------
+      // Group by period + region, compute count and if value is numeric, average it
       const voteAgg = await Vote.aggregate([
         { $match: voteMatch },
         {
@@ -470,222 +905,66 @@ exports.getHeatmap = async (req, res) => {
               region: "$region",
             },
             totalVotes: { $sum: 1 },
-            averageRating: { $avg: "$rating" },
+            // For numeric value (rating/likert), compute average; otherwise just count
+            numericSum: {
+              $sum: { $cond: [{ $isNumber: "$value" }, "$value", 0] },
+            },
+            numericCount: { $sum: { $cond: [{ $isNumber: "$value" }, 1, 0] } },
+            // For binary, count yes
+            yesCount: { $sum: { $cond: [{ $eq: ["$value", "yes"] }, 1, 0] } },
           },
         },
         { $sort: { "_id.period": 1, "_id.region": 1 } },
       ]);
 
-      // -------- 5b. Sentiment aggregation (comments → votes) ----------
-      // First, build the pipeline steps
-      const sentimentPipeline = [
-        { $match: commentMatch },
-        {
-          $lookup: {
-            from: "votes",
-            localField: "voteId",
-            foreignField: "_id",
-            as: "vote",
-          },
-        },
-        { $unwind: "$vote" },
-        // Only keep comments whose vote has a region (app votes)
-        { $match: { "vote.region": { $ne: null } } },
-      ];
-      // Apply region filter if provided (to sentiment aggregation as well)
-      if (regions) {
-        const regionList = regions.split(",").map((r) => r.trim());
-        sentimentPipeline.push({
-          $match: { "vote.region": { $in: regionList } },
-        });
-      }
-      sentimentPipeline.push(
-        {
-          $group: {
-            _id: {
-              period: {
-                $dateToString: { format: dateFormat, date: "$createdAt" },
-              },
-              region: "$vote.region",
-            },
-            positive: {
-              $sum: {
-                $cond: [{ $eq: ["$sentiment.label", "positive"] }, 1, 0],
-              },
-            },
-            negative: {
-              $sum: {
-                $cond: [{ $eq: ["$sentiment.label", "negative"] }, 1, 0],
-              },
-            },
-            neutral: {
-              $sum: { $cond: [{ $eq: ["$sentiment.label", "neutral"] }, 1, 0] },
-            },
-          },
-        },
-        { $sort: { "_id.period": 1, "_id.region": 1 } },
-      );
-
-      const sentimentAgg = await Comment.aggregate(sentimentPipeline);
-
-      // -------- 5c. Merge voteAgg and sentimentAgg ----------
-      const periodsMap = new Map();
-      voteAgg.forEach((v) => {
-        const period = v._id.period;
-        const region = v._id.region;
-        if (!periodsMap.has(period)) periodsMap.set(period, new Map());
-        const regionMap = periodsMap.get(period);
-        regionMap.set(region, {
-          totalVotes: v.totalVotes,
-          averageRating: parseFloat(v.averageRating.toFixed(2)),
-          sentiment: { positive: 0, negative: 0, neutral: 0 },
-        });
-      });
-      sentimentAgg.forEach((c) => {
-        const period = c._id.period;
-        const region = c._id.region;
-        if (!periodsMap.has(period)) periodsMap.set(period, new Map());
-        const regionMap = periodsMap.get(period);
-        if (!regionMap.has(region)) {
-          regionMap.set(region, {
-            totalVotes: 0,
-            averageRating: 0,
-            sentiment: { positive: 0, negative: 0, neutral: 0 },
-          });
-        }
-        const data = regionMap.get(region);
-        data.sentiment.positive += c.positive;
-        data.sentiment.negative += c.negative;
-        data.sentiment.neutral += c.neutral;
-      });
-
-      // Build final response array
-      const periods = Array.from(periodsMap.keys()).sort();
-      results = periods.map((period) => {
-        const regionMap = periodsMap.get(period);
-        const regionsArr = Array.from(regionMap.entries()).map(
-          ([region, data]) => ({
-            region,
-            totalVotes: data.totalVotes,
-            averageRating: data.averageRating,
-            sentimentCounts: data.sentiment,
-          }),
-        );
-        // human‑readable date range (optional)
-        let startDateStr = "",
-          endDateStr = "";
-        if (interval === "day") {
-          startDateStr = period;
-        } else if (interval === "week") {
-          const [year, week] = period.split("-");
-          const firstDay = new Date(year, 0, 1 + (week - 1) * 7);
-          startDateStr = firstDay.toISOString().split("T")[0];
-          const lastDay = new Date(
-            firstDay.getTime() + 6 * 24 * 60 * 60 * 1000,
-          );
-          endDateStr = lastDay.toISOString().split("T")[0];
-        } else if (interval === "month") {
-          startDateStr = period + "-01";
-          const lastDay = new Date(
-            new Date(period + "-01").getFullYear(),
-            new Date(period + "-01").getMonth() + 1,
-            0,
-          );
-          endDateStr = lastDay.toISOString().split("T")[0];
-        }
-        return {
-          period,
-          startDate: startDateStr,
-          endDate: endDateStr,
-          regions: regionsArr,
-        };
-      });
+      results = voteAgg.map((v) => ({
+        period: v._id.period,
+        region: v._id.region,
+        totalVotes: v.totalVotes,
+        averageRating: v.numericCount
+          ? (v.numericSum / v.numericCount).toFixed(2)
+          : null,
+        yesPercentage: v.totalVotes
+          ? ((v.yesCount / v.totalVotes) * 100).toFixed(1)
+          : null,
+      }));
     } else {
-      // -------- Without region grouping (global time series) ----------
       const voteAgg = await Vote.aggregate([
         { $match: voteMatch },
         {
           $group: {
             _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
             totalVotes: { $sum: 1 },
-            averageRating: { $avg: "$rating" },
+            numericSum: {
+              $sum: { $cond: [{ $isNumber: "$value" }, "$value", 0] },
+            },
+            numericCount: { $sum: { $cond: [{ $isNumber: "$value" }, 1, 0] } },
+            yesCount: { $sum: { $cond: [{ $eq: ["$value", "yes"] }, 1, 0] } },
           },
         },
         { $sort: { _id: 1 } },
       ]);
 
-      // For global sentiment, we still need to join comments with votes to get region? Actually global sentiment counts should be per period, not per region. The existing code uses commentMatch without region, which is fine because comments are linked to votes, but we only care about sentiment totals overall. However, we must still filter by date and policy. The commentMatch already includes date and policy. No need to join with votes for global sentiment because the comment has its own createdAt and sentiment. So we can simply aggregate comments directly.
-
-      const sentimentAgg = await Comment.aggregate([
-        { $match: commentMatch },
-        {
-          $group: {
-            _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
-            positive: {
-              $sum: {
-                $cond: [{ $eq: ["$sentiment.label", "positive"] }, 1, 0],
-              },
-            },
-            negative: {
-              $sum: {
-                $cond: [{ $eq: ["$sentiment.label", "negative"] }, 1, 0],
-              },
-            },
-            neutral: {
-              $sum: { $cond: [{ $eq: ["$sentiment.label", "neutral"] }, 1, 0] },
-            },
-          },
-        },
-        { $sort: { _id: 1 } },
-      ]);
-
-      const merged = new Map();
-      voteAgg.forEach((v) => {
-        merged.set(v._id, {
-          period: v._id,
-          totalVotes: v.totalVotes,
-          averageRating: parseFloat(v.averageRating?.toFixed(2) || 0),
-          positive: 0,
-          negative: 0,
-          neutral: 0,
-        });
-      });
-      sentimentAgg.forEach((s) => {
-        if (!merged.has(s._id)) {
-          merged.set(s._id, {
-            period: s._id,
-            totalVotes: 0,
-            averageRating: 0,
-            positive: 0,
-            negative: 0,
-            neutral: 0,
-          });
-        }
-        const data = merged.get(s._id);
-        data.positive += s.positive;
-        data.negative += s.negative;
-        data.neutral += s.neutral;
-      });
-
-      results = Array.from(merged.values()).sort((a, b) =>
-        a.period > b.period ? 1 : -1,
-      );
+      results = voteAgg.map((v) => ({
+        period: v._id,
+        totalVotes: v.totalVotes,
+        averageRating: v.numericCount
+          ? (v.numericSum / v.numericCount).toFixed(2)
+          : null,
+        yesPercentage: v.totalVotes
+          ? ((v.yesCount / v.totalVotes) * 100).toFixed(1)
+          : null,
+      }));
     }
 
-    logger.info(
-      `Heatmap data generated by user ${req.user.id} (${results.length} periods)`,
-    );
-    return sendSuccess(
-      res,
-      { interval, data: results },
-      "Heatmap data retrieved successfully",
-    );
+    logger.info(`Heatmap data generated for user ${req.user.id}`);
+    return sendSuccess(res, { interval, data: results }, "Heatmap retrieved");
   } catch (err) {
-    logger.error({ error: err.message, stack: err.stack }, "Heatmap error");
+    logger.error({ error: err.message }, "Heatmap error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to retrieve heatmap data",
+      "Failed to retrieve heatmap",
       null,
       500,
     );
