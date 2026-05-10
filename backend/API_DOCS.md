@@ -897,6 +897,57 @@ Query parameters (all optional):
 }
 ```
 
+### 3.17 Suggest topics for a policy (AI‑assisted)
+
+**`POST /policies/suggest-topics`**
+
+**Roles:** planner, admin
+
+**Request body:**
+
+```json
+{
+  "text": "የጤና አገልግሎት ማሻሻል አስፈላጊ ነው"
+}
+```
+
+| Field  | Type   | Required | Description                                             |
+| ------ | ------ | -------- | ------------------------------------------------------- |
+| `text` | string | yes      | Policy title + description (or any text, min 10 chars). |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "topics": [
+      { "topic": "Health", "confidence": 0.417 },
+      { "topic": "Poverty Reduction", "confidence": 0.162 },
+      { "topic": "Infrastructure", "confidence": 0.144 }
+    ]
+  },
+  "message": "Topics suggested",
+  "timestamp": "..."
+}
+```
+
+**Behaviour:**
+
+- Calls the AI service (`vicgalle/xlm-roberta-large-xnli-anli`) which understands Amharic, Oromo, Tigrinya, English.
+- Returns up to 3 topic suggestions from a predefined list of 30+ policy‑oriented topics.
+- Confidence scores range from 0 to 1 (higher = more confident).
+
+**Error responses:**
+
+| Status | Code                    | Message                                                     |
+| ------ | ----------------------- | ----------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Text must be at least 10 characters"`                     |
+| 503    | `AI_FAILED`             | `"AI service unavailable"` (returns fallback `["General"]`) |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to get topic suggestions"`                         |
+
+**Integration tip:** After receiving suggestions, the planner can accept/edit them and send the chosen topics via `PUT /policies/:id` (see 3.4). The `topics` array stored in the policy is then used for search (`?topic=Health`) and the personalised feed.
+
 ## 4. Voting & Comment Endpoints
 
 All endpoints in this section require authentication with a valid JWT token (citizen, planner, or admin as noted).
@@ -1207,6 +1258,7 @@ The request body does **not** accept a `text` field.
 - For top‑level comments: resets sentiment, keywords, and sets status to `"processing"` (AI will re‑analyse).
 - For replies: status remains `"approved"` (no AI re‑analysis).
 - The updated comment text is immediately visible, but the AI result for top‑level comments will be refreshed shortly.
+- **Moderators cannot edit the comment text** – only the original author can.
 
 **Response (200 OK):**
 
@@ -1227,6 +1279,8 @@ The request body does **not** accept a `text` field.
 | 403    | `FORBIDDEN`           | `"Only the comment author can edit the text"`        |
 | 404    | `NOT_FOUND`           | `"Comment not found"`                                |
 | 429    | `RATE_LIMIT_EXCEEDED` | `"Too many comments. Please wait a moment."`         |
+
+---
 
 ### 4.8 Get comment edit history
 

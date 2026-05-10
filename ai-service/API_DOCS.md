@@ -156,6 +156,47 @@ Response (200 OK):
 { "status": "ok" }
 ```
 
+## 5.4 POST /suggest-topics
+
+**New endpoint** – suggests policy topics from a predefined list using zero‑shot classification. Supports Amharic, Oromo, Tigrinya, and English.
+
+**Request body:**
+
+| Field            | Type   | Required | Description                                             |
+| ---------------- | ------ | -------- | ------------------------------------------------------- |
+| text             | string | yes      | Policy title and description (min 10 chars)             |
+| candidate_topics | array  | no       | Custom topic list (if omitted, uses default 30+ topics) |
+
+**Response (200 OK):**
+
+| Field  | Type  | Description                                                 |
+| ------ | ----- | ----------------------------------------------------------- |
+| topics | array | List of objects with `topic` and `confidence` (sorted desc) |
+
+**Example response:**
+
+```json
+{
+  "topics": [
+    { "topic": "Health", "confidence": 0.417 },
+    { "topic": "Poverty Reduction", "confidence": 0.162 },
+    { "topic": "Infrastructure", "confidence": 0.144 }
+  ]
+}
+```
+
+**Error responses:** same as `/analyze` (500 with `{"detail": "..."}`).
+
+**Default topics** (30+ categories for policy domains):
+
+    - Health, Education, Water Supply, Electricity, Housing, Transport, Roads, Bridges, Railways, Airports, Digital Infrastructure
+    - Agriculture, Irrigation, Livestock, Forestry, Environment, Climate Change
+    - Economy, Employment, Small Business, Industry, Trade, Tourism
+    - Social Protection, Pension, Disability Support, Food Security, Poverty Reduction
+    - Governance, Justice, Police, Defense, Public Safety
+    - Urban Planning, Rural Development, Land Administration, Migration
+    - Sports, Culture, Youth, Women Affairs, Diaspora
+
 ## 6. Language Detection
 
 Uses fastText with model **`lid.176.bin`** (1.2 GB). Auto‑downloads on first run if not present.

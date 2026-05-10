@@ -18,10 +18,22 @@ app.add_middleware(InternalAPIKeyMiddleware)
 
 # Default topics for zero‑shot suggestion
 DEFAULT_TOPICS = [
-    "Agriculture", "Health", "Education", "Infrastructure", "Economy",
-    "Security", "Environment", "Transport", "Technology", "Social Welfare",
-    "Taxation", "Housing", "Water Supply", "Electricity", "Employment",
-    "Justice", "Human Rights", "Trade", "Energy", "Tourism"
+    # Core public services
+    "Health", "Education", "Water Supply", "Electricity", "Housing", "Transport",
+    # Infrastructure
+    "Roads", "Bridges", "Railways", "Airports", "Digital Infrastructure",
+    # Agriculture & Environment
+    "Agriculture", "Irrigation", "Livestock", "Forestry", "Environment", "Climate Change",
+    # Economy & Jobs
+    "Economy", "Employment", "Small Business", "Industry", "Trade", "Tourism",
+    # Social Welfare
+    "Social Protection", "Pension", "Disability Support", "Food Security", "Poverty Reduction",
+    # Governance & Security
+    "Governance", "Justice", "Police", "Defense", "Public Safety",
+    # Urban & Rural Development
+    "Urban Planning", "Rural Development", "Land Administration", "Migration",
+    # Other
+    "Sports", "Culture", "Youth", "Women Affairs", "Diaspora"
 ]
 
 # ------------------- Request/Response Models -------------------
