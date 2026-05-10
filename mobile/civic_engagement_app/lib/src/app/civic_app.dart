@@ -57,7 +57,7 @@ class CivicApp extends StatelessWidget {
               );
             }
 
-            return const LandingPage();
+            return const _UnauthenticatedShell();
           },
         ),
       ),
@@ -71,5 +71,31 @@ class _SplashScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const Scaffold(body: Center(child: CircularProgressIndicator()));
+  }
+}
+
+class _UnauthenticatedShell extends StatefulWidget {
+  const _UnauthenticatedShell();
+
+  @override
+  State<_UnauthenticatedShell> createState() => _UnauthenticatedShellState();
+}
+
+class _UnauthenticatedShellState extends State<_UnauthenticatedShell> {
+  bool _showLanding = true;
+  bool _initialRegister = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (_showLanding) {
+      return LandingPage(
+        onLogin: () => setState(() { _showLanding = false; _initialRegister = false; }),
+        onRegister: () => setState(() { _showLanding = false; _initialRegister = true; }),
+      );
+    }
+    return AuthPage(
+      initialRegister: _initialRegister,
+      onBack: () => setState(() => _showLanding = true),
+    );
   }
 }

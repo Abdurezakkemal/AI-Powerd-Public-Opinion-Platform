@@ -11,9 +11,14 @@ import '../cubit/auth_cubit.dart';
 enum _AuthMode { login, register, verify, reset }
 
 class AuthPage extends StatefulWidget {
-  const AuthPage({this.initialRegister = false, super.key});
+  const AuthPage({
+    this.initialRegister = false,
+    this.onBack,
+    super.key,
+  });
   
   final bool initialRegister;
+  final VoidCallback? onBack;
 
   @override
   State<AuthPage> createState() => _AuthPageState();
@@ -101,6 +106,17 @@ class _AuthPageState extends State<AuthPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  if (widget.onBack != null)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: IconButton(
+                        icon: const Icon(Icons.arrow_back_rounded),
+                        onPressed: widget.onBack,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(),
+                      ),
+                    ),
+                  if (widget.onBack != null) const SizedBox(height: 16),
                   const _AuthHeader(),
                   const SizedBox(height: 26),
                   _ModeSelector(
@@ -252,7 +268,7 @@ class _AuthHeader extends StatelessWidget {
           width: 72,
           height: 72,
           decoration: BoxDecoration(
-            color: AppTheme.primary.withValues(alpha: 0.1),
+            color: Colors.white,
             borderRadius: BorderRadius.circular(24),
             boxShadow: [
               BoxShadow(
@@ -262,7 +278,10 @@ class _AuthHeader extends StatelessWidget {
               ),
             ],
           ),
-          child: const Icon(Icons.how_to_vote_rounded, color: AppTheme.primary, size: 36),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Image.asset('assets/logo.png', fit: BoxFit.cover),
+          ),
         ),
         const SizedBox(height: 24),
         Text(
@@ -293,15 +312,18 @@ class _ModeSelector extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: [
-        _chip('Login', _AuthMode.login),
-        _chip('Register', _AuthMode.register),
-        _chip('Verify OTP', _AuthMode.verify),
-        _chip('Reset', _AuthMode.reset),
-      ],
+    return SizedBox(
+      width: double.infinity,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        runSpacing: 10,
+        children: [
+          _chip('Login', _AuthMode.login),
+          _chip('Register', _AuthMode.register),
+          _chip('Verify OTP', _AuthMode.verify),
+          _chip('Reset', _AuthMode.reset),
+        ],
+      ),
     );
   }
 

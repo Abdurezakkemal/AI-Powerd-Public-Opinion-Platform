@@ -41,6 +41,7 @@ dependencies:
   shared_preferences: ^2.3.2
   geolocator: ^13.0.2
   geocoding: ^3.0.0
+  google_fonts: ^6.3.2
 
 dev_dependencies:
   flutter_test:
@@ -63,6 +64,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/logo.png
 
   # To add assets to your application, add an assets section, like this:
   # assets:

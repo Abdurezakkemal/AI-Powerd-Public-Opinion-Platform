@@ -2,10 +2,16 @@ import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
-import 'auth_page.dart';
 
 class LandingPage extends StatelessWidget {
-  const LandingPage({super.key});
+  const LandingPage({
+    required this.onLogin,
+    required this.onRegister,
+    super.key,
+  });
+
+  final VoidCallback onLogin;
+  final VoidCallback onRegister;
 
   @override
   Widget build(BuildContext context) {
@@ -44,7 +50,7 @@ class LandingPage extends StatelessWidget {
                       width: 96,
                       height: 96,
                       decoration: BoxDecoration(
-                        color: AppTheme.primary.withValues(alpha: 0.1),
+                        color: Colors.white,
                         borderRadius: BorderRadius.circular(30),
                         boxShadow: [
                           BoxShadow(
@@ -54,10 +60,9 @@ class LandingPage extends StatelessWidget {
                           ),
                         ],
                       ),
-                      child: const Icon(
-                        Icons.how_to_vote_rounded,
-                        color: AppTheme.primary,
-                        size: 48,
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(30),
+                        child: Image.asset('assets/logo.png', fit: BoxFit.cover),
                       ),
                     ),
                   ),
@@ -89,31 +94,11 @@ class LandingPage extends StatelessWidget {
                   AppButton(
                     label: 'Get Started',
                     icon: Icons.person_add_rounded,
-                    onPressed: () {
-                      Navigator.of(context).pushReplacement(
-                        PageRouteBuilder(
-                          transitionDuration: const Duration(milliseconds: 300),
-                          pageBuilder: (_, __, ___) => const AuthPage(initialRegister: true),
-                          transitionsBuilder: (_, animation, __, child) {
-                            return FadeTransition(opacity: animation, child: child);
-                          },
-                        ),
-                      );
-                    },
+                    onPressed: onRegister,
                   ),
                   const SizedBox(height: 16),
                   OutlinedButton(
-                    onPressed: () {
-                      Navigator.of(context).pushReplacement(
-                        PageRouteBuilder(
-                          transitionDuration: const Duration(milliseconds: 300),
-                          pageBuilder: (_, __, ___) => const AuthPage(initialRegister: false),
-                          transitionsBuilder: (_, animation, __, child) {
-                            return FadeTransition(opacity: animation, child: child);
-                          },
-                        ),
-                      );
-                    },
+                    onPressed: onLogin,
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size.fromHeight(56),
                       side: BorderSide(

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
   const AppTheme._();
@@ -20,14 +21,14 @@ class AppTheme {
       useMaterial3: true,
       colorScheme: colorScheme,
       scaffoldBackgroundColor: background,
-      fontFamily: 'Roboto',
-      appBarTheme: const AppBarTheme(
+      textTheme: GoogleFonts.outfitTextTheme(),
+      appBarTheme: AppBarTheme(
         elevation: 0,
         scrolledUnderElevation: 0,
         backgroundColor: background,
         foregroundColor: text,
         centerTitle: false,
-        titleTextStyle: TextStyle(
+        titleTextStyle: GoogleFonts.outfit(
           color: text,
           fontSize: 22,
           fontWeight: FontWeight.w800,
