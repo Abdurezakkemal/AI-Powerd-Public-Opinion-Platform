@@ -3,7 +3,7 @@ const router = express.Router();
 const adminController = require("../controllers/adminController");
 const auth = require("../middleware/authMiddleware");
 const reportController = require("../controllers/reportController");
-const limiters = require("../config/rateLimits");
+// const limiters = require("../config/rateLimits"); // comment out if not needed
 
 // Planner management
 router.get("/planners", auth(["admin"]), adminController.listPlanners);
@@ -27,17 +27,30 @@ router.get(
   adminController.getFlaggedComments,
 );
 router.put("/comments/:id", auth(["admin"]), adminController.updateComment);
+
+// Normal retry
 router.post(
   "/comments/:id/retry",
   auth(["admin"]),
   adminController.retryComment,
 );
+
+// Force retry
 router.post(
-  "/comments/retry-all",
+  "/comments/:id/force-retry",
   auth(["admin"]),
-  adminController.retryAllComments,
+  adminController.forceRetryComment,
 );
-router.delete("/comments/:id", auth(["admin"]), adminController.deleteComment); // ← ADD THIS
+
+// Bulk retry by IDs – no rate limiter for now
+router.post(
+  "/comments/bulk/retry-by-ids",
+  auth(["admin"]),
+  adminController.bulkRetryCommentsByIds,
+);
+
+// Delete comment
+router.delete("/comments/:id", auth(["admin"]), adminController.deleteComment);
 
 // Citizen management
 router.get("/users/citizens", auth(["admin"]), adminController.listCitizens);
@@ -47,7 +60,7 @@ router.put(
   adminController.updateCitizenStatus,
 );
 
-// Dashboard & reports (MUST be before module.exports)
+// Dashboard & reports
 router.get(
   "/dashboard/stats",
   auth(["admin"]),
@@ -61,25 +74,12 @@ router.get(
   reportController.exportAuditLogs,
 );
 router.get("/ai/health", auth(["admin"]), reportController.getAIHealth);
-// Citizen management (already there)
-router.get("/users/citizens", auth(["admin"]), adminController.listCitizens);
-router.put(
-  "/users/:id/status",
-  auth(["admin"]),
-  adminController.updateCitizenStatus,
-);
 
-// ADD THIS:
+// Password reset
 router.post(
   "/users/:id/initiate-password-reset",
   auth(["admin"]),
   adminController.initiatePasswordReset,
 );
 
-// Dashboard & reports
-router.get(
-  "/dashboard/stats",
-  auth(["admin"]),
-  reportController.getDashboardStats,
-);
 module.exports = router;

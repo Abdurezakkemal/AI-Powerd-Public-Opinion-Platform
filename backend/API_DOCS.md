@@ -1973,24 +1973,22 @@ Manually updates sentiment, keywords, or moderation flags of a comment. Cannot c
 
 ---
 
-#### 6.3.4 Retry a single comment
+### 6.3.4 Retry a single comment (strict)
 
 **`POST /admin/comments/:id/retry`**
 
-Resets a comment to `pending_ai` status so the AI worker will re‑process it. Only allowed if the comment is currently `needs_review`.
+Resets a comment to `pending_ai` status so the AI worker will re‑process it.  
+**Eligibility:** Only comments that are `low_confidence`, `visible`, and `needs_review`.
 
-**Path parameter:**
-
-| Parameter | Type   | Description |
-| --------- | ------ | ----------- |
-| `id`      | string | Comment ID  |
+**Path parameter:** `id` – Comment ID
 
 **Behaviour:**
 
 - Sets `moderationStatus = "pending_ai"`
 - Sets `moderationReason = "pending_ai"`
 - Resets `retryCount = 0` and `nextRetry = null`
-- The AI worker will pick it up and re‑analyse sentiment and keywords.
+- Sets `lastRetryTriggeredBy = "admin:<adminId>"`
+- No change to `visibility` or `hiddenReason`.
 
 **Response (200 OK):**
 
@@ -2005,83 +2003,110 @@ Resets a comment to `pending_ai` status so the AI worker will re‑process it. O
 
 **Error responses:**
 
-| Status | Code                    | Message                                                        |
-| ------ | ----------------------- | -------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`      | `"Only comments in needs_review can be retried. Current: ..."` |
-| 404    | `NOT_FOUND`             | `"Comment not found"`                                          |
-| 403    | `FORBIDDEN`             | `"Access denied"`                                              |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to queue comment for retry"`                          |
+| Status | Code                    | Message                                                              |
+| ------ | ----------------------- | -------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Only comments in needs_review can be retried. Current: ..."`       |
+| 400    | `VALIDATION_ERROR`      | `"Only low‑confidence comments can be retried. Current reason: ..."` |
+| 400    | `VALIDATION_ERROR`      | `"Only visible comments can be retried."`                            |
+| 404    | `NOT_FOUND`             | `"Comment not found"`                                                |
+| 403    | `FORBIDDEN`             | `"Access denied"`                                                    |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to queue comment for retry"`                                |
 
 ---
 
-#### 6.3.5 Retry all pending comments
+### 6.3.5 Force retry a comment (any comment)
 
-**`POST /admin/comments/retry-all`**
+**`POST /admin/comments/:id/force-retry`**
 
-Resets **all** comments with `moderationStatus = "needs_review"` to `pending_ai`, regardless of the reason. Useful after fixing an AI model or reprocessing batch.
+Forces a comment to be re‑processed by the AI worker regardless of its current state (even if it is hidden or already approved).  
+**No eligibility checks.** Use with caution.
 
-**Response (200 OK):**
-
-```json
-{
-  "status": "success",
-  "data": { "updatedCount": 5 },
-  "message": "5 comments queued for retry",
-  "timestamp": "..."
-}
-```
-
-**Error responses:**
-
-| Status | Code                    | Message                                |
-| ------ | ----------------------- | -------------------------------------- |
-| 403    | `FORBIDDEN`             | `"Access denied"`                      |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to queue comments for retry"` |
-
----
-
-#### 6.3.6 Delete comment (soft delete)
-
-**`DELETE /admin/comments/:id`**
-
-Soft‑deletes a comment. The comment is hidden and its text is replaced with a placeholder, but the record remains for audit and analytics.
-
-**Path parameter:**
-
-| Parameter | Type   | Description |
-| --------- | ------ | ----------- |
-| `id`      | string | Comment ID  |
+**Path parameter:** `id` – Comment ID
 
 **Behaviour:**
 
-- Pushes the current state (text, sentiment, keywords) into `editedHistory`.
-- Sets `visibility = "hidden"`, `hiddenReason = "moderator"`.
-- Sets `moderationStatus = "none"`, `moderationReason = null`.
-- Replaces `text` with `"[deleted by admin]"`.
-- The comment is no longer visible to citizens.
+- Sets `moderationStatus = "pending_ai"`
+- Sets `moderationReason = "pending_ai"`
+- Resets `retryCount = 0` and `nextRetry = null`
+- Sets `lastRetryTriggeredBy = "admin:<adminId>:force"` (suffix `:force` indicates forced retry)
+- Does **not** change `visibility`, `hiddenReason`, or any other fields.
+
+**Response (200 OK):**
+
+    {
+      "status": "success",
+      "data": { "commentId": "..." },
+      "message": "Comment force‑queued for AI reprocessing.",
+      "timestamp": "..."
+    }
+
+**Error responses:**
+
+| Status | Code                    | Message                           |
+| ------ | ----------------------- | --------------------------------- |
+| 404    | `NOT_FOUND`             | `"Comment not found"`             |
+| 403    | `FORBIDDEN`             | `"Access denied"`                 |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to force‑retry comment"` |
+
+### 6.3.6 Bulk retry comments by IDs
+
+**`POST /admin/comments/bulk/retry-by-ids`**
+
+Retries multiple comments at once. Only comments that are `low_confidence`, `visible`, and `needs_review` will be retried; others are reported as failed.
+
+**Rate limit:** 10 requests per minute per admin (limited by `bulkAdmin` rate limiter).
+
+**Query parameter:** `?dryRun=true` – returns count of eligible comments without making changes.
+
+**Request body:**
+
+```json
+    {
+      "commentIds": ["67f1a2b3...", "67f1a2b4...", ...]
+    }
+```
 
 **Response (200 OK):**
 
 ```json
 {
   "status": "success",
-  "data": null,
-  "message": "Comment deleted successfully",
+  "data": {
+    "succeeded": ["id2"],
+    "failed": [
+      {
+        "id": "id1",
+        "reason": "Comment not found or not eligible (must be visible, low‑confidence needs_review)"
+      }
+    ]
+  },
+  "message": "Bulk retry completed: 1 succeeded, 1 failed.",
   "timestamp": "..."
 }
 ```
 
+**Dry run response:**
+
+```json
+    {
+      "status": "success",
+      "data": {
+        "totalMatched": 1,
+        "failed": [ ... ]
+      },
+      "message": "Dry run: 1 comments would be retried.",
+      "timestamp": "..."
+    }
+```
+
 **Error responses:**
 
-| Status | Code                    | Message                      |
-| ------ | ----------------------- | ---------------------------- |
-| 404    | `NOT_FOUND`             | `"Comment not found"`        |
-| 403    | `FORBIDDEN`             | `"Access denied"`            |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to delete comment"` |
-
----
-
-**Note:** Bulk admin operations (e.g., `/admin/comments/bulk/approve`, `/admin/planner-requests/bulk/approve`) have been temporarily removed. They will be reintroduced in a future version with filter‑based logic (e.g., approve all comments with `moderationReason = "low_confidence"` for a given policy).
+| Status | Code                    | Message                                    |
+| ------ | ----------------------- | ------------------------------------------ |
+| 400    | `VALIDATION_ERROR`      | `"commentIds array is required"`           |
+| 400    | `VALIDATION_ERROR`      | `"At least one valid comment ID required"` |
+| 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many bulk requests. Please wait."`   |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to process bulk retry"`           |
 
 ## 6.4 Admin Dashboard & Monitoring
 

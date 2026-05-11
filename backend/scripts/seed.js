@@ -418,12 +418,18 @@ async function seed() {
             userId: citizen._id,
             parentCommentId: null,
             text: commentText,
-            status: "approved",
+            visibility: "visible",
+            hiddenReason: null,
+            moderationStatus: "none",
+            moderationReason: null,
             sentiment: { label: sentimentLabel, confidence: 0.85 },
             keywords: [sentimentLabel, "policy"],
             reportCount: 0,
             editedHistory: [],
             flaggedSnapshot: null,
+            retryCount: 0,
+            nextRetry: null,
+            lastRetryTriggeredBy: null,
             createdAt: new Date(Date.now() - randomInt(1, 60) * 86400000),
           });
           await comment.save();
@@ -434,45 +440,71 @@ async function seed() {
     console.log(`Votes created: ${voteCount}`);
     console.log(`Comments created: ${commentCount}`);
 
-    // ===== 6.5. Flagged and pending_review comments =====
-    console.log("Creating flagged and pending_review comments...");
-    const flaggedCount = 3;
-    const pendingCount = 3;
+    // ===== 6.5. Comments that need review (low-confidence / reported) =====
+    console.log("Creating comments in needs_review state...");
+    const lowConfidenceCount = 3;
+    const reportedCount = 3;
     const allCitizens = createdCitizens;
     const somePolicies = createdPolicies.slice(0, 2);
-    for (let i = 0; i < flaggedCount; i++) {
+    // Low-confidence comments (visible but needs review)
+    for (let i = 0; i < lowConfidenceCount; i++) {
       const citizen = randomItem(allCitizens);
       const policy = randomItem(somePolicies);
       const comment = new Comment({
         policyId: policy._id,
         userId: citizen._id,
         parentCommentId: null,
-        text: "This is a flagged comment that needs moderation.",
-        status: "flagged",
-        sentiment: { label: "neutral", confidence: 0.5 },
-        keywords: ["test"],
-        reportCount: 3,
-        createdAt: new Date(Date.now() - randomInt(1, 5) * 86400000),
-      });
-      await comment.save();
-      console.log(`   Flagged comment created for policy ${policy.title}`);
-    }
-    for (let i = 0; i < pendingCount; i++) {
-      const citizen = randomItem(allCitizens);
-      const policy = randomItem(somePolicies);
-      const comment = new Comment({
-        policyId: policy._id,
-        userId: citizen._id,
-        parentCommentId: null,
-        text: "This comment is pending review by admin.",
-        status: "pending_review",
-        sentiment: null,
-        keywords: [],
+        text: "This comment has low AI confidence.",
+        visibility: "visible",
+        hiddenReason: null,
+        moderationStatus: "needs_review",
+        moderationReason: "low_confidence",
+        sentiment: { label: "neutral", confidence: 0.45 },
+        keywords: ["uncertain"],
         reportCount: 0,
+        editedHistory: [],
+        flaggedSnapshot: null,
+        retryCount: 0,
+        nextRetry: null,
+        lastRetryTriggeredBy: null,
+        createdAt: new Date(Date.now() - randomInt(1, 10) * 86400000),
+      });
+      await comment.save();
+      console.log(
+        `   Low-confidence comment created for policy ${policy.title}`,
+      );
+    }
+    // Reported comments (hidden, needs review)
+    for (let i = 0; i < reportedCount; i++) {
+      const citizen = randomItem(allCitizens);
+      const policy = randomItem(somePolicies);
+      const comment = new Comment({
+        policyId: policy._id,
+        userId: citizen._id,
+        parentCommentId: null,
+        text: "This comment was reported by users.",
+        visibility: "hidden",
+        hiddenReason: "reports",
+        moderationStatus: "needs_review",
+        moderationReason: "reports",
+        sentiment: { label: "negative", confidence: 0.9 },
+        keywords: ["offensive"],
+        reportCount: 3,
+        editedHistory: [],
+        flaggedSnapshot: {
+          text: "Original text before any edit",
+          sentiment: { label: "negative", confidence: 0.9 },
+          keywords: ["offensive"],
+          capturedAt: new Date(),
+          reportCountAtCapture: 3,
+        },
+        retryCount: 0,
+        nextRetry: null,
+        lastRetryTriggeredBy: null,
         createdAt: new Date(Date.now() - randomInt(1, 5) * 86400000),
       });
       await comment.save();
-      console.log(`   Pending comment created for policy ${policy.title}`);
+      console.log(`   Reported comment created for policy ${policy.title}`);
     }
 
     // ===== 7. SMS subscriptions and SMS votes =====
@@ -543,13 +575,18 @@ async function seed() {
     // ===== 9. Summary =====
     const totalVotes = await Vote.countDocuments();
     const totalComments = await Comment.countDocuments();
+    const needsReviewCount = await Comment.countDocuments({
+      moderationStatus: "needs_review",
+    });
     console.log("\n========== SEED COMPLETE ==========");
     console.log(`Planners: ${plannerData.length}`);
     console.log(`Citizens: ${createdCitizens.length}`);
     console.log(`Policies: ${createdPolicies.length}`);
     console.log(`Total votes: ${totalVotes}`);
     console.log(`Comments: ${totalComments}`);
-    console.log(`Flagged/pending comments: ${flaggedCount + pendingCount}`);
+    console.log(
+      `Needs review comments: ${needsReviewCount} (low-confidence + reported)`,
+    );
     console.log("===================================\n");
 
     await mongoose.disconnect();

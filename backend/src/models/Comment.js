@@ -78,6 +78,7 @@ const commentSchema = new mongoose.Schema({
 
   retryCount: { type: Number, default: 0 },
   nextRetry: { type: Date, default: null },
+  lastRetryTriggeredBy: { type: String, default: null },
 
   isOfficialReply: { type: Boolean, default: false },
 
