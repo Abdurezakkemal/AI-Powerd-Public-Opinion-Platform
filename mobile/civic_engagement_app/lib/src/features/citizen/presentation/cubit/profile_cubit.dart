@@ -104,6 +104,47 @@ class ProfileCubit extends Cubit<ProfileState> {
     }
   }
 
+  Future<void> requestPhoneChange(String newPhone) async {
+    emit(state.copyWith(actionStatus: RequestStatus.loading));
+    try {
+      final message = await _repository.requestPhoneChange(newPhone);
+      emit(
+        state.copyWith(actionStatus: RequestStatus.success, message: message),
+      );
+    } on ApiException catch (error) {
+      emit(
+        state.copyWith(
+          actionStatus: RequestStatus.failure,
+          message: error.message,
+        ),
+      );
+    }
+  }
+
+  Future<void> verifyPhoneChange({
+    required String newPhone,
+    required String code,
+  }) async {
+    emit(state.copyWith(actionStatus: RequestStatus.loading));
+    try {
+      final message = await _repository.verifyPhoneChange(
+        newPhone: newPhone,
+        code: code,
+      );
+      emit(
+        state.copyWith(actionStatus: RequestStatus.success, message: message),
+      );
+      // Note: Session is cleared by repository, user will be logged out
+    } on ApiException catch (error) {
+      emit(
+        state.copyWith(
+          actionStatus: RequestStatus.failure,
+          message: error.message,
+        ),
+      );
+    }
+  }
+
   Future<String?> deleteAccount() async {
     emit(state.copyWith(actionStatus: RequestStatus.loading));
     try {

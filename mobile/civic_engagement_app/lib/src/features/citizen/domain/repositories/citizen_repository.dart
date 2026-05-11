@@ -19,6 +19,13 @@ abstract class CitizenRepository {
 
   Future<String> verifyEmailChange(String code);
 
+  Future<String> requestPhoneChange(String newPhone);
+
+  Future<String> verifyPhoneChange({
+    required String newPhone,
+    required String code,
+  });
+
   Future<String> deleteAccount();
 
   Future<PolicyPage> getPolicies({

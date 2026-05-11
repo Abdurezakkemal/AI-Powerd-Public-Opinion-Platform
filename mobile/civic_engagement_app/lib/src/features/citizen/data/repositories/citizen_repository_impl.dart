@@ -64,6 +64,32 @@ class CitizenRepositoryImpl implements CitizenRepository {
   }
 
   @override
+  Future<String> requestPhoneChange(String newPhone) async {
+    final response = await _apiClient.post(
+      '/users/me/phone/request',
+      body: {'newPhone': newPhone.trim()},
+    );
+    return response.message;
+  }
+
+  @override
+  Future<String> verifyPhoneChange({
+    required String newPhone,
+    required String code,
+  }) async {
+    final response = await _apiClient.post(
+      '/users/me/phone/verify',
+      body: {
+        'newPhone': newPhone.trim(),
+        'code': code.trim(),
+      },
+    );
+    // Phone change invalidates token, so clear session
+    await _sessionStore.clear();
+    return response.message;
+  }
+
+  @override
   Future<String> deleteAccount() async {
     final response = await _apiClient.delete('/users/me');
     await _sessionStore.clear();
