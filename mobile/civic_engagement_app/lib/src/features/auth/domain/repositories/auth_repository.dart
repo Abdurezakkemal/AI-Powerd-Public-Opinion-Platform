@@ -1,5 +1,6 @@
 import '../entities/auth_session.dart';
 import '../entities/registration_result.dart';
+import '../entities/user_demographics.dart';
 
 abstract class AuthRepository {
   AuthSession? restoreSession();
@@ -9,6 +10,7 @@ abstract class AuthRepository {
     required String password,
     required String phone,
     required String region,
+    required UserDemographics demographics,
   });
 
   Future<String> sendOtp(String email);
@@ -22,6 +24,19 @@ abstract class AuthRepository {
   Future<String> resetPassword({
     required String token,
     required String newPassword,
+  });
+
+  // New: Email change feature
+  Future<String> requestEmailChange({required String newEmail});
+
+  Future<String> verifyEmailChange({required String code});
+
+  // New: Phone change feature
+  Future<String> requestPhoneChange({required String newPhone});
+
+  Future<String> verifyPhoneChange({
+    required String newPhone,
+    required String code,
   });
 
   Future<void> logout();

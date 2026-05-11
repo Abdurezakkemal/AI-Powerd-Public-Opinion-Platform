@@ -6,6 +6,9 @@ enum AuthStatus {
   loading,
   authenticated,
   otpPending,
+  emailChangePending,
+  phoneChangePending,
+  phoneChangeSuccess,
   message,
   failure,
 }
@@ -16,6 +19,8 @@ class AuthState extends Equatable {
     this.session,
     this.message,
     this.email,
+    this.newEmail,
+    this.newPhone,
   });
 
   const AuthState.checking() : this(status: AuthStatus.checking);
@@ -30,6 +35,27 @@ class AuthState extends Equatable {
   const AuthState.otpPending({required String email, required String message})
     : this(status: AuthStatus.otpPending, email: email, message: message);
 
+  const AuthState.emailChangePending({
+    required String newEmail,
+    required String message,
+  }) : this(
+          status: AuthStatus.emailChangePending,
+          newEmail: newEmail,
+          message: message,
+        );
+
+  const AuthState.phoneChangePending({
+    required String newPhone,
+    required String message,
+  }) : this(
+          status: AuthStatus.phoneChangePending,
+          newPhone: newPhone,
+          message: message,
+        );
+
+  const AuthState.phoneChangeSuccess({required String message})
+    : this(status: AuthStatus.phoneChangeSuccess, message: message);
+
   const AuthState.message(String message)
     : this(status: AuthStatus.message, message: message);
 
@@ -40,9 +66,12 @@ class AuthState extends Equatable {
   final AuthSession? session;
   final String? message;
   final String? email;
+  final String? newEmail;
+  final String? newPhone;
 
   bool get isBusy => status == AuthStatus.loading;
 
   @override
-  List<Object?> get props => [status, session, message, email];
+  List<Object?> get props =>
+      [status, session, message, email, newEmail, newPhone];
 }

@@ -3,6 +3,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/error/api_exception.dart';
 import '../../domain/entities/auth_session.dart';
+import '../../domain/entities/user_demographics.dart';
 import '../../domain/repositories/auth_repository.dart';
 
 part 'auth_state.dart';
@@ -26,6 +27,7 @@ class AuthCubit extends Cubit<AuthState> {
     required String password,
     required String phone,
     required String region,
+    required UserDemographics demographics,
   }) async {
     emit(const AuthState.loading());
     try {
@@ -34,6 +36,7 @@ class AuthCubit extends Cubit<AuthState> {
         password: password,
         phone: phone,
         region: region,
+        demographics: demographics,
       );
       emit(AuthState.otpPending(email: email, message: result.message));
     } on ApiException catch (error) {
@@ -100,5 +103,54 @@ class AuthCubit extends Cubit<AuthState> {
   Future<void> logout() async {
     await _repository.logout();
     emit(const AuthState.unauthenticated());
+  }
+
+  // New: Email change feature
+  Future<void> requestEmailChange(String newEmail) async {
+    emit(const AuthState.loading());
+    try {
+      final message = await _repository.requestEmailChange(newEmail: newEmail);
+      emit(AuthState.emailChangePending(newEmail: newEmail, message: message));
+    } on ApiException catch (error) {
+      emit(AuthState.failure(error.message));
+    }
+  }
+
+  Future<void> verifyEmailChange(String code) async {
+    emit(const AuthState.loading());
+    try {
+      final message = await _repository.verifyEmailChange(code: code);
+      emit(AuthState.message(message));
+    } on ApiException catch (error) {
+      emit(AuthState.failure(error.message));
+    }
+  }
+
+  // New: Phone change feature
+  Future<void> requestPhoneChange(String newPhone) async {
+    emit(const AuthState.loading());
+    try {
+      final message = await _repository.requestPhoneChange(newPhone: newPhone);
+      emit(AuthState.phoneChangePending(newPhone: newPhone, message: message));
+    } on ApiException catch (error) {
+      emit(AuthState.failure(error.message));
+    }
+  }
+
+  Future<void> verifyPhoneChange({
+    required String newPhone,
+    required String code,
+  }) async {
+    emit(const AuthState.loading());
+    try {
+      final message = await _repository.verifyPhoneChange(
+        newPhone: newPhone,
+        code: code,
+      );
+      // Phone change invalidates token, user must log in again
+      emit(AuthState.phoneChangeSuccess(message: message));
+    } on ApiException catch (error) {
+      emit(AuthState.failure(error.message));
+    }
   }
 }

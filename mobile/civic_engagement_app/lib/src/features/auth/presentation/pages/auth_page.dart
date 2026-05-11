@@ -6,6 +6,7 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/services/location_service.dart';
+import '../../domain/entities/user_demographics.dart';
 import '../cubit/auth_cubit.dart';
 
 enum _AuthMode { login, register, verify, reset }
@@ -36,6 +37,12 @@ class _AuthPageState extends State<AuthPage> {
   final _newPasswordController = TextEditingController();
   final _locationService = LocationService();
   bool _isDetectingLocation = false;
+
+  // New: Demographic fields
+  String? _selectedAgeRange;
+  String? _selectedGender;
+  String? _selectedOccupation;
+  String? _selectedEducation;
 
   @override
   void initState() {
@@ -143,6 +150,18 @@ class _AuthPageState extends State<AuthPage> {
                           passwordController: _passwordController,
                           phoneController: _phoneController,
                           regionController: _regionController,
+                          selectedAgeRange: _selectedAgeRange,
+                          selectedGender: _selectedGender,
+                          selectedOccupation: _selectedOccupation,
+                          selectedEducation: _selectedEducation,
+                          onAgeRangeChanged: (value) =>
+                              setState(() => _selectedAgeRange = value),
+                          onGenderChanged: (value) =>
+                              setState(() => _selectedGender = value),
+                          onOccupationChanged: (value) =>
+                              setState(() => _selectedOccupation = value),
+                          onEducationChanged: (value) =>
+                              setState(() => _selectedEducation = value),
                           loading: state.isBusy,
                           isDetectingLocation: _isDetectingLocation,
                           onSubmit: _register,
@@ -206,12 +225,36 @@ class _AuthPageState extends State<AuthPage> {
       );
       return;
     }
+
+    // Validate demographic fields
+    if (_selectedAgeRange == null) {
+      _showError('Please select your age range');
+      return;
+    }
+    if (_selectedGender == null) {
+      _showError('Please select your gender');
+      return;
+    }
+    if (_selectedOccupation == null) {
+      _showError('Please select your occupation');
+      return;
+    }
+    if (_selectedEducation == null) {
+      _showError('Please select your education level');
+      return;
+    }
     
     context.read<AuthCubit>().register(
       email: _emailController.text,
       password: _passwordController.text,
       phone: _phoneController.text,
       region: _regionController.text,
+      demographics: UserDemographics(
+        ageRange: _selectedAgeRange!,
+        gender: _selectedGender!,
+        occupation: _selectedOccupation!,
+        education: _selectedEducation!,
+      ),
     );
   }
 
@@ -253,6 +296,15 @@ class _AuthPageState extends State<AuthPage> {
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
     return false;
+  }
+
+  void _showError(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+      ),
+    );
   }
 }
 
@@ -397,6 +449,14 @@ class _RegisterForm extends StatelessWidget {
     required this.passwordController,
     required this.phoneController,
     required this.regionController,
+    required this.selectedAgeRange,
+    required this.selectedGender,
+    required this.selectedOccupation,
+    required this.selectedEducation,
+    required this.onAgeRangeChanged,
+    required this.onGenderChanged,
+    required this.onOccupationChanged,
+    required this.onEducationChanged,
     required this.loading,
     required this.isDetectingLocation,
     required this.onSubmit,
@@ -408,6 +468,14 @@ class _RegisterForm extends StatelessWidget {
   final TextEditingController passwordController;
   final TextEditingController phoneController;
   final TextEditingController regionController;
+  final String? selectedAgeRange;
+  final String? selectedGender;
+  final String? selectedOccupation;
+  final String? selectedEducation;
+  final ValueChanged<String?> onAgeRangeChanged;
+  final ValueChanged<String?> onGenderChanged;
+  final ValueChanged<String?> onOccupationChanged;
+  final ValueChanged<String?> onEducationChanged;
   final bool loading;
   final bool isDetectingLocation;
   final VoidCallback onSubmit;
@@ -510,6 +578,75 @@ class _RegisterForm extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Demographic Information Section
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.blue.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.blue.shade200),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(Icons.person_outline, color: Colors.blue.shade700, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Demographic Information',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'This helps us understand community needs better.',
+                style: TextStyle(fontSize: 12, color: AppTheme.mutedText),
+              ),
+              const SizedBox(height: 12),
+              _DemographicDropdown(
+                label: 'Age Range',
+                icon: Icons.cake_outlined,
+                value: selectedAgeRange,
+                items: AgeRange.all,
+                getLabel: AgeRange.getLabel,
+                onChanged: onAgeRangeChanged,
+              ),
+              const SizedBox(height: 12),
+              _DemographicDropdown(
+                label: 'Gender',
+                icon: Icons.wc_outlined,
+                value: selectedGender,
+                items: Gender.all,
+                getLabel: Gender.getLabel,
+                onChanged: onGenderChanged,
+              ),
+              const SizedBox(height: 12),
+              _DemographicDropdown(
+                label: 'Occupation',
+                icon: Icons.work_outline,
+                value: selectedOccupation,
+                items: Occupation.all,
+                getLabel: Occupation.getLabel,
+                onChanged: onOccupationChanged,
+              ),
+              const SizedBox(height: 12),
+              _DemographicDropdown(
+                label: 'Education Level',
+                icon: Icons.school_outlined,
+                value: selectedEducation,
+                items: Education.all,
+                getLabel: Education.getLabel,
+                onChanged: onEducationChanged,
               ),
             ],
           ),
@@ -635,6 +772,54 @@ class _ResetForm extends StatelessWidget {
           onPressed: onReset,
         ),
       ],
+    );
+  }
+}
+
+// New: Demographic dropdown widget
+class _DemographicDropdown extends StatelessWidget {
+  const _DemographicDropdown({
+    required this.label,
+    required this.icon,
+    required this.value,
+    required this.items,
+    required this.getLabel,
+    required this.onChanged,
+  });
+
+  final String label;
+  final IconData icon;
+  final String? value;
+  final List<String> items;
+  final String Function(String) getLabel;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5EDF3)),
+      ),
+      child: DropdownButtonFormField<String>(
+        value: value,
+        decoration: InputDecoration(
+          labelText: label,
+          prefixIcon: Icon(icon, color: AppTheme.primary),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        ),
+        items: items.map((item) {
+          return DropdownMenuItem(
+            value: item,
+            child: Text(getLabel(item)),
+          );
+        }).toList(),
+        onChanged: onChanged,
+        dropdownColor: Colors.white,
+        style: const TextStyle(color: AppTheme.text, fontSize: 16),
+      ),
     );
   }
 }

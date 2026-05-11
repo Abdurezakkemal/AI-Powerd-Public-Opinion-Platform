@@ -3,6 +3,7 @@ import '../../../../core/network/api_client.dart';
 import '../../../../core/session/session_store.dart';
 import '../../domain/entities/auth_session.dart';
 import '../../domain/entities/registration_result.dart';
+import '../../domain/entities/user_demographics.dart';
 import '../../domain/repositories/auth_repository.dart';
 
 class AuthRepositoryImpl implements AuthRepository {
@@ -20,6 +21,7 @@ class AuthRepositoryImpl implements AuthRepository {
     required String password,
     required String phone,
     required String region,
+    required UserDemographics demographics,
   }) async {
     final response = await _apiClient.post(
       '/auth/register',
@@ -29,6 +31,10 @@ class AuthRepositoryImpl implements AuthRepository {
         'password': password,
         'phone': phone.trim(),
         'region': region.trim(),
+        'ageRange': demographics.ageRange,
+        'gender': demographics.gender,
+        'occupation': demographics.occupation,
+        'education': demographics.education,
       },
     );
     final data = response.data as Map<String, dynamic>? ?? {};
@@ -99,6 +105,56 @@ class AuthRepositoryImpl implements AuthRepository {
 
   @override
   Future<void> logout() => _sessionStore.clear();
+
+  // New: Email change feature
+  @override
+  Future<String> requestEmailChange({required String newEmail}) async {
+    final response = await _apiClient.post(
+      '/users/me/email/request',
+      authenticated: true,
+      body: {'newEmail': newEmail.trim()},
+    );
+    return response.message;
+  }
+
+  @override
+  Future<String> verifyEmailChange({required String code}) async {
+    final response = await _apiClient.post(
+      '/users/me/email/verify',
+      authenticated: true,
+      body: {'code': code.trim()},
+    );
+    return response.message;
+  }
+
+  // New: Phone change feature
+  @override
+  Future<String> requestPhoneChange({required String newPhone}) async {
+    final response = await _apiClient.post(
+      '/users/me/phone/request',
+      authenticated: true,
+      body: {'newPhone': newPhone.trim()},
+    );
+    return response.message;
+  }
+
+  @override
+  Future<String> verifyPhoneChange({
+    required String newPhone,
+    required String code,
+  }) async {
+    final response = await _apiClient.post(
+      '/users/me/phone/verify',
+      authenticated: true,
+      body: {
+        'newPhone': newPhone.trim(),
+        'code': code.trim(),
+      },
+    );
+    // Phone change invalidates token, so clear session
+    await _sessionStore.clear();
+    return response.message;
+  }
 
   Future<AuthSession> _saveSession(Map<String, dynamic> data) async {
     final session = AuthSession(
