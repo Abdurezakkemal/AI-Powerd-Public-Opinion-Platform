@@ -52,6 +52,24 @@ exports.postComment = async (req, res) => {
       );
     }
 
+    // For top-level comments (not replies), check if user already commented on this policy
+    if (!parentCommentId) {
+      const existingComment = await Comment.findOne({
+        policyId,
+        userId: req.user.id,
+        parentCommentId: null,
+      });
+      if (existingComment) {
+        return sendError(
+          res,
+          ErrorCodes.DUPLICATE,
+          "You have already commented on this policy",
+          null,
+          409,
+        );
+      }
+    }
+
     if (parentCommentId) {
       const parent = await Comment.findById(parentCommentId);
       if (!parent || parent.policyId.toString() !== policyId) {
@@ -111,7 +129,12 @@ exports.postComment = async (req, res) => {
     });
 
     logger.info(`User ${req.user.id} posted comment on policy ${policyId}`);
-    return sendSuccess(res, { commentId: comment._id }, "Comment posted", 201);
+    return sendSuccess(
+      res,
+      { commentId: comment._id },
+      "Comment posted successfully",
+      201,
+    );
   } catch (err) {
     console.error("Full error in postComment:", err);
     logger.error({ error: err.message }, "Post comment error");

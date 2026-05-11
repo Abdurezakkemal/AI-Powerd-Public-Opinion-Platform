@@ -44,7 +44,7 @@ abstract class CitizenRepository {
     String? comment,
   });
 
-  Future<String> addComment({required String voteId, required String comment});
+  Future<String> addComment({required String policyId, required String comment});
 
   // Comment endpoints (Section 4.2-4.8)
   Future<String> postComment({

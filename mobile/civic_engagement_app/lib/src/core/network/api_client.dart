@@ -165,7 +165,17 @@ class ApiClient {
     print('Response status: ${response.statusCode}');
     print('Response body: ${response.body}');
 
-    final decoded = response.body.isEmpty ? null : jsonDecode(response.body);
+    if (response.body.isEmpty) {
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        return ApiResult(data: null, message: 'Request completed.');
+      }
+      throw ApiException(
+        message: 'The server returned an empty response.',
+        statusCode: response.statusCode,
+      );
+    }
+
+    final decoded = jsonDecode(response.body);
 
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw _errorFrom(decoded, response.statusCode);

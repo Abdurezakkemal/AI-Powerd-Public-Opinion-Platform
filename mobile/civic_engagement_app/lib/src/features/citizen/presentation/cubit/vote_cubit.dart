@@ -50,13 +50,13 @@ class VoteCubit extends Cubit<VoteState> {
   }
 
   Future<void> addComment({
-    required String voteId,
+    required String policyId,
     required String comment,
   }) async {
     emit(const VoteState(status: RequestStatus.loading));
     try {
       final message = await _repository.addComment(
-        voteId: voteId,
+        policyId: policyId,
         comment: comment,
       );
       emit(VoteState(status: RequestStatus.success, message: message));

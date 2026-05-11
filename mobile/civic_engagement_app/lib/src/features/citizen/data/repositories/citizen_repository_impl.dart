@@ -159,12 +159,15 @@ class CitizenRepositoryImpl implements CitizenRepository {
 
   @override
   Future<String> addComment({
-    required String voteId,
+    required String policyId,
     required String comment,
   }) async {
     final response = await _apiClient.post(
-      '/comments/$voteId',
-      body: {'comment': comment.trim()},
+      '/comments',
+      body: {
+        'policyId': policyId,
+        'text': comment.trim(),
+      },
     );
     return response.message;
   }

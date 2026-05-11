@@ -279,8 +279,14 @@ class _CommentSheetState extends State<_CommentSheet> {
                     );
                     return;
                   }
+                  if (widget.item.policyId == null) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Policy information not available.')),
+                    );
+                    return;
+                  }
                   context.read<VoteCubit>().addComment(
-                    voteId: widget.item.id,
+                    policyId: widget.item.policyId!,
                     comment: _commentController.text,
                   );
                 },

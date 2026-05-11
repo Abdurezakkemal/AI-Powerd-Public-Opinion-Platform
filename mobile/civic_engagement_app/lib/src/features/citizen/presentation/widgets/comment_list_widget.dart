@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/di/service_locator.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../domain/entities/comment.dart';
 import '../cubit/comment_cubit.dart';
 import '../cubit/comment_state.dart';
+import 'edit_comment_dialog.dart';
+import 'reply_comment_dialog.dart';
 import 'report_comment_dialog.dart';
 
 class CommentListWidget extends StatefulWidget {
@@ -109,7 +113,10 @@ class _CommentListWidgetState extends State<CommentListWidget> {
                 }
 
                 final comment = state.comments[index];
-                return _CommentCard(comment: comment);
+                return _CommentCard(
+                  comment: comment,
+                  policyId: widget.policyId,
+                );
               },
             ),
           );
@@ -122,9 +129,13 @@ class _CommentListWidgetState extends State<CommentListWidget> {
 }
 
 class _CommentCard extends StatelessWidget {
-  const _CommentCard({required this.comment});
+  const _CommentCard({
+    required this.comment,
+    required this.policyId,
+  });
 
   final Comment comment;
+  final String policyId;
 
   void _showReportDialog(BuildContext context) {
     showDialog<void>(
@@ -133,15 +144,71 @@ class _CommentCard extends StatelessWidget {
     );
   }
 
+  void _showEditDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => EditCommentDialog(
+        commentId: comment.id,
+        currentText: comment.text,
+        policyId: policyId,
+      ),
+    );
+  }
+
+  void _showReplyDialog(BuildContext context) {
+    showDialog<void>(
+      context: context,
+      builder: (context) => ReplyCommentDialog(
+        policyId: policyId,
+        parentComment: comment,
+      ),
+    );
+  }
+
+  bool _isCurrentUserAuthor() {
+    final authRepo = serviceLocator<AuthRepository>();
+    final session = authRepo.restoreSession();
+    return session?.userId == comment.userId;
+  }
+
   @override
   Widget build(BuildContext context) {
+    final isReply = comment.parentCommentId != null;
+    
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      margin: EdgeInsets.only(
+        left: isReply ? 32 : 16,  // Indent replies
+        right: 16,
+        top: 8,
+        bottom: 8,
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Reply indicator
+            if (isReply) ...[
+              Row(
+                children: [
+                  Icon(
+                    Icons.subdirectory_arrow_right,
+                    size: 16,
+                    color: Colors.grey.shade600,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Reply',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Colors.grey.shade600,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
             Row(
               children: [
                 Expanded(
@@ -225,21 +292,47 @@ class _CommentCard extends StatelessWidget {
   }
 
   void _showCommentMenu(BuildContext context) {
+    final isAuthor = _isCurrentUserAuthor();
+
     showModalBottomSheet<void>(
       context: context,
       builder: (context) => SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Reply option - available to everyone
             ListTile(
-              leading: const Icon(Icons.flag),
-              title: const Text('Report Comment'),
+              leading: const Icon(Icons.reply),
+              title: const Text('Reply'),
               onTap: () {
                 Navigator.pop(context);
-                _showReportDialog(context);
+                _showReplyDialog(context);
               },
             ),
-            if (comment.status == 'flagged' || comment.status == 'deleted')
+            // Edit option - only for comment author
+            if (isAuthor && comment.isApproved) ...[
+              ListTile(
+                leading: const Icon(Icons.edit),
+                title: const Text('Edit Comment'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showEditDialog(context);
+                },
+              ),
+            ],
+            // Report option - only for non-authors
+            if (!isAuthor)
+              ListTile(
+                leading: const Icon(Icons.flag),
+                title: const Text('Report Comment'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showReportDialog(context);
+                },
+              ),
+            // Appeal option - only for authors of flagged/deleted comments
+            if (isAuthor &&
+                (comment.status == 'flagged' || comment.status == 'deleted'))
               ListTile(
                 leading: const Icon(Icons.gavel),
                 title: const Text('Appeal Decision'),

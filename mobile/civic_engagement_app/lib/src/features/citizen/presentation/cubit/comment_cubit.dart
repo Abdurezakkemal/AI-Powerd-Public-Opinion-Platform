@@ -101,8 +101,14 @@ class CommentCubit extends Cubit<CommentState> {
         parentCommentId: parentCommentId,
       );
       emit(CommentPosted(message));
+      // Reset to initial state after a brief delay to allow UI to react
+      await Future.delayed(const Duration(milliseconds: 100));
+      emit(const CommentInitial());
     } catch (e) {
       emit(CommentError(e.toString()));
+      // Reset to initial state after error
+      await Future.delayed(const Duration(milliseconds: 100));
+      emit(const CommentInitial());
     }
   }
 
@@ -118,8 +124,12 @@ class CommentCubit extends Cubit<CommentState> {
         reason: reason,
       );
       emit(CommentReported(message));
+      await Future.delayed(const Duration(milliseconds: 100));
+      emit(const CommentInitial());
     } catch (e) {
       emit(CommentError(e.toString()));
+      await Future.delayed(const Duration(milliseconds: 100));
+      emit(const CommentInitial());
     }
   }
 
@@ -135,8 +145,12 @@ class CommentCubit extends Cubit<CommentState> {
         text: text,
       );
       emit(CommentEdited(message));
+      await Future.delayed(const Duration(milliseconds: 100));
+      emit(const CommentInitial());
     } catch (e) {
       emit(CommentError(e.toString()));
+      await Future.delayed(const Duration(milliseconds: 100));
+      emit(const CommentInitial());
     }
   }
 
@@ -152,8 +166,12 @@ class CommentCubit extends Cubit<CommentState> {
         reason: reason,
       );
       emit(CommentAppealed(message));
+      await Future.delayed(const Duration(milliseconds: 100));
+      emit(const CommentInitial());
     } catch (e) {
       emit(CommentError(e.toString()));
+      await Future.delayed(const Duration(milliseconds: 100));
+      emit(const CommentInitial());
     }
   }
 }

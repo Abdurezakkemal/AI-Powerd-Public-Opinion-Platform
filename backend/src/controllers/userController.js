@@ -6,6 +6,7 @@ const client = require("../config/redis");
 const {
   hashPassword,
   comparePassword,
+  hashPhone,
   generateOTP,
 } = require("../utils/helpers");
 const logger = require("../utils/logger");
@@ -461,7 +462,7 @@ exports.requestPhoneChange = async (req, res) => {
 
     const otp = generateOTP();
     const key = `phone_change:otp:${req.user.id}:${newPhone}`;
-    await redisClient.setEx(key, 300, otp);
+    await client.setEx(key, 300, otp);
 
     // Send OTP via SMS (mock: console.log)
     logger.info(`[MOCK SMS] Phone change OTP for ${newPhone}: ${otp}`);
@@ -492,7 +493,7 @@ exports.verifyPhoneChange = async (req, res) => {
       );
 
     const key = `phone_change:otp:${req.user.id}:${newPhone}`;
-    const stored = await redisClient.get(key);
+    const stored = await client.get(key);
     if (!stored || stored !== otp) {
       return sendError(
         res,
@@ -512,7 +513,7 @@ exports.verifyPhoneChange = async (req, res) => {
     user.tokenVersion += 1; // invalidate existing JWTs
     await user.save();
 
-    await redisClient.del(key);
+    await client.del(key);
 
     await createAuditLog({
       userId: user._id,
