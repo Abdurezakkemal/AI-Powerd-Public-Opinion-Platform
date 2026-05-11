@@ -60,17 +60,17 @@ exports.getDashboardStats = async (req, res) => {
       Vote.countDocuments({ channel: "app" }),
       Vote.countDocuments({ channel: "sms" }),
       Comment.countDocuments(),
-      Comment.countDocuments({ status: "pending_review" }), // corrected from "pending review"
-      Comment.countDocuments({ status: "processed" }),
+      Comment.countDocuments({ moderationStatus: "needs_review" }),
+      Comment.countDocuments({
+        moderationStatus: { $in: ["none", "reviewed"] },
+      }),
     ]);
 
-    // Calculate average rating across all votes
     const ratingAgg = await Vote.aggregate([
       { $group: { _id: null, avg: { $avg: "$rating" } } },
     ]);
     const avgRatingOverall = ratingAgg.length ? ratingAgg[0].avg : 0;
 
-    // AI health
     const aiHealth = await getAIHealth();
 
     return sendSuccess(
@@ -133,8 +133,7 @@ exports.getTrends = async (req, res) => {
 
     const now = new Date();
     const daysInt = parseInt(days);
-    let startDate;
-    let endDate;
+    let startDate, endDate;
 
     if (startDateParam) {
       startDate = new Date(startDateParam);
@@ -191,7 +190,6 @@ exports.getTrends = async (req, res) => {
       { $sort: { _id: 1 } },
     ]);
 
-    // Merge into single array
     const trendMap = new Map();
     for (const v of votesTrend) {
       trendMap.set(v._id, {
@@ -219,9 +217,15 @@ exports.getTrends = async (req, res) => {
     );
 
     const totalVotes = data.reduce((sum, item) => sum + (item.votes || 0), 0);
-    const totalNewUsers = data.reduce((sum, item) => sum + (item.newUsers || 0), 0);
+    const totalNewUsers = data.reduce(
+      (sum, item) => sum + (item.newUsers || 0),
+      0,
+    );
     const averageRating = totalVotes
-      ? data.reduce((sum, item) => sum + (item.votes || 0) * (item.avgRating || 0), 0) / totalVotes
+      ? data.reduce(
+          (sum, item) => sum + (item.votes || 0) * (item.avgRating || 0),
+          0,
+        ) / totalVotes
       : 0;
 
     return sendSuccess(
@@ -282,12 +286,7 @@ exports.getAuditLogs = async (req, res) => {
 
     return sendSuccess(
       res,
-      {
-        logs,
-        total,
-        page: parseInt(page),
-        pages: Math.ceil(total / limit),
-      },
+      { logs, total, page: parseInt(page), pages: Math.ceil(total / limit) },
       "Audit logs retrieved successfully",
     );
   } catch (err) {
@@ -324,7 +323,6 @@ exports.exportAuditLogs = async (req, res) => {
       .populate("userId", "email role")
       .lean();
 
-    // Create CSV
     let csv =
       "timestamp,userEmail,userRole,action,targetType,targetId,details,ipAddress,userAgent\n";
     for (const log of logs) {
@@ -359,12 +357,11 @@ exports.exportAuditLogs = async (req, res) => {
 exports.getAIHealth = async (req, res) => {
   try {
     const health = await getAIHealth();
-    // Also get pending comment count from our own DB
     const pendingComments = await Comment.countDocuments({
-      status: "pending_review",
+      moderationStatus: "needs_review",
     });
     const failedComments = await Comment.countDocuments({
-      processed: false,
+      moderationStatus: "needs_review",
       retryCount: { $gte: 5 },
     });
     return sendSuccess(

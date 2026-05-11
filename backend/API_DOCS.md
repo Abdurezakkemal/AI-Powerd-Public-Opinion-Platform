@@ -1009,7 +1009,7 @@ All endpoints in this section require authentication with a valid JWT token (cit
 | 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many votes. Please wait X minutes."`                           |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Failed to submit vote"`                                            |
 
-### 4.2 Post a comment (top‑level or reply)
+#### 4.2 Post a comment (top‑level or reply)
 
 **`POST /comments`**
 
@@ -1021,16 +1021,21 @@ All endpoints in this section require authentication with a valid JWT token (cit
 ```json
 {
   "policyId": "67f1a2b3c4d5e6f7a8b9c0d1",
-  "parentCommentId": null, // or an existing comment ID to reply to
+  "parentCommentId": null,
   "text": "This is a comment (1‑2000 characters)"
 }
 ```
 
 **Behaviour:**
 
-- Top‑level comments (`parentCommentId` = `null`) are queued for AI processing (sentiment, keywords). Status initially `processing`.
-- Replies (`parentCommentId` provided) are immediately `approved` (no AI processing, but subject to profanity filter).
-- If reply, the parent comment author receives an in‑app notification (`type: "COMMENT_REPLY"`).
+- Top‑level comments (`parentCommentId` = `null`):
+  - Created with `visibility = "visible"`, `moderationStatus = "pending_ai"`, `moderationReason = "pending_ai"`.
+  - AI worker processes sentiment and keywords asynchronously.
+  - After AI: high confidence → `moderationStatus = "none"`; low confidence → `moderationStatus = "needs_review"`, `moderationReason = "low_confidence"`. Comment remains visible.
+- Replies (`parentCommentId` provided):
+  - Created with `visibility = "visible"`, `moderationStatus = "none"`, `moderationReason = null`. No AI processing.
+  - Parent comment author receives in‑app notification (`type: "COMMENT_REPLY"`).
+- Profanity filter: if blocked, `visibility = "hidden"`, `hiddenReason = "profanity"`, `moderationStatus = "needs_review"`, `moderationReason = "moderator_flag"`.
 
 **Response (201 Created):**
 
@@ -1043,28 +1048,14 @@ All endpoints in this section require authentication with a valid JWT token (cit
 }
 ```
 
-**Error responses:**
-
-| Status | Code                  | Message                                                        |
-| ------ | --------------------- | -------------------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`    | `"policyId and text are required"`                             |
-| 400    | `VALIDATION_ERROR`    | `"Comment must be 1–2000 characters"`                          |
-| 403    | `FORBIDDEN`           | `"Comments only allowed on active/paused policies"`            |
-| 404    | `NOT_FOUND`           | `"Policy not found"` or `"Parent comment not found in policy"` |
-| 429    | `RATE_LIMIT_EXCEEDED` | `"Too many comments. Please wait a moment."`                   |
-
-### 4.3 Report a comment
+#### 4.3 Report a comment
 
 **`POST /comments/:commentId/report`**
 
 **Roles:** any authenticated user  
 **Rate limit:** 5 reports per minute per user
 
-**Path parameter:**
-
-| Parameter   | Type   | Description |
-| ----------- | ------ | ----------- |
-| `commentId` | string | Comment ID  |
+**Path parameter:** `commentId`
 
 **Request body:**
 
@@ -1074,8 +1065,12 @@ All endpoints in this section require authentication with a valid JWT token (cit
 
 **Behaviour:**
 
-- Increments `reportCount` on the comment.
-- When `reportCount >= 3`, comment status changes to `flagged` and moderators (policy owner + associates) receive a notification (`type: "COMMENT_FLAGGED"`).
+- Increments `reportCount`.
+- When `reportCount >= 3`:
+  - `visibility = "hidden"`, `hiddenReason = "reports"`.
+  - `moderationStatus = "needs_review"`, `moderationReason = "reports"`.
+  - Takes a `flaggedSnapshot` (text, sentiment, keywords, timestamp, reportCountAtCapture) – immutable.
+  - Notifies policy owner and associates with `moderate_comments` (`type: "COMMENT_FLAGGED"`).
 
 **Response (200 OK):**
 
@@ -1088,70 +1083,52 @@ All endpoints in this section require authentication with a valid JWT token (cit
 }
 ```
 
-**Error responses:**
-
-| Status | Code                  | Message                            |
-| ------ | --------------------- | ---------------------------------- |
-| 400    | `VALIDATION_ERROR`    | `"Reason required"`                |
-| 404    | `NOT_FOUND`           | `"Comment not found"`              |
-| 429    | `RATE_LIMIT_EXCEEDED` | `"Too many reports. Please wait."` |
-
-### 4.4 Moderate a comment (planner/admin only)
+#### 4.4 Moderate a comment
 
 **`PUT /comments/:commentId/moderate`**
 
-**Roles:** policy owner, associate with `moderate_comments` permission, or admin  
+**Roles:** policy owner, associate with `moderate_comments`, or admin  
 **Rate limit:** 30 per minute per user
 
-**Path parameter:**
+**Path parameter:** `commentId`
 
-| Parameter   | Type   | Description |
-| ----------- | ------ | ----------- |
-| `commentId` | string | Comment ID  |
-
-**Request body (all fields optional):**
+**Request body:**
 
 ```json
 {
-  "status": "approved", // or "flagged", "deleted"
-  "sentiment": { "label": "positive", "confidence": 0.95 },
-  "keywords": ["water", "access"]
+  "action": "approve", // or "delete", "retry"
+  "sentiment": { "label": "positive", "confidence": 0.95 }, // optional
+  "keywords": ["water", "access"] // optional
 }
 ```
 
-**Note:** Moderators **cannot** edit the original comment text. Only the original author can edit text (see 4.7).  
-The request body does **not** accept a `text` field.
+**Actions:**
+
+- `approve`: sets `visibility = "visible"`, `hiddenReason = null`, `moderationStatus = "reviewed"`, `moderationReason = null`. If hidden due to reports, becomes visible again.
+- `delete`: sets `visibility = "hidden"`, `hiddenReason = "moderator"`, `moderationStatus = "none"`, `moderationReason = null`. Text replaced with `"[deleted by moderator]"`.
+- `retry`: sets `moderationStatus = "pending_ai"`, `moderationReason = "pending_ai"`, resets `retryCount` and `nextRetry`. Only for `needs_review` comments.
+
+**Note:** Moderators cannot edit the original text – only the author (see 4.7).
 
 **Response (200 OK):**
 
 ```json
 {
   "status": "success",
-  "data": { "commentId": "...", "status": "approved" },
-  "message": "Comment moderated",
+  "data": { "commentId": "...", "action": "approved" },
+  "message": "Comment approved.",
   "timestamp": "..."
 }
 ```
 
-**Error responses:**
-
-| Status | Code        | Message                                    |
-| ------ | ----------- | ------------------------------------------ |
-| 403    | `FORBIDDEN` | `"No permission to moderate this comment"` |
-| 404    | `NOT_FOUND` | `"Comment not found"`                      |
-
-### 4.5 Appeal a moderation decision (citizen)
+#### 4.5 Appeal a moderation decision (citizen)
 
 **`POST /comments/:commentId/appeal`**
 
 **Roles:** only the original author of the comment  
 **Rate limit:** 3 appeals per day per user
 
-**Path parameter:**
-
-| Parameter   | Type   | Description |
-| ----------- | ------ | ----------- |
-| `commentId` | string | Comment ID  |
+**Path parameter:** `commentId`
 
 **Request body:**
 
@@ -1161,8 +1138,9 @@ The request body does **not** accept a `text` field.
 
 **Behaviour:**
 
-- Creates an embedded appeal record on the comment with status `pending`.
-- Notifies the policy owner (`type: "COMMENT_APPEAL"`).
+- Allowed only for comments with `visibility = "hidden"` and `moderationStatus = "needs_review"`.
+- Creates embedded `appeal` object with status `pending`.
+- Notifies policy owner (`type: "COMMENT_APPEAL"`).
 
 **Response (200 OK):**
 
@@ -1175,26 +1153,13 @@ The request body does **not** accept a `text` field.
 }
 ```
 
-**Error responses:**
-
-| Status | Code                  | Message                                              |
-| ------ | --------------------- | ---------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`    | `"Appeal reason required"`                           |
-| 403    | `FORBIDDEN`           | `"You can only appeal your own comments"`            |
-| 400    | `VALIDATION_ERROR`    | `"Only flagged or deleted comments can be appealed"` |
-| 429    | `RATE_LIMIT_EXCEEDED` | `"Too many appeals. Please try again tomorrow."`     |
-
-### 4.6 Resolve an appeal (planner/admin)
+#### 4.6 Resolve an appeal
 
 **`POST /comments/:commentId/resolve-appeal`**
 
 **Roles:** policy owner (planner) or admin
 
-**Path parameter:**
-
-| Parameter   | Type   | Description |
-| ----------- | ------ | ----------- |
-| `commentId` | string | Comment ID  |
+**Path parameter:** `commentId`
 
 **Request body:**
 
@@ -1207,9 +1172,9 @@ The request body does **not** accept a `text` field.
 
 **Behaviour:**
 
-- If `approve`: comment status becomes `approved` and appeal status `resolved_approved`.
-- If `reject`: comment status remains `flagged` and appeal status `resolved_rejected`.
-- Notifies the comment author (`type: "APPEAL_RESOLVED"`).
+- If `approve`: `visibility = "visible"`, `hiddenReason = null`, `moderationStatus = "reviewed"`, `moderationReason = null`. `appeal.status = "resolved_approved"`.
+- If `reject`: `visibility` stays `"hidden"`, `moderationStatus` stays `"needs_review"`. `appeal.status = "resolved_rejected"`.
+- Notifies comment author (`type: "APPEAL_RESOLVED"`).
 
 **Response (200 OK):**
 
@@ -1222,27 +1187,14 @@ The request body does **not** accept a `text` field.
 }
 ```
 
-**Error responses:**
-
-| Status | Code               | Message                                  |
-| ------ | ------------------ | ---------------------------------------- |
-| 400    | `VALIDATION_ERROR` | `"Decision must be approve or reject"`   |
-| 403    | `FORBIDDEN`        | `"No permission to resolve this appeal"` |
-| 404    | `NOT_FOUND`        | `"Comment not found"`                    |
-| 400    | `VALIDATION_ERROR` | `"No pending appeal for this comment"`   |
-
-### 4.7 Edit a comment (author only)
+#### 4.7 Edit a comment (author only)
 
 **`PUT /comments/:id`**
 
-**Roles:** only the original author of the comment (citizen, planner, or admin)  
+**Roles:** only the original author  
 **Rate limit:** 10 per minute per user (same as posting)
 
-**Path parameter:**
-
-| Parameter | Type   | Description |
-| --------- | ------ | ----------- |
-| `id`      | string | Comment ID  |
+**Path parameter:** `id`
 
 **Request body:**
 
@@ -1254,33 +1206,21 @@ The request body does **not** accept a `text` field.
 
 **Behaviour:**
 
-- Stores the **previous version** (text, sentiment, keywords, timestamp) in `editedHistory` (max 3 entries).
-- For top‑level comments: resets sentiment, keywords, and sets status to `"processing"` (AI will re‑analyse).
-- For replies: status remains `"approved"` (no AI re‑analysis).
-- The updated comment text is immediately visible, but the AI result for top‑level comments will be refreshed shortly.
-- **Moderators cannot edit the comment text** – only the original author can.
+- Saves previous version (text, sentiment, keywords, timestamp) into `editedHistory` (max 3 entries).
+- For **top‑level comments**: sets `moderationStatus = "pending_ai"`, `moderationReason = "pending_ai"`, clears `sentiment` and `keywords`. AI worker re‑analyses.
+- For **replies**: no change to `moderationStatus` (remains `"none"`).
+- Updated text immediately visible.
 
 **Response (200 OK):**
 
 ```json
 {
   "status": "success",
-  "data": { "commentId": "67f1a2b3..." },
+  "data": { "commentId": "..." },
   "message": "Comment updated",
   "timestamp": "..."
 }
 ```
-
-**Error responses:**
-
-| Status | Code                  | Message                                              |
-| ------ | --------------------- | ---------------------------------------------------- |
-| 400    | `VALIDATION_ERROR`    | `"Comment text is required"` or `"Comment too long"` |
-| 403    | `FORBIDDEN`           | `"Only the comment author can edit the text"`        |
-| 404    | `NOT_FOUND`           | `"Comment not found"`                                |
-| 429    | `RATE_LIMIT_EXCEEDED` | `"Too many comments. Please wait a moment."`         |
-
----
 
 ### 4.8 Get comment edit history
 
@@ -1341,9 +1281,13 @@ The request body does **not** accept a `text` field.
 
 **Note for associates:** To grant an associate access to a specific analytics endpoint, they must have the corresponding permission (`view_analytics` for viewing, `export_data` for CSV export). The permissions are checked by the middleware before the request is processed.
 
+---
+
 ### 5.1 Policy analytics (summary)
 
 **`GET /analytics/:policyId`**
+
+Returns a snapshot of voting metrics for a single policy, including sentiment counts and top keywords from comments. Supports filtering by date range, demographics, and region.
 
 **Query parameters (all optional):**
 
@@ -1449,33 +1393,44 @@ The request body does **not** accept a `text` field.
 }
 ```
 
+---
+
 ### 5.2 Export analytics as CSV
 
 **`GET /analytics/:policyId/export`**
+
+Downloads raw vote data as CSV with demographic columns. Supports same filters as 5.1.
 
 **Query parameters:** same as 5.1 (`startDate`, `endDate`, `gender`, `ageRange`, `occupation`, `education`, `region`).
 
 **Response:** `text/csv` file attachment. Example content:
 
-    voteId,channel,value,region,ageRange,gender,occupation,education,createdAt
-    67f1a2b3...,app,opt1|opt2,Addis Ababa,25-34,male,private-sector,bachelors,2026-05-09T01:05:48.370Z
+| voteId      | channel | value      | region      | ageRange | gender | occupation     | education | createdAt                |
+| ----------- | ------- | ---------- | ----------- | -------- | ------ | -------------- | --------- | ------------------------ |
+| 67f1a2b3... | app     | opt1\|opt2 | Addis Ababa | 25-34    | male   | private-sector | bachelors | 2026-05-09T01:05:48.370Z |
+
+---
 
 ### 5.3 Get paginated comments (with filters)
 
 **`GET /analytics/:policyId/comments`**
 
+Returns comments belonging to a policy, with moderator filters and the `isEdited` flag.
+
 **Query parameters (all optional):**
 
-| Parameter         | Type    | Default | Description                                          |
-| ----------------- | ------- | ------- | ---------------------------------------------------- |
-| `page`            | integer | 1       | Page number (1‑based)                                |
-| `limit`           | integer | 20      | Items per page (max 100)                             |
-| `sentiment`       | string  | none    | Filter by `positive`, `negative`, or `neutral`       |
-| `status`          | string  | none    | Filter by `approved`, `flagged`, `deleted`           |
-| `language`        | string  | none    | Filter by detected language (`am`, `om`, `ti`, `en`) |
-| `parentCommentId` | string  | none    | Filter replies to a specific top‑level comment       |
-| `startDate`       | string  | none    | ISO date                                             |
-| `endDate`         | string  | none    | ISO date                                             |
+| Parameter          | Type    | Default | Description                                                 |
+| ------------------ | ------- | ------- | ----------------------------------------------------------- |
+| `page`             | integer | 1       | Page number (1‑based)                                       |
+| `limit`            | integer | 20      | Items per page (max 100)                                    |
+| `visibility`       | string  | none    | `visible` or `hidden`                                       |
+| `moderationStatus` | string  | none    | `pending_ai`, `needs_review`, `reviewed`, `none`            |
+| `moderationReason` | string  | none    | `pending_ai`, `low_confidence`, `reports`, `moderator_flag` |
+| `sentiment`        | string  | none    | `positive`, `negative`, `neutral`                           |
+| `language`         | string  | none    | `am`, `om`, `ti`, `en`                                      |
+| `parentCommentId`  | string  | none    | Filter replies to a specific top‑level comment              |
+| `startDate`        | string  | none    | ISO date                                                    |
+| `endDate`          | string  | none    | ISO date                                                    |
 
 **Response (200 OK):**
 
@@ -1487,11 +1442,14 @@ The request body does **not** accept a `text` field.
       {
         "id": "67f1a2b3...",
         "text": "This policy is excellent!",
+        "visibility": "visible",
+        "moderationStatus": "none",
+        "moderationReason": null,
         "sentiment": { "label": "positive", "confidence": 0.95 },
         "keywords": ["excellent"],
-        "status": "approved",
         "isOfficialReply": false,
-        "createdAt": "2026-05-09T01:17:31.540Z",
+        "reportCount": 0,
+        "createdAt": "2026-05-09T01:17:31Z",
         "userEmail": "citizen@example.com",
         "isEdited": true
       }
@@ -1504,26 +1462,32 @@ The request body does **not** accept a `text` field.
 }
 ```
 
-**Note on `isEdited`:** This boolean field indicates whether the comment has been edited at least once. All roles (including citizens) see this flag, which can be used to display an "edited" badge in the UI. However, only planners and admins can view the actual edit history via `GET /comments/:id/history`.
+**Note on `isEdited`:** True if `editedHistory` is non‑empty. Planners/admins can retrieve full history via `GET /comments/:id/history` (see 4.8).
 
-### 5.4 Heatmap (unified geographic & time‑series)
+---
+
+### 5.4 Heatmap – geographic + time (single policy)
 
 **`GET /analytics/heatmap`**
 
-This endpoint aggregates voting data over time and optionally by region.
+Aggregates votes over time and region for a specific policy, and includes **average sentiment** and **top keywords** from comments per bucket.
 
 **Roles:** planner, admin
 
-**Query parameters (all optional):**
+**Query parameters (all optional, except `policyId`):**
 
-| Parameter   | Type    | Default | Description                                                                                                                                                   |
-| ----------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `startDate` | string  | none    | ISO date. Filters votes and comments created on or after this date.                                                                                           |
-| `endDate`   | string  | none    | ISO date. Filters votes and comments created on or before this date.                                                                                          |
-| `interval`  | string  | `week`  | Grouping interval: `day`, `week`, or `month`.                                                                                                                 |
-| `policyId`  | string  | none    | If provided, only votes/comments belonging to that policy are included. Otherwise, data for **all policies** (subject to planner's visibility) is aggregated. |
-| `byRegion`  | boolean | `false` | If `true`, the response is grouped by region within each time bucket (geographic heatmap). If `false`, the response is a simple time series (global totals).  |
-| `regions`   | string  | none    | Comma‑separated list of region names, e.g., `Addis Ababa,Oromia`. Only applicable when `byRegion=true`.                                                       |
+| Parameter    | Type    | Default      | Description                                                                                                                                                  |
+| ------------ | ------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `policyId`   | string  | **required** | MongoDB ObjectId of the policy. Heatmap is per‑policy only.                                                                                                  |
+| `startDate`  | string  | none         | ISO date. Filters votes and comments created on or after this date.                                                                                          |
+| `endDate`    | string  | none         | ISO date. Filters votes and comments created on or before this date.                                                                                         |
+| `interval`   | string  | `week`       | Grouping interval: `day`, `week`, or `month`.                                                                                                                |
+| `byRegion`   | boolean | `false`      | If `true`, the response is grouped by region within each time bucket (geographic heatmap). If `false`, the response is a simple time series (global totals). |
+| `regions`    | string  | none         | Comma‑separated list of region names, e.g., `Addis Ababa,Oromia`. Only applicable when `byRegion=true`.                                                      |
+| `gender`     | string  | none         | Filter votes/comments by gender.                                                                                                                             |
+| `ageRange`   | string  | none         | Filter by age range.                                                                                                                                         |
+| `occupation` | string  | none         | Filter by occupation.                                                                                                                                        |
+| `education`  | string  | none         | Filter by education.                                                                                                                                         |
 
 **Response when `byRegion=false` (global time series):**
 
@@ -1537,7 +1501,9 @@ This endpoint aggregates voting data over time and optionally by region.
         "period": "2026-19",
         "totalVotes": 8,
         "averageRating": 4.1,
-        "yesPercentage": "62.5" // for binary policies
+        "yesPercentage": "62.5",
+        "averageSentiment": 0.45,
+        "topKeywords": [{ "keyword": "water", "count": 3 }]
       }
     ]
   },
@@ -1559,7 +1525,9 @@ This endpoint aggregates voting data over time and optionally by region.
         "region": "Addis Ababa",
         "totalVotes": 6,
         "averageRating": "4.50",
-        "yesPercentage": "16.7"
+        "yesPercentage": "16.7",
+        "averageSentiment": 0.82,
+        "topKeywords": [{ "keyword": "access", "count": 5 }]
       }
     ]
   },
@@ -1568,19 +1536,30 @@ This endpoint aggregates voting data over time and optionally by region.
 }
 ```
 
-### 5.5 Timeseries (vote count and ratings over time)
+**Note:** The fields returned depend on the policy’s `pollType`. For binary, `yesPercentage`; for rating/likert, `averageRating`; for multipleChoice, `topOptionId` and `topOptionPercentage`; for approval, `approvePercentage` and `netApproval`. Sentiment fields (`averageSentiment`, `topKeywords`) are always included.
+
+---
+
+### 5.5 Timeseries – trend over time with sentiment
 
 **`GET /analytics/:policyId/timeseries`**
+
+Returns time‑bucketed data for a single policy: vote metrics per bucket, plus **average sentiment score** and **top keywords** from comments in that bucket. Supports demographics and region filters.
 
 **Roles:** planner, admin
 
 **Query parameters (all optional):**
 
-| Parameter   | Type   | Default | Description                       |
-| ----------- | ------ | ------- | --------------------------------- |
-| `bucket`    | string | `day`   | `hour`, `day`, `week`, or `month` |
-| `startDate` | string | none    | ISO date                          |
-| `endDate`   | string | none    | ISO date                          |
+| Parameter    | Type   | Default | Description                                       |
+| ------------ | ------ | ------- | ------------------------------------------------- |
+| `bucket`     | string | `day`   | `hour`, `day`, `week`, or `month`                 |
+| `startDate`  | string | none    | ISO date                                          |
+| `endDate`    | string | none    | ISO date                                          |
+| `gender`     | string | none    | Filter votes/comments by gender (using snapshot). |
+| `ageRange`   | string | none    | Filter by age range.                              |
+| `occupation` | string | none    | Filter by occupation.                             |
+| `education`  | string | none    | Filter by education.                              |
+| `region`     | string | none    | Region name (e.g., `Addis Ababa`).                |
 
 **Response (200 OK) – for binary policy:**
 
@@ -1590,7 +1569,15 @@ This endpoint aggregates voting data over time and optionally by region.
   "data": {
     "bucket": "week",
     "data": [
-      { "bucket": "2026-19", "totalVotes": 5, "yesCount": 3, "noCount": 2 }
+      {
+        "bucket": "2026-19",
+        "totalVotes": 5,
+        "yesCount": 3,
+        "noCount": 2,
+        "yesPercentage": "60.0",
+        "averageSentiment": 0.25,
+        "topKeywords": [{ "keyword": "funding", "count": 2 }]
+      }
     ]
   },
   "message": "Timeseries retrieved",
@@ -1602,12 +1589,52 @@ This endpoint aggregates voting data over time and optionally by region.
 
 ```json
 {
+  "status": "success",
   "data": {
-    "bucket": "day",
-    "data": [{ "bucket": "2026-05-09", "totalVotes": 10, "averageRating": 4.2 }]
-  }
+    "bucket": "week",
+    "data": [
+      {
+        "bucket": "2026-19",
+        "totalVotes": 10,
+        "averageRating": 4.2,
+        "averageSentiment": 0.75,
+        "topKeywords": [{ "keyword": "good", "count": 4 }]
+      }
+    ]
+  },
+  "message": "Timeseries retrieved",
+  "timestamp": "..."
 }
 ```
+
+**Response for multipleChoice policy (shows top option count per bucket):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "bucket": "week",
+    "data": [
+      {
+        "bucket": "2026-19",
+        "totalVotes": 20,
+        "options": [
+          { "option": "opt1", "count": 12 },
+          { "option": "opt2", "count": 8 }
+        ],
+        "averageSentiment": 0.12,
+        "topKeywords": [{ "keyword": "roads", "count": 5 }]
+      }
+    ]
+  },
+  "message": "Timeseries retrieved",
+  "timestamp": "..."
+}
+```
+
+**Note:** For multipleChoice, the full option distribution is returned (`options` array). For approval, fields like `approveCount`, `rejectCount`, `abstainCount`, `approvePercentage` are included (not shown).
+
+---
 
 ### 5.6 Correlation (for multipleChoice policies only)
 
@@ -1642,9 +1669,13 @@ This endpoint aggregates voting data over time and optionally by region.
 }
 ```
 
-### 5.7 Demographic breakdown
+---
+
+### 5.7 Demographic breakdown – with sentiment
 
 **`GET /analytics/:policyId/demographics`**
+
+Returns a static comparison of a demographic dimension (age, gender, occupation, education, region) for a single policy, including vote metrics and **average sentiment** + **top keywords** for each group.
 
 **Roles:** planner, admin
 
@@ -1653,6 +1684,8 @@ This endpoint aggregates voting data over time and optionally by region.
 | Parameter   | Type   | Required | Description (one of)                                      |
 | ----------- | ------ | -------- | --------------------------------------------------------- |
 | `dimension` | string | yes      | `ageRange`, `gender`, `occupation`, `education`, `region` |
+| `startDate` | string | no       | ISO date                                                  |
+| `endDate`   | string | no       | ISO date                                                  |
 
 **Response (200 OK):**
 
@@ -1662,14 +1695,77 @@ This endpoint aggregates voting data over time and optionally by region.
   "data": {
     "dimension": "ageRange",
     "data": [
-      { "ageRange": "25-34", "totalVotes": 20, "averageRating": 4.2 },
-      { "ageRange": "35-44", "totalVotes": 12, "averageRating": 3.8 }
+      {
+        "ageRange": "25-34",
+        "totalVotes": 20,
+        "averageRating": 4.2,
+        "averageSentiment": 0.65,
+        "topKeywords": [{ "keyword": "good", "count": 4 }]
+      },
+      {
+        "ageRange": "35-44",
+        "totalVotes": 12,
+        "averageRating": 3.8,
+        "averageSentiment": -0.1,
+        "topKeywords": [{ "keyword": "expensive", "count": 2 }]
+      }
     ]
   },
   "message": "Demographic breakdown retrieved",
   "timestamp": "..."
 }
 ```
+
+**Note:** For binary policies, the metric is `yesPercentage`; for multipleChoice, `topOptionId` and `topOptionPercentage`; for approval, `approvePercentage` and `netApproval`. Sentiment fields are always present.
+
+---
+
+### 5.8 Cross‑policy analytics (shared metrics)
+
+**`GET /analytics/cross`**
+
+Aggregates shared metrics (total votes, comments, sentiment counts, top keywords) across **multiple policies** filtered by topics, region, demographics, and date range. Does **not** include poll‑type‑specific metrics.
+
+**Roles:** planner, admin
+
+**Query parameters (all optional):**
+
+| Parameter    | Type   | Description                                                                                                          |
+| ------------ | ------ | -------------------------------------------------------------------------------------------------------------------- |
+| `topics`     | string | Comma‑separated list of policy topics (e.g., `Agriculture,Health`). Policies must have at least one of these topics. |
+| `region`     | string | Target region (e.g., `Addis Ababa`). Policies that target this region are included.                                  |
+| `gender`     | string | Filter votes/comments by gender.                                                                                     |
+| `ageRange`   | string | Filter by age range.                                                                                                 |
+| `occupation` | string | Filter by occupation.                                                                                                |
+| `education`  | string | Filter by education.                                                                                                 |
+| `startDate`  | string | ISO date. Filters votes & comments created on or after this date.                                                    |
+| `endDate`    | string | ISO date. Filters votes & comments created on or before this date.                                                   |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "totalVotes": 1230,
+    "totalComments": 340,
+    "sentimentCounts": { "positive": 180, "negative": 90, "neutral": 70 },
+    "topKeywords": [
+      { "keyword": "education", "count": 45 },
+      { "keyword": "funding", "count": 30 }
+    ]
+  },
+  "message": "Cross‑policy analytics retrieved",
+  "timestamp": "..."
+}
+```
+
+**Error examples:**
+
+| Status | Code                    | Message                                                        |
+| ------ | ----------------------- | -------------------------------------------------------------- |
+| 403    | `FORBIDDEN`             | `"Only planners and admins can access cross‑policy analytics"` |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve cross‑policy analytics"`                  |
 
 ## 6. Admin Endpoints
 
@@ -1920,11 +2016,13 @@ Error responses:
 
 All endpoints in this section require the **Admin** role.
 
-#### 6.3.1 Get pending comments
+#### 6.3.1 Get comments needing review
 
 **`GET /admin/comments/pending`**
 
-Returns all comments that the AI could not process and are awaiting manual review.
+Returns all comments where `moderationStatus = "needs_review"` (regardless of the reason: low confidence, reports, or manual flag).
+
+**Query parameters:** none (pagination not needed for admin review, but you may add later).
 
 **Response (200 OK):**
 
@@ -1934,19 +2032,23 @@ Returns all comments that the AI could not process and are awaiting manual revie
   "data": {
     "comments": [
       {
-        "_id": "67f1a2b3...",
-        "voteId": "67f1a2b3...",
+        "_id": "67f1a2b3c4d5e6f7a8b9c0d1",
         "policyId": {
           "_id": "...",
           "title": "Clean Water Initiative"
         },
         "userId": {
           "_id": "...",
-          "email": "user@example.com"
+          "email": "citizen@example.com"
         },
-        "comment": "Text that AI could not process",
-        "status": "pending_review",
-        "createdAt": "2026-04-01T10:00:00Z"
+        "text": "I think this policy needs more funding.",
+        "visibility": "visible",
+        "hiddenReason": null,
+        "moderationStatus": "needs_review",
+        "moderationReason": "low_confidence",
+        "reportCount": 0,
+        "flaggedSnapshot": null,
+        "createdAt": "2026-05-09T10:00:00Z"
       }
     ]
   },
@@ -1957,96 +2059,30 @@ Returns all comments that the AI could not process and are awaiting manual revie
 
 **Error responses:**
 
-| Status | Code                    | Message                                 |
-| ------ | ----------------------- | --------------------------------------- |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve pending comments"` |
+| Status | Code                    | Message                                      |
+| ------ | ----------------------- | -------------------------------------------- |
+| 403    | `FORBIDDEN`             | `"Access denied. Insufficient permissions."` |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve pending comments"`      |
 
-#### 6.3.2 Update comment (manual review)
+---
+
+#### 6.3.2 Get comments flagged by reports
+
+**`GET /admin/comments/flagged`**
+
+Returns comments where `moderationReason = "reports"` and `moderationStatus = "needs_review"` (i.e., comments hidden because they reached the report threshold).
+
+**Response:** Same shape as 6.3.1, but only comments with `moderationReason = "reports"`.
+
+**Error responses:** same as 6.3.1.
+
+---
+
+#### 6.3.3 Update comment (manual override)
 
 **`PUT /admin/comments/:id`**
 
-Path parameter:
-
-| Parameter | Type   | Description |
-| --------- | ------ | ----------- |
-| `id`      | string | Comment ID  |
-
-Request body (fields optional):
-
-| Field       | Type             | Description                                                    |
-| ----------- | ---------------- | -------------------------------------------------------------- |
-| `sentiment` | object           | `{ "label": "positive/negative/neutral", "confidence": 0.95 }` |
-| `keywords`  | array of strings | e.g., `["water", "access"]`                                    |
-| `processed` | boolean          | Set to `true` after manual review                              |
-| `status`    | string           | `"processed"` or `"pending_review"`                            |
-
-**Response (200 OK):** returns the updated comment object (same structure as in 6.3.1 but with the modified fields).
-
-**Error responses:**
-
-| Status | Code                    | Message                      |
-| ------ | ----------------------- | ---------------------------- |
-| 404    | `NOT_FOUND`             | `"Comment not found"`        |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to update comment"` |
-
-#### 6.3.3 Retry single comment
-
-**`POST /admin/comments/:id/retry`**
-
-Path parameter:
-
-| Parameter | Type   | Description |
-| --------- | ------ | ----------- |
-| `id`      | string | Comment ID  |
-
-Resets the comment to `"processing"` so that the AI worker will attempt to analyze it again.
-
-**Response (200 OK):**
-
-```json
-{
-  "status": "success",
-  "data": { "commentId": "..." },
-  "message": "Comment queued for retry. The AI worker will process it shortly.",
-  "timestamp": "..."
-}
-```
-
-**Error responses:**
-
-| Status | Code                    | Message                               |
-| ------ | ----------------------- | ------------------------------------- |
-| 404    | `NOT_FOUND`             | `"Comment not found"`                 |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to queue comment for retry"` |
-
-#### 6.3.4 Retry all pending comments
-
-**`POST /admin/comments/retry-all`**
-
-Resets all comments with `status: "pending_review"` to `"processing"` so they will be reprocessed by the AI worker.
-
-**Response (200 OK):**
-
-```json
-{
-  "status": "success",
-  "data": { "updatedCount": 5 },
-  "message": "5 comments queued for retry",
-  "timestamp": "..."
-}
-```
-
-**Error responses:**
-
-| Status | Code                    | Message                                |
-| ------ | ----------------------- | -------------------------------------- |
-| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to queue comments for retry"` |
-
-### 6.3.5 Delete comment
-
-**`DELETE /admin/comments/:id`**
-
-Permanently removes a comment. The associated vote remains unchanged (the vote rating and channel stay).
+Manually updates sentiment, keywords, or moderation flags of a comment. Cannot change the comment text or visibility – those are handled by moderation actions (approve/delete/retry) or by the author.
 
 **Path parameter:**
 
@@ -2054,25 +2090,172 @@ Permanently removes a comment. The associated vote remains unchanged (the vote r
 | --------- | ------ | ----------- |
 | `id`      | string | Comment ID  |
 
-**Role required:** `admin`
+**Request body (fields optional):**
+
+```json
+{
+  "sentiment": { "label": "positive", "confidence": 0.95 },
+  "keywords": ["water", "access"],
+  "moderationStatus": "reviewed",
+  "moderationReason": null
+}
+```
+
+**Valid values:**
+
+- `sentiment.label`: `"positive"`, `"negative"`, `"neutral"`
+- `sentiment.confidence`: number between 0 and 1
+- `keywords`: array of strings
+- `moderationStatus`: `"none"`, `"needs_review"`, `"reviewed"`
+- `moderationReason`: `null`, `"low_confidence"`, `"reports"`, `"moderator_flag"`
+
+**Response (200 OK):** returns the updated comment object (same structure as 6.3.1).
+
+**Error responses:**
+
+| Status | Code                    | Message                      |
+| ------ | ----------------------- | ---------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Invalid field value"`      |
+| 404    | `NOT_FOUND`             | `"Comment not found"`        |
+| 403    | `FORBIDDEN`             | `"Access denied"`            |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to update comment"` |
+
+---
+
+### 6.3.4 Retry a single comment (strict)
+
+**`POST /admin/comments/:id/retry`**
+
+Resets a comment to `pending_ai` status so the AI worker will re‑process it.  
+**Eligibility:** Only comments that are `low_confidence`, `visible`, and `needs_review`.
+
+**Path parameter:** `id` – Comment ID
+
+**Behaviour:**
+
+- Sets `moderationStatus = "pending_ai"`
+- Sets `moderationReason = "pending_ai"`
+- Resets `retryCount = 0` and `nextRetry = null`
+- Sets `lastRetryTriggeredBy = "admin:<adminId>"`
+- No change to `visibility` or `hiddenReason`.
 
 **Response (200 OK):**
 
 ```json
 {
   "status": "success",
-  "data": null,
-  "message": "Comment deleted successfully",
+  "data": { "commentId": "67f1a2b3..." },
+  "message": "Comment queued for retry. AI worker will process it shortly.",
   "timestamp": "..."
 }
 ```
 
 **Error responses:**
 
-| Status | Code        | Message                      |
-| ------ | ----------- | ---------------------------- |
-| 404    | `NOT_FOUND` | `"Comment not found"`        |
-| 500    | `INTERNAL`  | `"Failed to delete comment"` |
+| Status | Code                    | Message                                                              |
+| ------ | ----------------------- | -------------------------------------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"Only comments in needs_review can be retried. Current: ..."`       |
+| 400    | `VALIDATION_ERROR`      | `"Only low‑confidence comments can be retried. Current reason: ..."` |
+| 400    | `VALIDATION_ERROR`      | `"Only visible comments can be retried."`                            |
+| 404    | `NOT_FOUND`             | `"Comment not found"`                                                |
+| 403    | `FORBIDDEN`             | `"Access denied"`                                                    |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to queue comment for retry"`                                |
+
+---
+
+### 6.3.5 Force retry a comment (any comment)
+
+**`POST /admin/comments/:id/force-retry`**
+
+Forces a comment to be re‑processed by the AI worker regardless of its current state (even if it is hidden or already approved).  
+**No eligibility checks.** Use with caution.
+
+**Path parameter:** `id` – Comment ID
+
+**Behaviour:**
+
+- Sets `moderationStatus = "pending_ai"`
+- Sets `moderationReason = "pending_ai"`
+- Resets `retryCount = 0` and `nextRetry = null`
+- Sets `lastRetryTriggeredBy = "admin:<adminId>:force"` (suffix `:force` indicates forced retry)
+- Does **not** change `visibility`, `hiddenReason`, or any other fields.
+
+**Response (200 OK):**
+
+    {
+      "status": "success",
+      "data": { "commentId": "..." },
+      "message": "Comment force‑queued for AI reprocessing.",
+      "timestamp": "..."
+    }
+
+**Error responses:**
+
+| Status | Code                    | Message                           |
+| ------ | ----------------------- | --------------------------------- |
+| 404    | `NOT_FOUND`             | `"Comment not found"`             |
+| 403    | `FORBIDDEN`             | `"Access denied"`                 |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to force‑retry comment"` |
+
+### 6.3.6 Bulk retry comments by IDs
+
+**`POST /admin/comments/bulk/retry-by-ids`**
+
+Retries multiple comments at once. Only comments that are `low_confidence`, `visible`, and `needs_review` will be retried; others are reported as failed.
+
+**Rate limit:** 10 requests per minute per admin (limited by `bulkAdmin` rate limiter).
+
+**Query parameter:** `?dryRun=true` – returns count of eligible comments without making changes.
+
+**Request body:**
+
+```json
+    {
+      "commentIds": ["67f1a2b3...", "67f1a2b4...", ...]
+    }
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "succeeded": ["id2"],
+    "failed": [
+      {
+        "id": "id1",
+        "reason": "Comment not found or not eligible (must be visible, low‑confidence needs_review)"
+      }
+    ]
+  },
+  "message": "Bulk retry completed: 1 succeeded, 1 failed.",
+  "timestamp": "..."
+}
+```
+
+**Dry run response:**
+
+```json
+    {
+      "status": "success",
+      "data": {
+        "totalMatched": 1,
+        "failed": [ ... ]
+      },
+      "message": "Dry run: 1 comments would be retried.",
+      "timestamp": "..."
+    }
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                    |
+| ------ | ----------------------- | ------------------------------------------ |
+| 400    | `VALIDATION_ERROR`      | `"commentIds array is required"`           |
+| 400    | `VALIDATION_ERROR`      | `"At least one valid comment ID required"` |
+| 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many bulk requests. Please wait."`   |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to process bulk retry"`           |
 
 ## 6.4 Admin Dashboard & Monitoring
 
@@ -2080,7 +2263,7 @@ Permanently removes a comment. The associated vote remains unchanged (the vote r
 
 **`GET /admin/dashboard/stats`**
 
-Returns platform-wide counts and AI health.
+Returns platform‑wide counts and AI health.
 
 **Response (200 OK):**
 
@@ -2102,8 +2285,12 @@ Returns platform-wide counts and AI health.
 
 **Notes:**
 
-- `aiHealth.status` is `"ok"` when AI service is reachable, otherwise `"unreachable"`.
-- `aiHealth.pendingComments` and `aiHealth.failedComments` are from your database, not the AI service.
+- `comments.total` – total number of comments (including soft‑deleted).
+- `comments.pendingReview` – number of comments with `moderationStatus = "needs_review"` (awaiting moderator attention).
+- `comments.processed` – number of comments with `moderationStatus` in `["none", "reviewed"]` (already handled or needing no action).
+- `aiHealth.status` – `"ok"` when AI service is reachable, otherwise `"unreachable"`.
+- `aiHealth.pendingComments` – same as `comments.pendingReview` (cached from database).
+- `aiHealth.failedComments` – number of `needs_review` comments that have failed AI retries more than 5 times.
 
 ### 6.4.2 Platform trends
 

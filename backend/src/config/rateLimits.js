@@ -95,6 +95,12 @@ const limiters = {
     keyPrefix: "rl:phone:request",
     keyGenerator: (req) => req.user?.id || req.ip,
   }),
+  bulkAdmin: createRateLimiter({
+    windowMs: 60 * 1000,
+    max: 10,
+    keyPrefix: "rl:bulk:admin",
+    keyGenerator: (req) => req.user?.id || req.ip,
+  }),
 };
 
 module.exports = limiters;

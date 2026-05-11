@@ -1,6 +1,9 @@
 const User = require("../models/User");
 const Comment = require("../models/Comment");
+const PlannerRequest = require("../models/PlannerRequest");
+const { sendEmail } = require("../utils/email");
 const crypto = require("crypto");
+const mongoose = require("mongoose");
 const { hashPassword } = require("../utils/helpers");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
@@ -14,7 +17,7 @@ const {
 
 // ========== PLANNER MANAGEMENT ==========
 
-// GET /admin/planners?active=true&page=1&limit=10
+// GET /admin/planners
 exports.listPlanners = async (req, res) => {
   try {
     const { active, page = 1, limit = 10 } = req.query;
@@ -61,16 +64,10 @@ exports.listPlanners = async (req, res) => {
 };
 
 // POST /admin/planners
-// POST /admin/planners
 exports.createPlanner = async (req, res) => {
   try {
-    console.log("=== CREATE PLANNER START ===");
-    console.log("Request Body:", req.body);
-
     const { email, password } = req.body;
-
     if (!email || !password) {
-      console.log("Validation failed: Email or password missing");
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -80,10 +77,7 @@ exports.createPlanner = async (req, res) => {
       );
     }
 
-    console.log("Step 1: Checking for existing user...");
     const existing = await User.findOne({ email });
-    console.log("Existing user found?", !!existing);
-
     if (existing) {
       logger.warn(
         `Admin ${req.user.id} attempted to create planner with existing email: ${email}`,
@@ -97,31 +91,19 @@ exports.createPlanner = async (req, res) => {
       );
     }
 
-    // Hash Password
-    console.log("Step 2: Hashing password...");
     const passwordHash = await hashPassword(password);
-    console.log("Password hashed successfully");
-
-    // Use a unique placeholder for phoneHash (planners don't have phone)
     const uniquePhonePlaceholder = `planner_no_phone_${Date.now()}_${Math.random().toString(36).substring(2)}`;
-
-    console.log("Step 3: Creating new User object...");
     const planner = new User({
       email,
       passwordHash,
       role: "planner",
-      phoneHash: uniquePhonePlaceholder,        // ← Fixed here
+      phoneHash: uniquePhonePlaceholder,
       region: "",
       verified: true,
       active: true,
     });
-
-    console.log("User object created, about to save...");
     await planner.save();
-    console.log("✅ User saved successfully! ID:", planner._id);
 
-    // Audit Log
-    console.log("Step 4: Creating audit log...");
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
@@ -131,37 +113,26 @@ exports.createPlanner = async (req, res) => {
       details: { email: planner.email },
       req,
     });
-    console.log("Audit log created successfully");
 
     logger.info(
       `Admin ${req.user.id} created planner: ${email} (${planner._id})`,
     );
-
-    console.log("=== CREATE PLANNER SUCCESS ===");
-
     return sendSuccess(
       res,
       { id: planner._id, email: planner.email },
       "Planner account created successfully",
       201,
     );
-
   } catch (err) {
-    console.error("=== CREATE PLANNER FAILED ===");
-    console.error("Error Name:", err.name);
-    console.error("Error Message:", err.message);
-    console.error("Error Code:", err.code);
-
     logger.error(
-      { 
-        error: err.message, 
+      {
+        error: err.message,
         stack: err.stack,
         name: err.name,
-        code: err.code 
+        code: err.code,
       },
       "Create planner error",
     );
-
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -296,12 +267,12 @@ exports.updatePlannerStatus = async (req, res) => {
   }
 };
 
-// ========== COMMENT MANAGEMENT (formerly FEEDBACK) ==========
+// ========== COMMENT MANAGEMENT ==========
 
 // GET /admin/comments/pending
 exports.getPendingComments = async (req, res) => {
   try {
-    const comments = await Comment.find({ status: "pending_review" })
+    const comments = await Comment.find({ moderationStatus: "needs_review" })
       .populate("policyId", "title")
       .populate("userId", "email")
       .sort({ createdAt: -1 });
@@ -328,21 +299,58 @@ exports.getPendingComments = async (req, res) => {
   }
 };
 
-// PUT /admin/comments/:id
+// GET /admin/comments/flagged
+exports.getFlaggedComments = async (req, res) => {
+  try {
+    const comments = await Comment.find({
+      moderationReason: "reports",
+      moderationStatus: "needs_review",
+    })
+      .populate("policyId", "title")
+      .populate("userId", "email")
+      .sort({ createdAt: -1 });
+    logger.info(
+      `Admin ${req.user.id} retrieved ${comments.length} flagged comments`,
+    );
+    return sendSuccess(
+      res,
+      { comments },
+      "Flagged comments retrieved successfully",
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Get flagged comments error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve flagged comments",
+      null,
+      500,
+    );
+  }
+};
+
+// PUT /admin/comments/:id (manual override)
 exports.updateComment = async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
-    const allowed = ["sentiment", "keywords", "processed", "status"];
+    const { sentiment, keywords, moderationStatus, moderationReason } =
+      req.body;
     const updateData = {};
-    for (const key of allowed) {
-      if (updates[key] !== undefined) updateData[key] = updates[key];
-    }
+    if (sentiment !== undefined) updateData.sentiment = sentiment;
+    if (keywords !== undefined) updateData.keywords = keywords;
+    if (moderationStatus !== undefined)
+      updateData.moderationStatus = moderationStatus;
+    if (moderationReason !== undefined)
+      updateData.moderationReason = moderationReason;
 
     const comment = await Comment.findByIdAndUpdate(id, updateData, {
       new: true,
+      runValidators: true,
     });
-    if (!comment) {
+    if (!comment)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -350,7 +358,6 @@ exports.updateComment = async (req, res) => {
         null,
         404,
       );
-    }
 
     await createAuditLog({
       userId: req.user.id,
@@ -379,12 +386,12 @@ exports.updateComment = async (req, res) => {
   }
 };
 
-// POST /admin/comments/:id/retry
+// Normal retry – strict: only low‑confidence, visible, needs_review
 exports.retryComment = async (req, res) => {
   try {
     const { id } = req.params;
     const comment = await Comment.findById(id);
-    if (!comment) {
+    if (!comment)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -392,12 +399,40 @@ exports.retryComment = async (req, res) => {
         null,
         404,
       );
+
+    if (comment.moderationStatus !== "needs_review") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only comments in needs_review can be retried. Current: ${comment.moderationStatus}`,
+        null,
+        400,
+      );
+    }
+    if (comment.moderationReason !== "low_confidence") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only low‑confidence comments can be retried. Current reason: ${comment.moderationReason}`,
+        null,
+        400,
+      );
+    }
+    if (comment.visibility !== "visible") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Only visible comments can be retried. This comment is hidden due to reports or moderator action.",
+        null,
+        400,
+      );
     }
 
-    comment.processed = false;
+    comment.moderationStatus = "pending_ai";
+    comment.moderationReason = "pending_ai";
     comment.retryCount = 0;
     comment.nextRetry = null;
-    comment.status = "processing";
+    comment.lastRetryTriggeredBy = `admin:${req.user.id}`;
     await comment.save();
 
     await createAuditLog({
@@ -410,11 +445,11 @@ exports.retryComment = async (req, res) => {
       req,
     });
 
-    logger.info(`Admin ${req.user.id} queued comment ${id} for retry`);
+    logger.info(`Admin ${req.user.id} retried comment ${id}`);
     return sendSuccess(
       res,
       { commentId: id },
-      "Comment queued for retry. The AI worker will process it shortly.",
+      "Comment queued for retry. AI worker will process.",
     );
   } catch (err) {
     logger.error(
@@ -431,46 +466,156 @@ exports.retryComment = async (req, res) => {
   }
 };
 
-// POST /admin/comments/retry-all
-exports.retryAllComments = async (req, res) => {
+// Force retry – no restrictions, any comment
+exports.forceRetryComment = async (req, res) => {
   try {
-    const result = await Comment.updateMany(
-      { status: "pending_review" },
-      {
-        $set: {
-          processed: false,
-          retryCount: 0,
-          nextRetry: null,
-          status: "processing",
-        },
-      },
-    );
+    const { id } = req.params;
+    const comment = await Comment.findById(id);
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+
+    comment.moderationStatus = "pending_ai";
+    comment.moderationReason = "pending_ai";
+    comment.retryCount = 0;
+    comment.nextRetry = null;
+    comment.lastRetryTriggeredBy = `admin:${req.user.id}:force`;
+    await comment.save();
 
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
-      action: "RETRY_ALL_COMMENTS",
-      details: { count: result.modifiedCount },
+      action: "FORCE_RETRY_COMMENT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { policyId: comment.policyId },
+      req,
+    });
+
+    logger.info(`Admin ${req.user.id} force‑retried comment ${id}`);
+    return sendSuccess(
+      res,
+      { commentId: id },
+      "Comment force‑queued for AI reprocessing.",
+    );
+  } catch (err) {
+    logger.error({ error: err.message, stack: err.stack }, "Force retry error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to force‑retry comment",
+      null,
+      500,
+    );
+  }
+};
+
+// Bulk retry by IDs – strict criteria
+exports.bulkRetryCommentsByIds = async (req, res) => {
+  try {
+    const { commentIds } = req.body;
+    const dryRun = req.query.dryRun === "true";
+
+    if (!commentIds || !Array.isArray(commentIds) || commentIds.length === 0) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "commentIds array is required",
+        null,
+        400,
+      );
+    }
+
+    const succeeded = [];
+    const failed = [];
+
+    for (const id of commentIds) {
+      if (!mongoose.Types.ObjectId.isValid(id)) {
+        failed.push({ id, reason: "Invalid ObjectId" });
+        continue;
+      }
+
+      const comment = await Comment.findOne({
+        _id: id,
+        moderationStatus: "needs_review",
+        moderationReason: "low_confidence",
+        visibility: "visible",
+      });
+
+      if (!comment) {
+        failed.push({
+          id,
+          reason:
+            "Comment not found or not eligible (must be visible, low‑confidence needs_review)",
+        });
+        continue;
+      }
+
+      if (dryRun) {
+        succeeded.push(id);
+        continue;
+      }
+
+      await Comment.updateOne(
+        { _id: id },
+        {
+          $set: {
+            moderationStatus: "pending_ai",
+            moderationReason: "pending_ai",
+            retryCount: 0,
+            nextRetry: null,
+            lastRetryTriggeredBy: `admin:${req.user.id}`,
+          },
+        },
+      );
+      succeeded.push(id);
+    }
+
+    if (dryRun) {
+      return sendSuccess(
+        res,
+        { totalMatched: succeeded.length, failed },
+        `Dry run: ${succeeded.length} comments would be retried.`,
+      );
+    }
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: "admin",
+      action: "BULK_RETRY_COMMENTS_BY_IDS",
+      targetType: "Comment",
+      details: {
+        commentIds,
+        succeededCount: succeeded.length,
+        failedCount: failed.length,
+      },
       req,
     });
 
     logger.info(
-      `Admin ${req.user.id} queued ${result.modifiedCount} comments for retry`,
+      `Admin ${req.user.id} bulk retried ${succeeded.length} comments by IDs`,
     );
+
     return sendSuccess(
       res,
-      { updatedCount: result.modifiedCount },
-      `${result.modifiedCount} comments queued for retry`,
+      { succeeded, failed },
+      `Bulk retry completed: ${succeeded.length} succeeded, ${failed.length} failed.`,
     );
   } catch (err) {
+    console.error("=== BULK RETRY BY IDS ERROR ===", err);
     logger.error(
       { error: err.message, stack: err.stack },
-      "Retry all comments error",
+      "Bulk retry by IDs error",
     );
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to queue comments for retry",
+      "Failed to process bulk retry",
       null,
       500,
     );
@@ -523,7 +668,7 @@ exports.deleteComment = async (req, res) => {
 
 // ========== CITIZEN MANAGEMENT ==========
 
-// GET /admin/users/citizens?active=true&page=1&limit=10
+// GET /admin/users/citizens
 exports.listCitizens = async (req, res) => {
   try {
     const { active, page = 1, limit = 10 } = req.query;
@@ -632,7 +777,6 @@ exports.updateCitizenStatus = async (req, res) => {
 
 // ========== PASSWORD RESET (ADMIN INITIATED) ==========
 
-// POST /admin/users/:id/initiate-password-reset
 exports.initiatePasswordReset = async (req, res) => {
   try {
     const { id } = req.params;

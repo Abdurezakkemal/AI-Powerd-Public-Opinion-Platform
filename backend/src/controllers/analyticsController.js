@@ -268,7 +268,16 @@ exports.getTimeseries = async (req, res) => {
         400,
       );
     }
-    const { bucket = "day", startDate, endDate } = req.query;
+    const {
+      bucket = "day",
+      startDate,
+      endDate,
+      gender,
+      ageRange,
+      occupation,
+      education,
+      region,
+    } = req.query;
 
     const start = parseDate(startDate, "startDate");
     const end = parseDate(endDate, "endDate");
@@ -311,57 +320,203 @@ exports.getTimeseries = async (req, res) => {
         dateFormat = "%Y-%m-%d";
     }
 
+    // ---------- VOTE AGGREGATION ----------
     const voteFilter = { policyId: policy._id };
     if (start) voteFilter.createdAt = { $gte: start };
     if (end) voteFilter.createdAt = { ...voteFilter.createdAt, $lte: end };
+    if (gender) voteFilter["demographics.gender"] = gender;
+    if (ageRange) voteFilter["demographics.ageRange"] = ageRange;
+    if (occupation) voteFilter["demographics.occupation"] = occupation;
+    if (education) voteFilter["demographics.education"] = education;
+    if (region) voteFilter.region = region;
 
-    let groupStage;
-    if (policy.pollType === "binary") {
-      groupStage = {
+    const pollType = policy.pollType;
+    let votePipeline = [{ $match: voteFilter }];
+
+    if (pollType === "binary") {
+      votePipeline.push({
         $group: {
           _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
           total: { $sum: 1 },
           yes: { $sum: { $cond: [{ $eq: ["$value", "yes"] }, 1, 0] } },
         },
-      };
-    } else if (["rating", "likert"].includes(policy.pollType)) {
-      groupStage = {
+      });
+    } else if (pollType === "multipleChoice") {
+      votePipeline.push(
+        { $unwind: { path: "$value", preserveNullAndEmptyArrays: false } },
+        {
+          $group: {
+            _id: {
+              period: {
+                $dateToString: { format: dateFormat, date: "$createdAt" },
+              },
+              option: "$value",
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { "_id.period": 1, "_id.option": 1 } },
+        {
+          $group: {
+            _id: "$_id.period",
+            total: { $sum: "$count" },
+            options: {
+              $push: { option: "$_id.option", count: "$count" },
+            },
+          },
+        },
+        { $sort: { _id: 1 } },
+      );
+    } else if (pollType === "likert" || pollType === "rating") {
+      votePipeline.push({
         $group: {
           _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
           total: { $sum: 1 },
           avg: { $avg: "$value" },
         },
-      };
-    } else {
-      groupStage = {
+      });
+    } else if (pollType === "approval") {
+      votePipeline.push({
         $group: {
           _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
           total: { $sum: 1 },
+          approve: { $sum: { $cond: [{ $eq: ["$value", "approve"] }, 1, 0] } },
+          reject: { $sum: { $cond: [{ $eq: ["$value", "reject"] }, 1, 0] } },
+          abstain: { $sum: { $cond: [{ $eq: ["$value", "abstain"] }, 1, 0] } },
         },
-      };
+      });
+    } else if (pollType === "rankedChoice") {
+      votePipeline.push(
+        { $addFields: { firstChoice: { $arrayElemAt: ["$value", 0] } } },
+        { $match: { firstChoice: { $exists: true } } },
+        {
+          $group: {
+            _id: {
+              period: {
+                $dateToString: { format: dateFormat, date: "$createdAt" },
+              },
+              firstChoice: "$firstChoice",
+            },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { "_id.period": 1, "_id.firstChoice": 1 } },
+        {
+          $group: {
+            _id: "$_id.period",
+            total: { $sum: "$count" },
+            firstChoiceCounts: {
+              $push: { option: "$_id.firstChoice", count: "$count" },
+            },
+          },
+        },
+        { $sort: { _id: 1 } },
+      );
     }
 
-    const timeseries = await Vote.aggregate([
-      { $match: voteFilter },
-      groupStage,
+    const voteTimeseries = await Vote.aggregate(votePipeline);
+    const voteMap = new Map();
+    for (const v of voteTimeseries) {
+      const period = v._id;
+      const base = { totalVotes: v.total };
+      if (pollType === "binary") {
+        base.yesCount = v.yes;
+        base.noCount = v.total - v.yes;
+        base.yesPercentage = v.total ? ((v.yes / v.total) * 100).toFixed(1) : 0;
+      } else if (pollType === "multipleChoice") {
+        base.options = v.options;
+      } else if (pollType === "likert" || pollType === "rating") {
+        base.averageRating = parseFloat(v.avg.toFixed(2));
+      } else if (pollType === "approval") {
+        base.approveCount = v.approve;
+        base.rejectCount = v.reject;
+        base.abstainCount = v.abstain;
+        base.approvePercentage = v.total
+          ? ((v.approve / v.total) * 100).toFixed(1)
+          : 0;
+      } else if (pollType === "rankedChoice") {
+        base.firstChoiceCounts = v.firstChoiceCounts;
+      }
+      voteMap.set(period, base);
+    }
+
+    // ---------- COMMENT AGGREGATION (sentiment + keywords) ----------
+    // Build comment filter (same date range and demographic filters as votes)
+    const commentFilter = { policyId: policy._id, status: "approved" };
+    if (start) commentFilter.createdAt = { $gte: start };
+    if (end)
+      commentFilter.createdAt = { ...commentFilter.createdAt, $lte: end };
+    // Note: comments do not have demographics directly; we need to join with votes?
+    // For simplicity, we assume comments are from the same users as votes, but comments collection does not store demographics.
+    // To apply demographic filters, we would need to join comments with votes (expensive).
+    // For now, we omit demographic filters for comments and rely on the date range only.
+    // This is a simplification; we can improve later.
+
+    const commentPipeline = [
+      { $match: commentFilter },
+      {
+        $group: {
+          _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+          sentimentScores: { $push: "$sentiment.label" },
+          keywordsList: { $push: "$keywords" },
+        },
+      },
       { $sort: { _id: 1 } },
-    ]);
+    ];
+    const commentBuckets = await Comment.aggregate(commentPipeline);
 
-    const formatted = timeseries.map((t) => ({
-      bucket: t._id,
-      totalVotes: t.total,
-      ...(t.yes !== undefined && { yesCount: t.yes, noCount: t.total - t.yes }),
-      ...(t.avg !== undefined && {
-        averageRating: parseFloat(t.avg.toFixed(2)),
-      }),
-    }));
+    const sentimentMap = new Map();
+    for (const bucket of commentBuckets) {
+      const period = bucket._id;
+      const sentiments = bucket.sentimentScores;
+      const allKeywords = bucket.keywordsList.flat();
+      // Compute average sentiment score (positive=1, neutral=0, negative=-1)
+      let totalScore = 0;
+      let count = 0;
+      for (const s of sentiments) {
+        if (s === "positive") totalScore += 1;
+        else if (s === "negative") totalScore -= 1;
+        else totalScore += 0; // neutral
+        count++;
+      }
+      const avgSentiment = count ? (totalScore / count).toFixed(2) : 0;
+      // Compute top keywords
+      const keywordFreq = {};
+      for (const kw of allKeywords) {
+        if (kw) keywordFreq[kw] = (keywordFreq[kw] || 0) + 1;
+      }
+      const topKeywords = Object.entries(keywordFreq)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([kw, freq]) => ({ keyword: kw, count: freq }));
+      sentimentMap.set(period, {
+        averageSentiment: parseFloat(avgSentiment),
+        topKeywords,
+      });
+    }
 
-    logger.info(`Timeseries for policy ${policyId} (${bucket}) delivered`);
-    return sendSuccess(
-      res,
-      { bucket, data: formatted },
-      "Timeseries retrieved",
+    // Merge voteMap and sentimentMap
+    const allPeriods = new Set([...voteMap.keys(), ...sentimentMap.keys()]);
+    const merged = Array.from(allPeriods)
+      .sort()
+      .map((period) => {
+        const voteData = voteMap.get(period) || { totalVotes: 0 };
+        const sentimentData = sentimentMap.get(period) || {
+          averageSentiment: 0,
+          topKeywords: [],
+        };
+        return {
+          bucket: period,
+          ...voteData,
+          averageSentiment: sentimentData.averageSentiment,
+          topKeywords: sentimentData.topKeywords,
+        };
+      });
+
+    logger.info(
+      `Timeseries with sentiment for policy ${policyId} (${bucket}) delivered`,
     );
+    return sendSuccess(res, { bucket, data: merged }, "Timeseries retrieved");
   } catch (err) {
     logger.error({ error: err.message }, "Timeseries error");
     return sendError(
@@ -373,7 +528,6 @@ exports.getTimeseries = async (req, res) => {
     );
   }
 };
-
 // ---------- Correlation for multipleChoice policies ----------
 exports.getCorrelation = async (req, res) => {
   try {
@@ -473,99 +627,39 @@ exports.getCorrelation = async (req, res) => {
   }
 };
 
-// // ---------- Compare two policies ----------
-// exports.comparePolicies = async (req, res) => {
-//   try {
-//     const { policyId1, policyId2 } = req.query;
-//     if (!policyId1 || !policyId2) {
-//       return sendError(
-//         res,
-//         ErrorCodes.VALIDATION,
-//         "policyId1 and policyId2 are required",
-//         null,
-//         400,
-//       );
-//     }
-
-//     const [policy1, policy2] = await Promise.all([
-//       Policy.findById(policyId1),
-//       Policy.findById(policyId2),
-//     ]);
-//     if (!policy1 || !policy2)
-//       return sendError(
-//         res,
-//         ErrorCodes.NOT_FOUND,
-//         "One or both policies not found",
-//         null,
-//         404,
-//       );
-
-//     // Check access for both
-//     const access1 = checkAnalyticsAccess(policy1, req.user);
-//     const access2 = checkAnalyticsAccess(policy2, req.user);
-//     if (!access1.allowed || !access2.allowed) {
-//       return sendError(
-//         res,
-//         ErrorCodes.FORBIDDEN,
-//         "Access denied to one or both policies",
-//         null,
-//         403,
-//       );
-//     }
-
-//     const [agg1, agg2] = await Promise.all([
-//       getPollTypeAggregation(policy1, { policyId: policy1._id }),
-//       getPollTypeAggregation(policy2, { policyId: policy2._id }),
-//     ]);
-
-//     const response = {
-//       policy1: {
-//         id: policy1._id,
-//         title: policy1.title,
-//         pollType: policy1.pollType,
-//         ...agg1,
-//       },
-//       policy2: {
-//         id: policy2._id,
-//         title: policy2.title,
-//         pollType: policy2.pollType,
-//         ...agg2,
-//       },
-//     };
-
-//     logger.info(`Comparison between ${policyId1} and ${policyId2} delivered`);
-//     return sendSuccess(res, response, "Comparison retrieved");
-//   } catch (err) {
-//     console.error("=== COMPARE POLICIES ERROR ===");
-//     console.error("Error name:", err.name);
-//     console.error("Error message:", err.message);
-//     console.error("Error stack:", err.stack);
-//     if (err.errors) console.error("Validation errors:", err.errors);
-//     logger.error({ error: err.message, stack: err.stack }, "Compare error");
-//     return sendError(
-//       res,
-//       ErrorCodes.INTERNAL,
-//       `Failed to compare policies: ${err.message}`,
-//       null,
-//       500,
-//     );
-//   }
-// };
-
-// ---------- Demographic breakdown (for planners) ----------
 exports.getDemographicBreakdown = async (req, res) => {
   try {
     const { policyId } = req.params;
-    const { dimension } = req.query; // one of: ageRange, gender, occupation, education, region
+    const { dimension, startDate, endDate } = req.query;
     if (!dimension) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "dimension parameter required (ageRange/gender/occupation/education/region)",
+        "dimension parameter required",
         null,
         400,
       );
     }
+
+    const allowedDims = [
+      "ageRange",
+      "gender",
+      "occupation",
+      "education",
+      "region",
+    ];
+    if (!allowedDims.includes(dimension)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Invalid dimension. Allowed: ${allowedDims.join(", ")}`,
+        null,
+        400,
+      );
+    }
+
+    const start = parseDate(startDate, "startDate");
+    const end = parseDate(endDate, "endDate");
 
     const policy = await Policy.findById(policyId);
     if (!policy)
@@ -587,45 +681,176 @@ exports.getDemographicBreakdown = async (req, res) => {
         access.statusCode,
       );
 
-    const allowedDims = [
-      "ageRange",
-      "gender",
-      "occupation",
-      "education",
-      "region",
-    ];
-    if (!allowedDims.includes(dimension)) {
+    let groupField;
+    if (dimension === "region") groupField = "$region";
+    else groupField = `$demographics.${dimension}`;
+
+    const voteFilter = { policyId: policy._id };
+    if (start) voteFilter.createdAt = { $gte: start };
+    if (end) voteFilter.createdAt = { ...voteFilter.createdAt, $lte: end };
+
+    const pollType = policy.pollType;
+
+    // ----- Vote aggregation -----
+    let votePipeline = [{ $match: voteFilter }];
+    if (pollType === "binary") {
+      votePipeline.push({
+        $group: {
+          _id: groupField,
+          totalVotes: { $sum: 1 },
+          yesCount: { $sum: { $cond: [{ $eq: ["$value", "yes"] }, 1, 0] } },
+        },
+      });
+    } else if (pollType === "multipleChoice") {
+      votePipeline.push(
+        { $unwind: { path: "$value", preserveNullAndEmptyArrays: false } },
+        {
+          $group: {
+            _id: { group: groupField, option: "$value" },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { "_id.group": 1, count: -1 } },
+        {
+          $group: {
+            _id: "$_id.group",
+            totalVotes: { $sum: "$count" },
+            topOption: { $first: "$_id.option" },
+            topOptionCount: { $first: "$count" },
+          },
+        },
+      );
+    } else if (pollType === "likert" || pollType === "rating") {
+      votePipeline.push({
+        $group: {
+          _id: groupField,
+          totalVotes: { $sum: 1 },
+          sumValue: { $sum: { $ifNull: ["$value", 0] } },
+        },
+      });
+    } else if (pollType === "approval") {
+      votePipeline.push({
+        $group: {
+          _id: groupField,
+          totalVotes: { $sum: 1 },
+          approveCount: {
+            $sum: { $cond: [{ $eq: ["$value", "approve"] }, 1, 0] },
+          },
+          rejectCount: {
+            $sum: { $cond: [{ $eq: ["$value", "reject"] }, 1, 0] },
+          },
+        },
+      });
+    } else {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        `Invalid dimension. Allowed: ${allowedDims.join(", ")}`,
+        `Cannot compute demographic breakdown for poll type ${pollType}`,
         null,
         400,
       );
     }
 
-    let groupField;
-    if (dimension === "region") groupField = "$region";
-    else groupField = `$demographics.${dimension}`;
+    const voteBreakdown = await Vote.aggregate(votePipeline);
+    const groupMap = new Map();
+    for (const item of voteBreakdown) {
+      const group = item._id || "unknown";
+      let entry = { [dimension]: group, totalVotes: item.totalVotes };
+      if (pollType === "binary") {
+        entry.yesPercentage = item.totalVotes
+          ? ((item.yesCount / item.totalVotes) * 100).toFixed(1)
+          : 0;
+      } else if (pollType === "multipleChoice") {
+        entry.topOptionId = item.topOption;
+        entry.topOptionPercentage = item.totalVotes
+          ? ((item.topOptionCount / item.totalVotes) * 100).toFixed(1)
+          : 0;
+      } else if (pollType === "likert" || pollType === "rating") {
+        entry.averageRating = item.totalVotes
+          ? (item.sumValue / item.totalVotes).toFixed(2)
+          : 0;
+      } else if (pollType === "approval") {
+        entry.approvePercentage = item.totalVotes
+          ? ((item.approveCount / item.totalVotes) * 100).toFixed(1)
+          : 0;
+        entry.rejectPercentage = item.totalVotes
+          ? ((item.rejectCount / item.totalVotes) * 100).toFixed(1)
+          : 0;
+        entry.netApproval = item.totalVotes
+          ? (
+              ((item.approveCount - item.rejectCount) / item.totalVotes) *
+              100
+            ).toFixed(1)
+          : 0;
+      }
+      groupMap.set(group, entry);
+    }
 
-    const breakdown = await Vote.aggregate([
-      { $match: { policyId: policy._id } },
+    // ----- Comment aggregation (sentiment + keywords) -----
+    // Build comment filter with same date range and demographics (using comment.demographics snapshot)
+    const commentFilter = { policyId: policy._id, status: "approved" };
+    if (start) commentFilter.createdAt = { $gte: start };
+    if (end)
+      commentFilter.createdAt = { ...commentFilter.createdAt, $lte: end };
+    // Add demographic filter based on dimension (if dimension is not region, we filter by comment.demographics field)
+    if (dimension !== "region") {
+      commentFilter[`demographics.${dimension}`] = { $exists: true };
+    }
+
+    const commentPipeline = [
+      { $match: commentFilter },
       {
         $group: {
-          _id: groupField,
-          count: { $sum: 1 },
-          avgRating: { $avg: "$value" },
+          _id:
+            dimension === "region" ? "$region" : `$demographics.${dimension}`,
+          sentimentScores: { $push: "$sentiment.label" },
+          keywordList: { $push: "$keywords" },
+          commentCount: { $sum: 1 },
         },
       },
-      { $sort: { _id: 1 } },
-    ]);
+    ];
+    const commentBreakdown = await Comment.aggregate(commentPipeline);
 
-    const formatted = breakdown.map((b) => ({
-      [dimension]: b._id || "unknown",
-      totalVotes: b.count,
-      averageRating: b.avgRating ? parseFloat(b.avgRating.toFixed(2)) : null,
-    }));
+    for (const item of commentBreakdown) {
+      const group = item._id || "unknown";
+      const sentiments = item.sentimentScores;
+      const allKeywords = item.keywordList.flat();
+      let totalScore = 0;
+      let count = 0;
+      for (const s of sentiments) {
+        if (s === "positive") totalScore += 1;
+        else if (s === "negative") totalScore -= 1;
+        else totalScore += 0;
+        count++;
+      }
+      const avgSentiment = count ? (totalScore / count).toFixed(2) : 0;
+      const keywordFreq = {};
+      for (const kw of allKeywords) {
+        if (kw) keywordFreq[kw] = (keywordFreq[kw] || 0) + 1;
+      }
+      const topKeywords = Object.entries(keywordFreq)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([kw, freq]) => ({ keyword: kw, count: freq }));
 
+      if (groupMap.has(group)) {
+        const existing = groupMap.get(group);
+        existing.averageSentiment = parseFloat(avgSentiment);
+        existing.topKeywords = topKeywords;
+      } else {
+        groupMap.set(group, {
+          [dimension]: group,
+          totalVotes: 0,
+          totalComments: item.commentCount,
+          averageSentiment: parseFloat(avgSentiment),
+          topKeywords,
+        });
+      }
+    }
+
+    const formatted = Array.from(groupMap.values()).sort((a, b) =>
+      (a[dimension] || "").localeCompare(b[dimension] || ""),
+    );
     logger.info(`Demographic breakdown for ${policyId} by ${dimension}`);
     return sendSuccess(
       res,
@@ -643,7 +868,6 @@ exports.getDemographicBreakdown = async (req, res) => {
     );
   }
 };
-
 // ---------- CSV Export (enhanced) ----------
 exports.exportAnalytics = async (req, res) => {
   try {
@@ -805,10 +1029,24 @@ exports.getHeatmap = async (req, res) => {
       policyId,
       byRegion = "false",
       regions,
+      gender,
+      ageRange,
+      occupation,
+      education,
     } = req.query;
     const byRegionFlag = byRegion === "true";
 
-    if (req.user.role !== "planner" && req.user.role !== "admin") {
+    if (!policyId) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "policyId is required for heatmap",
+        null,
+        400,
+      );
+    }
+
+    if (!["planner", "admin"].includes(req.user.role)) {
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
@@ -834,47 +1072,52 @@ exports.getHeatmap = async (req, res) => {
       return sendError(res, ErrorCodes.VALIDATION, err.message, null, 400);
     }
 
-    let policy = null;
-    if (policyId) {
-      if (!mongoose.Types.ObjectId.isValid(policyId)) {
-        return sendError(
-          res,
-          ErrorCodes.VALIDATION,
-          "Invalid policyId format",
-          null,
-          400,
-        );
-      }
-      policy = await Policy.findById(policyId);
-      if (!policy)
-        return sendError(
-          res,
-          ErrorCodes.NOT_FOUND,
-          "Policy not found",
-          null,
-          404,
-        );
-      // Reuse existing access check
-      const access = await checkAnalyticsAccess(policy, req.user);
-      if (!access.allowed) {
-        return sendError(
-          res,
-          access.errorCode,
-          access.errorMessage,
-          null,
-          access.statusCode,
-        );
-      }
+    if (!mongoose.Types.ObjectId.isValid(policyId)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid policyId format",
+        null,
+        400,
+      );
+    }
+    const policy = await Policy.findById(policyId);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+
+    const access = await checkAnalyticsAccess(policy, req.user);
+    if (!access.allowed) {
+      return sendError(
+        res,
+        access.errorCode,
+        access.errorMessage,
+        null,
+        access.statusCode,
+      );
     }
 
-    const voteMatch = { channel: "app", region: { $ne: null } };
-    if (policyId) voteMatch.policyId = new mongoose.Types.ObjectId(policyId);
+    // Build vote match with demographics
+    const voteMatch = {
+      policyId: new mongoose.Types.ObjectId(policyId),
+      channel: "app",
+      region: { $ne: null },
+    };
     if (start) voteMatch.createdAt = { $gte: start };
     if (end) voteMatch.createdAt = { ...voteMatch.createdAt, $lte: end };
     if (regions) {
       const regionList = regions.split(",").map((r) => r.trim());
       voteMatch.region = { $in: regionList };
     }
+    if (gender) voteMatch["demographics.gender"] = gender;
+    if (ageRange) voteMatch["demographics.ageRange"] = ageRange;
+    if (occupation) voteMatch["demographics.occupation"] = occupation;
+    if (education) voteMatch["demographics.education"] = education;
 
     let dateFormat;
     switch (interval) {
@@ -891,73 +1134,248 @@ exports.getHeatmap = async (req, res) => {
         dateFormat = "%Y-%V";
     }
 
-    let results;
+    const pollType = policy.pollType;
+
+    // ----- VOTE AGGREGATION -----
+    let votePipeline = [{ $match: voteMatch }];
+    let voteIdFields;
     if (byRegionFlag) {
-      // Group by period + region, compute count and if value is numeric, average it
-      const voteAgg = await Vote.aggregate([
-        { $match: voteMatch },
-        {
-          $group: {
-            _id: {
-              period: {
-                $dateToString: { format: dateFormat, date: "$createdAt" },
-              },
-              region: "$region",
-            },
-            totalVotes: { $sum: 1 },
-            // For numeric value (rating/likert), compute average; otherwise just count
-            numericSum: {
-              $sum: { $cond: [{ $isNumber: "$value" }, "$value", 0] },
-            },
-            numericCount: { $sum: { $cond: [{ $isNumber: "$value" }, 1, 0] } },
-            // For binary, count yes
-            yesCount: { $sum: { $cond: [{ $eq: ["$value", "yes"] }, 1, 0] } },
-          },
-        },
-        { $sort: { "_id.period": 1, "_id.region": 1 } },
-      ]);
-
-      results = voteAgg.map((v) => ({
-        period: v._id.period,
-        region: v._id.region,
-        totalVotes: v.totalVotes,
-        averageRating: v.numericCount
-          ? (v.numericSum / v.numericCount).toFixed(2)
-          : null,
-        yesPercentage: v.totalVotes
-          ? ((v.yesCount / v.totalVotes) * 100).toFixed(1)
-          : null,
-      }));
+      voteIdFields = {
+        period: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+        region: "$region",
+      };
     } else {
-      const voteAgg = await Vote.aggregate([
-        { $match: voteMatch },
-        {
-          $group: {
-            _id: { $dateToString: { format: dateFormat, date: "$createdAt" } },
-            totalVotes: { $sum: 1 },
-            numericSum: {
-              $sum: { $cond: [{ $isNumber: "$value" }, "$value", 0] },
-            },
-            numericCount: { $sum: { $cond: [{ $isNumber: "$value" }, 1, 0] } },
-            yesCount: { $sum: { $cond: [{ $eq: ["$value", "yes"] }, 1, 0] } },
-          },
-        },
-        { $sort: { _id: 1 } },
-      ]);
-
-      results = voteAgg.map((v) => ({
-        period: v._id,
-        totalVotes: v.totalVotes,
-        averageRating: v.numericCount
-          ? (v.numericSum / v.numericCount).toFixed(2)
-          : null,
-        yesPercentage: v.totalVotes
-          ? ((v.yesCount / v.totalVotes) * 100).toFixed(1)
-          : null,
-      }));
+      voteIdFields = {
+        $dateToString: { format: dateFormat, date: "$createdAt" },
+      };
     }
 
-    logger.info(`Heatmap data generated for user ${req.user.id}`);
+    if (pollType === "binary") {
+      votePipeline.push({
+        $group: {
+          _id: voteIdFields,
+          totalVotes: { $sum: 1 },
+          yesCount: { $sum: { $cond: [{ $eq: ["$value", "yes"] }, 1, 0] } },
+        },
+      });
+    } else if (pollType === "multipleChoice") {
+      votePipeline.push(
+        { $unwind: { path: "$value", preserveNullAndEmptyArrays: false } },
+        {
+          $group: {
+            _id: byRegionFlag
+              ? {
+                  period: {
+                    $dateToString: { format: dateFormat, date: "$createdAt" },
+                  },
+                  region: "$region",
+                  option: "$value",
+                }
+              : {
+                  period: {
+                    $dateToString: { format: dateFormat, date: "$createdAt" },
+                  },
+                  option: "$value",
+                },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { "_id.period": 1, "_id.region": 1, count: -1 } },
+        {
+          $group: {
+            _id: byRegionFlag
+              ? { period: "$_id.period", region: "$_id.region" }
+              : { period: "$_id.period" },
+            totalVotes: { $sum: "$count" },
+            topOption: { $first: "$_id.option" },
+            topOptionCount: { $first: "$count" },
+          },
+        },
+      );
+    } else if (pollType === "likert" || pollType === "rating") {
+      votePipeline.push({
+        $group: {
+          _id: voteIdFields,
+          totalVotes: { $sum: 1 },
+          sumValue: { $sum: { $ifNull: ["$value", 0] } },
+        },
+      });
+    } else if (pollType === "approval") {
+      votePipeline.push({
+        $group: {
+          _id: voteIdFields,
+          totalVotes: { $sum: 1 },
+          approveCount: {
+            $sum: { $cond: [{ $eq: ["$value", "approve"] }, 1, 0] },
+          },
+          rejectCount: {
+            $sum: { $cond: [{ $eq: ["$value", "reject"] }, 1, 0] },
+          },
+        },
+      });
+    } else if (pollType === "rankedChoice") {
+      votePipeline.push(
+        { $addFields: { firstChoice: { $arrayElemAt: ["$value", 0] } } },
+        { $match: { firstChoice: { $exists: true } } },
+        {
+          $group: {
+            _id: byRegionFlag
+              ? {
+                  period: {
+                    $dateToString: { format: dateFormat, date: "$createdAt" },
+                  },
+                  region: "$region",
+                  firstChoice: "$firstChoice",
+                }
+              : {
+                  period: {
+                    $dateToString: { format: dateFormat, date: "$createdAt" },
+                  },
+                  firstChoice: "$firstChoice",
+                },
+            count: { $sum: 1 },
+          },
+        },
+        { $sort: { "_id.period": 1, "_id.region": 1, count: -1 } },
+        {
+          $group: {
+            _id: byRegionFlag
+              ? { period: "$_id.period", region: "$_id.region" }
+              : { period: "$_id.period" },
+            totalVotes: { $sum: "$count" },
+            topFirstChoice: { $first: "$_id.firstChoice" },
+            topFirstChoiceCount: { $first: "$count" },
+          },
+        },
+      );
+    }
+    const voteResults = await Vote.aggregate(votePipeline);
+    const voteMap = new Map();
+    for (const v of voteResults) {
+      const key = byRegionFlag ? `${v._id.period}|${v._id.region}` : v._id;
+      let obj = {
+        totalVotes: v.totalVotes,
+      };
+      if (pollType === "binary") {
+        const yes = v.yesCount;
+        obj.yesPercentage = v.totalVotes
+          ? ((yes / v.totalVotes) * 100).toFixed(1)
+          : 0;
+      } else if (pollType === "multipleChoice") {
+        obj.topOptionId = v.topOption;
+        obj.topOptionPercentage = v.totalVotes
+          ? ((v.topOptionCount / v.totalVotes) * 100).toFixed(1)
+          : 0;
+      } else if (pollType === "likert" || pollType === "rating") {
+        obj.averageRating = v.totalVotes
+          ? (v.sumValue / v.totalVotes).toFixed(2)
+          : 0;
+      } else if (pollType === "approval") {
+        obj.approvePercentage = v.totalVotes
+          ? ((v.approveCount / v.totalVotes) * 100).toFixed(1)
+          : 0;
+        obj.netApproval = v.totalVotes
+          ? (((v.approveCount - v.rejectCount) / v.totalVotes) * 100).toFixed(1)
+          : 0;
+      } else if (pollType === "rankedChoice") {
+        obj.topFirstChoiceId = v.topFirstChoice;
+        obj.topFirstChoicePercentage = v.totalVotes
+          ? ((v.topFirstChoiceCount / v.totalVotes) * 100).toFixed(1)
+          : 0;
+      }
+      voteMap.set(key, obj);
+    }
+
+    // ----- COMMENT AGGREGATION (sentiment + keywords) -----
+    const commentMatch = {
+      policyId: policy._id,
+      status: "approved",
+    };
+    if (start) commentMatch.createdAt = { $gte: start };
+    if (end) commentMatch.createdAt = { ...commentMatch.createdAt, $lte: end };
+    // Add demographic filters (if provided) using comment.demographics snapshot
+    if (gender) commentMatch["demographics.gender"] = gender;
+    if (ageRange) commentMatch["demographics.ageRange"] = ageRange;
+    if (occupation) commentMatch["demographics.occupation"] = occupation;
+    if (education) commentMatch["demographics.education"] = education;
+    if (byRegionFlag && regions) {
+      const regionList = regions.split(",").map((r) => r.trim());
+      commentMatch.region = { $in: regionList };
+    }
+
+    let commentGroupId;
+    if (byRegionFlag) {
+      commentGroupId = {
+        period: { $dateToString: { format: dateFormat, date: "$createdAt" } },
+        region: "$region",
+      };
+    } else {
+      commentGroupId = {
+        $dateToString: { format: dateFormat, date: "$createdAt" },
+      };
+    }
+
+    const commentPipeline = [
+      { $match: commentMatch },
+      {
+        $group: {
+          _id: commentGroupId,
+          sentimentScores: { $push: "$sentiment.label" },
+          keywordsList: { $push: "$keywords" },
+        },
+      },
+    ];
+    const commentResults = await Comment.aggregate(commentPipeline);
+    const commentMap = new Map();
+    for (const c of commentResults) {
+      const key = byRegionFlag ? `${c._id.period}|${c._id.region}` : c._id;
+      const sentiments = c.sentimentScores;
+      const allKeywords = c.keywordsList.flat();
+      let totalScore = 0;
+      let count = 0;
+      for (const s of sentiments) {
+        if (s === "positive") totalScore += 1;
+        else if (s === "negative") totalScore -= 1;
+        else totalScore += 0;
+        count++;
+      }
+      const avgSentiment = count ? (totalScore / count).toFixed(2) : 0;
+      const keywordFreq = {};
+      for (const kw of allKeywords) {
+        if (kw) keywordFreq[kw] = (keywordFreq[kw] || 0) + 1;
+      }
+      const topKeywords = Object.entries(keywordFreq)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([kw, freq]) => ({ keyword: kw, count: freq }));
+      commentMap.set(key, {
+        averageSentiment: parseFloat(avgSentiment),
+        topKeywords,
+      });
+    }
+
+    // Merge voteMap and commentMap
+    const allKeys = new Set([...voteMap.keys(), ...commentMap.keys()]);
+    const results = Array.from(allKeys)
+      .sort()
+      .map((key) => {
+        const voteData = voteMap.get(key) || { totalVotes: 0 };
+        const commentData = commentMap.get(key) || {
+          averageSentiment: 0,
+          topKeywords: [],
+        };
+        const [period, region] = byRegionFlag ? key.split("|") : [key, null];
+        const base = {
+          period,
+          ...voteData,
+          averageSentiment: commentData.averageSentiment,
+          topKeywords: commentData.topKeywords,
+        };
+        if (byRegionFlag && region) base.region = region;
+        return base;
+      });
+
+    logger.info(`Heatmap data generated for policy ${policyId}`);
     return sendSuccess(res, { interval, data: results }, "Heatmap retrieved");
   } catch (err) {
     logger.error({ error: err.message }, "Heatmap error");

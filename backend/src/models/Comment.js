@@ -13,6 +13,13 @@ const commentSchema = new mongoose.Schema({
     default: null,
   },
   text: { type: String, required: true, maxlength: 2000 },
+  demographics: {
+    ageRange: String,
+    gender: String,
+    occupation: String,
+    education: String,
+  },
+
   language: { type: String, default: null },
   sentiment: {
     label: {
@@ -22,15 +29,39 @@ const commentSchema = new mongoose.Schema({
     },
     confidence: { type: Number, default: null },
   },
+  // Inside commentSchema, add:
   keywords: { type: [String], default: [] },
-  status: {
-    type: String,
-    enum: ["processing", "approved", "flagged", "pending_review", "deleted"],
-    default: "processing",
-  },
-  isOfficialReply: { type: Boolean, default: false },
-  reportCount: { type: Number, default: 0 },
   aiPrediction: { type: mongoose.Schema.Types.Mixed, default: null },
+
+  visibility: { type: String, enum: ["visible", "hidden"], default: "visible" },
+  hiddenReason: {
+    type: String,
+    enum: ["reports", "moderator", "profanity"],
+    default: null,
+  },
+
+  moderationStatus: {
+    type: String,
+    enum: ["none", "pending_ai", "needs_review", "reviewed"],
+    default: "pending_ai",
+  },
+  moderationReason: {
+    type: String,
+    enum: ["pending_ai", "low_confidence", "reports", "moderator_flag"],
+    default: "pending_ai",
+  },
+
+  reportCount: { type: Number, default: 0 },
+  reportedAt: { type: Date, default: null },
+
+  flaggedSnapshot: {
+    text: String,
+    sentiment: { label: String, confidence: Number },
+    keywords: [String],
+    capturedAt: Date,
+    reportCountAtCapture: Number,
+  },
+
   appeal: {
     reason: String,
     status: {
@@ -42,6 +73,7 @@ const commentSchema = new mongoose.Schema({
     resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     resolutionNote: String,
   },
+
   editedHistory: [
     {
       text: String,
@@ -50,16 +82,13 @@ const commentSchema = new mongoose.Schema({
       editedAt: Date,
     },
   ],
-  flaggedSnapshot: {
-    type: {
-      text: String,
-      sentiment: { label: String, confidence: Number },
-      keywords: [String],
-      capturedAt: Date,
-      reportCountAtCapture: Number,
-    },
-    default: null,
-  },
+
+  retryCount: { type: Number, default: 0 },
+  nextRetry: { type: Date, default: null },
+  lastRetryTriggeredBy: { type: String, default: null },
+
+  isOfficialReply: { type: Boolean, default: false },
+
   createdAt: { type: Date, default: Date.now },
   updatedAt: { type: Date, default: Date.now },
 });

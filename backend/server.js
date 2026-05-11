@@ -72,11 +72,13 @@ server.listen(PORT, () => {
 const { startWorker, stopWorker } = require("./src/workers/aiWorker");
 const { startAutoCloseWorker } = require("./src/workers/autoCloseWorker");
 const { startAutoActivateWorker } = require("./src/workers/autoActivateWorker");
+const { startAutoRetryWorker } = require("./src/workers/autoRetryWorker");
 
 startWorker();
 startAutoCloseWorker();
 startAutoActivateWorker();
 startEmergingTopicsWorker();
+startAutoRetryWorker();
 
 // Graceful shutdown
 process.on("SIGINT", () => {
