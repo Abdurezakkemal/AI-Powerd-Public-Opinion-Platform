@@ -1,6 +1,9 @@
 const User = require("../models/User");
 const Comment = require("../models/Comment");
+const PlannerRequest = require("../models/PlannerRequest");
+const { sendEmail } = require("../utils/email");
 const crypto = require("crypto");
+const mongoose = require("mongoose");
 const { hashPassword } = require("../utils/helpers");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
@@ -61,7 +64,6 @@ exports.listPlanners = async (req, res) => {
 };
 
 // POST /admin/planners
-// POST /admin/planners
 exports.createPlanner = async (req, res) => {
   try {
     console.log("=== CREATE PLANNER START ===");
@@ -110,7 +112,7 @@ exports.createPlanner = async (req, res) => {
       email,
       passwordHash,
       role: "planner",
-      phoneHash: uniquePhonePlaceholder,        // ← Fixed here
+      phoneHash: uniquePhonePlaceholder, // ← Fixed here
       region: "",
       verified: true,
       active: true,
@@ -145,7 +147,6 @@ exports.createPlanner = async (req, res) => {
       "Planner account created successfully",
       201,
     );
-
   } catch (err) {
     console.error("=== CREATE PLANNER FAILED ===");
     console.error("Error Name:", err.name);
@@ -153,11 +154,11 @@ exports.createPlanner = async (req, res) => {
     console.error("Error Code:", err.code);
 
     logger.error(
-      { 
-        error: err.message, 
+      {
+        error: err.message,
         stack: err.stack,
         name: err.name,
-        code: err.code 
+        code: err.code,
       },
       "Create planner error",
     );
@@ -301,7 +302,7 @@ exports.updatePlannerStatus = async (req, res) => {
 // GET /admin/comments/pending
 exports.getPendingComments = async (req, res) => {
   try {
-    const comments = await Comment.find({ status: "pending_review" })
+    const comments = await Comment.find({ moderationStatus: "needs_review" })
       .populate("policyId", "title")
       .populate("userId", "email")
       .sort({ createdAt: -1 });
@@ -327,22 +328,57 @@ exports.getPendingComments = async (req, res) => {
     );
   }
 };
-
+// GET /admin/comments/flagged
+exports.getFlaggedComments = async (req, res) => {
+  try {
+    const comments = await Comment.find({
+      moderationReason: "reports",
+      moderationStatus: "needs_review",
+    })
+      .populate("policyId", "title")
+      .populate("userId", "email")
+      .sort({ createdAt: -1 });
+    logger.info(
+      `Admin ${req.user.id} retrieved ${comments.length} flagged comments`,
+    );
+    return sendSuccess(
+      res,
+      { comments },
+      "Flagged comments retrieved successfully",
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Get flagged comments error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve flagged comments",
+      null,
+      500,
+    );
+  }
+};
 // PUT /admin/comments/:id
 exports.updateComment = async (req, res) => {
   try {
     const { id } = req.params;
-    const updates = req.body;
-    const allowed = ["sentiment", "keywords", "processed", "status"];
+    const { sentiment, keywords, moderationStatus, moderationReason } =
+      req.body;
     const updateData = {};
-    for (const key of allowed) {
-      if (updates[key] !== undefined) updateData[key] = updates[key];
-    }
+    if (sentiment !== undefined) updateData.sentiment = sentiment;
+    if (keywords !== undefined) updateData.keywords = keywords;
+    if (moderationStatus !== undefined)
+      updateData.moderationStatus = moderationStatus;
+    if (moderationReason !== undefined)
+      updateData.moderationReason = moderationReason;
 
     const comment = await Comment.findByIdAndUpdate(id, updateData, {
       new: true,
+      runValidators: true,
     });
-    if (!comment) {
+    if (!comment)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -350,7 +386,6 @@ exports.updateComment = async (req, res) => {
         null,
         404,
       );
-    }
 
     await createAuditLog({
       userId: req.user.id,
@@ -384,7 +419,7 @@ exports.retryComment = async (req, res) => {
   try {
     const { id } = req.params;
     const comment = await Comment.findById(id);
-    if (!comment) {
+    if (!comment)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -392,12 +427,19 @@ exports.retryComment = async (req, res) => {
         null,
         404,
       );
+    if (comment.moderationStatus !== "needs_review") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only comments in needs_review can be retried. Current: ${comment.moderationStatus}`,
+        null,
+        400,
+      );
     }
-
-    comment.processed = false;
+    comment.moderationStatus = "pending_ai";
+    comment.moderationReason = "pending_ai";
     comment.retryCount = 0;
     comment.nextRetry = null;
-    comment.status = "processing";
     await comment.save();
 
     await createAuditLog({
@@ -414,7 +456,7 @@ exports.retryComment = async (req, res) => {
     return sendSuccess(
       res,
       { commentId: id },
-      "Comment queued for retry. The AI worker will process it shortly.",
+      "Comment queued for retry. AI worker will process.",
     );
   } catch (err) {
     logger.error(

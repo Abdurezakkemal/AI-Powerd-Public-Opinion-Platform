@@ -65,20 +65,21 @@ exports.postComment = async (req, res) => {
       }
     }
 
-    const status = parentCommentId ? "approved" : "processing";
-
+    const isReply = !!parentCommentId;
     const comment = new Comment({
       policyId,
       userId: req.user.id,
       parentCommentId: parentCommentId || null,
       text,
-      status,
+      visibility: "visible",
+      hiddenReason: null,
+      moderationStatus: isReply ? "none" : "pending_ai",
+      moderationReason: isReply ? null : "pending_ai",
       reportCount: 0,
     });
     await comment.save();
 
-    // Notify parent comment author (if reply)
-    if (parentCommentId) {
+    if (isReply) {
       const parent = await Comment.findById(parentCommentId).populate(
         "userId",
         "email",
@@ -124,7 +125,6 @@ exports.postComment = async (req, res) => {
     );
   }
 };
-
 // ========== EDIT COMMENT (author only, with history) ==========
 exports.editComment = async (req, res) => {
   try {
@@ -150,7 +150,7 @@ exports.editComment = async (req, res) => {
     }
 
     const comment = await Comment.findById(id).populate("policyId");
-    if (!comment) {
+    if (!comment)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -158,9 +158,7 @@ exports.editComment = async (req, res) => {
         null,
         404,
       );
-    }
 
-    // Only author can edit text
     if (comment.userId.toString() !== req.user.id.toString()) {
       return sendError(
         res,
@@ -171,8 +169,6 @@ exports.editComment = async (req, res) => {
       );
     }
 
-    // Store current version in history (limit 3)
-    // Snapshot the current full state before changes
     const snapshot = {
       text: comment.text,
       sentiment: comment.sentiment ? { ...comment.sentiment } : null,
@@ -186,13 +182,14 @@ exports.editComment = async (req, res) => {
     comment.text = text;
     comment.updatedAt = new Date();
 
-    // For top‑level comments, reset AI status so it gets re‑analyzed
     if (!comment.parentCommentId) {
-      comment.status = "processing";
-      comment.sentiment = { label: null, confidence: null };
+      comment.moderationStatus = "pending_ai";
+      comment.moderationReason = "pending_ai";
+      comment.sentiment = null;
       comment.keywords = [];
+      comment.retryCount = 0;
+      comment.nextRetry = null;
     }
-
     await comment.save();
 
     await createAuditLog({
@@ -247,10 +244,15 @@ exports.reportComment = async (req, res) => {
         null,
         404,
       );
+
     comment.reportCount += 1;
     if (comment.reportCount >= 3) {
-      comment.status = "flagged";
-      // Capture snapshot if not already captured
+      comment.visibility = "hidden";
+      comment.hiddenReason = "reports";
+      comment.moderationStatus = "needs_review";
+      comment.moderationReason = "reports";
+      comment.reportedAt = new Date();
+
       if (!comment.flaggedSnapshot) {
         comment.flaggedSnapshot = {
           text: comment.text,
@@ -334,10 +336,16 @@ exports.getCommentHistory = async (req, res) => {
 exports.moderateComment = async (req, res) => {
   try {
     const { commentId } = req.params;
-    const { status, sentiment, keywords } = req.body;
-    const allowedStatuses = ["approved", "flagged", "deleted"];
-    if (status && !allowedStatuses.includes(status)) {
-      return sendError(res, ErrorCodes.VALIDATION, "Invalid status", null, 400);
+    const { action, sentiment, keywords } = req.body;
+    const allowedActions = ["approve", "delete", "retry"];
+    if (!action || !allowedActions.includes(action)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid action. Use approve, delete, or retry",
+        null,
+        400,
+      );
     }
 
     const comment = await Comment.findById(commentId).populate("policyId");
@@ -350,7 +358,6 @@ exports.moderateComment = async (req, res) => {
         404,
       );
 
-    // Check permission: admin, policy owner, or associate with moderate_comments
     const isAdmin = req.user.role === "admin";
     const isOwner =
       comment.policyId.createdBy.toString() === req.user.id.toString();
@@ -375,10 +382,29 @@ exports.moderateComment = async (req, res) => {
       );
     }
 
-    if (status) comment.status = status;
+    switch (action) {
+      case "approve":
+        comment.visibility = "visible";
+        comment.hiddenReason = null;
+        comment.moderationStatus = "reviewed";
+        comment.moderationReason = null;
+        break;
+      case "delete":
+        comment.visibility = "hidden";
+        comment.hiddenReason = "moderator";
+        comment.moderationStatus = "none";
+        comment.moderationReason = null;
+        comment.text = "[deleted by moderator]";
+        break;
+      case "retry":
+        comment.moderationStatus = "pending_ai";
+        comment.moderationReason = "pending_ai";
+        comment.retryCount = 0;
+        comment.nextRetry = null;
+        break;
+    }
     if (sentiment) comment.sentiment = sentiment;
     if (keywords) comment.keywords = keywords;
-    // Do NOT allow editing of `text` here
     await comment.save();
 
     await createAuditLog({
@@ -387,14 +413,14 @@ exports.moderateComment = async (req, res) => {
       action: "MODERATE_COMMENT",
       targetType: "Comment",
       targetId: comment._id,
-      details: { changes: { status, sentiment, keywords } },
+      details: { action, sentiment, keywords },
       req,
     });
 
     return sendSuccess(
       res,
-      { commentId: comment._id, status: comment.status },
-      "Comment moderated",
+      { commentId: comment._id, action },
+      `Comment ${action}d.`,
     );
   } catch (err) {
     logger.error({ error: err.message }, "Moderate comment error");
@@ -407,7 +433,6 @@ exports.moderateComment = async (req, res) => {
     );
   }
 };
-
 // ========== APPEAL A MODERATION DECISION ==========
 exports.appealComment = async (req, res) => {
   try {
@@ -543,10 +568,12 @@ exports.resolveAppeal = async (req, res) => {
     }
 
     if (decision === "approve") {
-      comment.status = "approved";
+      comment.visibility = "visible";
+      comment.hiddenReason = null;
+      comment.moderationStatus = "reviewed";
+      comment.moderationReason = null;
       comment.appeal.status = "resolved_approved";
     } else {
-      comment.status = "flagged";
       comment.appeal.status = "resolved_rejected";
     }
     comment.appeal.resolvedAt = new Date();

@@ -13,6 +13,7 @@ const Comment = require("../src/models/Comment");
 const Notification = require("../src/models/Notification");
 const AuditLog = require("../src/models/AuditLog");
 const SmsSubscription = require("../src/models/SmsSubscription");
+const PlannerRequest = require("../src/models/PlannerRequest");
 
 // Utilities
 const { hashPhone, hashPassword } = require("../src/utils/helpers");
@@ -261,19 +262,20 @@ async function seed() {
     await mongoose.connect(MONGO_URI);
     console.log("Connected.");
 
-    // ===== 1. Clean up (uncomment if you want fresh start) =====
-    // console.log("Cleaning up existing data...");
-    // await User.deleteMany({ role: { $in: ["citizen", "planner"] } });
-    // await Policy.deleteMany({});
-    // await Vote.deleteMany({});
-    // await Comment.deleteMany({});
-    // await Notification.deleteMany({});
-    // await AuditLog.deleteMany({});
-    // await SmsSubscription.deleteMany({});
-    // console.log("Cleanup done.");
+    // ===== 1. Clean up (enabled) =====
+    console.log("Cleaning up existing data...");
+    await User.deleteMany({ role: { $in: ["citizen", "planner"] } });
+    await Policy.deleteMany({});
+    await Vote.deleteMany({});
+    await Comment.deleteMany({});
+    await Notification.deleteMany({});
+    await AuditLog.deleteMany({});
+    await SmsSubscription.deleteMany({});
+    await PlannerRequest.deleteMany({});
+    console.log("Cleanup done.");
 
-    // ===== 2. Admin =====
-    let admin = await User.findOne({ role: "admin" });
+    // ===== 2. Admin (check existence first) =====
+    let admin = await User.findOne({ email: "admin@test.com" });
     if (!admin) {
       const adminHash = await hashPassword("Admin@123");
       admin = new User({
@@ -291,92 +293,96 @@ async function seed() {
         tokenVersion: 0,
       });
       await admin.save();
-      console.log("Admin created.");
+      console.log("Admin created (admin@test.com).");
     } else {
-      console.log("Admin already exists.");
+      console.log("Admin already exists, skipping creation.");
     }
 
     // ===== 3. Planners =====
     const passwordHash = await hashPassword(DEFAULT_PASSWORD);
     for (const data of plannerData) {
-      const existing = await User.findOne({ email: data.email });
-      if (!existing) {
-        const phoneHash = `planner_dummy_${data.email.split("@")[0]}`;
-        const user = new User({
-          ...data,
-          passwordHash,
-          phoneHash,
-          role: "planner",
-          verified: true,
-          active: true,
-          trainingCompletedAt: new Date(),
-          tokenVersion: 0,
-        });
-        await user.save();
-      }
+      const phoneHash = `planner_dummy_${data.email.split("@")[0]}`;
+      const user = new User({
+        ...data,
+        passwordHash,
+        phoneHash,
+        role: "planner",
+        verified: true,
+        active: true,
+        trainingCompletedAt: new Date(),
+        tokenVersion: 0,
+      });
+      await user.save();
     }
-    console.log(`Planners seeded/verified (${plannerData.length}).`);
+    console.log(`Planners created (${plannerData.length}).`);
 
     // ===== 4. Citizens =====
     const createdCitizens = [];
     for (let i = 1; i <= CITIZEN_COUNT; i++) {
       const email = `citizen${i}@test.com`;
-      let user = await User.findOne({ email });
-      if (!user) {
-        const region = randomItem(regions);
-        const phone = `+25191234${String(1000 + i).slice(-4)}`;
-        const phoneHash = hashPhone(phone);
-        user = new User({
-          email,
-          passwordHash,
-          phoneHash,
-          region,
-          ageRange: randomItem(ageRanges),
-          gender: randomItem(genders),
-          occupation: randomItem(occupations),
-          education: randomItem(educations),
-          role: "citizen",
-          verified: true,
-          active: true,
-          tokenVersion: 0,
-        });
-        await user.save();
-      }
+      const region = randomItem(regions);
+      const phone = `+25191234${String(1000 + i).slice(-4)}`;
+      const phoneHash = hashPhone(phone);
+      const user = new User({
+        email,
+        passwordHash,
+        phoneHash,
+        region,
+        ageRange: randomItem(ageRanges),
+        gender: randomItem(genders),
+        occupation: randomItem(occupations),
+        education: randomItem(educations),
+        role: "citizen",
+        verified: true,
+        active: true,
+        tokenVersion: 0,
+      });
+      await user.save();
       createdCitizens.push(user);
     }
-    console.log(`Citizens seeded/verified (${createdCitizens.length}).`);
+    console.log(`Citizens created (${createdCitizens.length}).`);
+
+    // ===== 4.5. Planner Requests (pending) =====
+    console.log("Creating pending planner requests...");
+    const pendingCitizens = createdCitizens.slice(0, 5);
+    for (const citizen of pendingCitizens) {
+      await PlannerRequest.create({
+        userId: citizen._id,
+        organization: `Org ${citizen.email.split("@")[0]}`,
+        reason:
+          "This is a test reason that is at least 50 characters long. I want to become a planner to contribute to policy making in my region and help moderate comments effectively.",
+        status: "pending",
+        createdAt: new Date(Date.now() - randomInt(1, 10) * 86400000),
+      });
+      console.log(`   Request created for ${citizen.email}`);
+    }
+    console.log(
+      `Pending planner requests created for ${pendingCitizens.length} citizens.`,
+    );
 
     // ===== 5. Policies =====
     const planners = await User.find({ role: "planner" });
     const policyOwner = planners[0] || admin;
     const createdPolicies = [];
     for (const def of policyDefinitions) {
-      let policy = await Policy.findOne({ title: def.title });
-      if (!policy) {
-        const policyCode = generatePolicyCode(def.title);
-        policy = new Policy({
-          ...def,
-          policyCode,
-          createdBy: policyOwner._id,
-          archivedAt: null,
-        });
-        await policy.save();
-      }
+      const policyCode = generatePolicyCode(def.title);
+      const policy = new Policy({
+        ...def,
+        policyCode,
+        createdBy: policyOwner._id,
+        archivedAt: null,
+      });
+      await policy.save();
       createdPolicies.push(policy);
     }
-    console.log(`Policies seeded (${createdPolicies.length}).`);
+    console.log(`Policies created (${createdPolicies.length}).`);
 
-    // ===== 6. Votes and comments =====
+    // ===== 6. Votes and comments (regular) =====
     let voteCount = 0;
     let commentCount = 0;
     for (const citizen of createdCitizens) {
       for (const policy of createdPolicies) {
         if (!policy.targetRegions.includes(citizen.region)) continue;
-        const existingVote = await Vote.findOne({
-          policyId: policy._id,
-          userId: citizen._id,
-        });
-        if (existingVote) continue;
 
         const value = generateVoteValue(policy.pollType, policy);
         const vote = new Vote({
@@ -428,18 +434,56 @@ async function seed() {
     console.log(`Votes created: ${voteCount}`);
     console.log(`Comments created: ${commentCount}`);
 
+    // ===== 6.5. Flagged and pending_review comments =====
+    console.log("Creating flagged and pending_review comments...");
+    const flaggedCount = 3;
+    const pendingCount = 3;
+    const allCitizens = createdCitizens;
+    const somePolicies = createdPolicies.slice(0, 2);
+    for (let i = 0; i < flaggedCount; i++) {
+      const citizen = randomItem(allCitizens);
+      const policy = randomItem(somePolicies);
+      const comment = new Comment({
+        policyId: policy._id,
+        userId: citizen._id,
+        parentCommentId: null,
+        text: "This is a flagged comment that needs moderation.",
+        status: "flagged",
+        sentiment: { label: "neutral", confidence: 0.5 },
+        keywords: ["test"],
+        reportCount: 3,
+        createdAt: new Date(Date.now() - randomInt(1, 5) * 86400000),
+      });
+      await comment.save();
+      console.log(`   Flagged comment created for policy ${policy.title}`);
+    }
+    for (let i = 0; i < pendingCount; i++) {
+      const citizen = randomItem(allCitizens);
+      const policy = randomItem(somePolicies);
+      const comment = new Comment({
+        policyId: policy._id,
+        userId: citizen._id,
+        parentCommentId: null,
+        text: "This comment is pending review by admin.",
+        status: "pending_review",
+        sentiment: null,
+        keywords: [],
+        reportCount: 0,
+        createdAt: new Date(Date.now() - randomInt(1, 5) * 86400000),
+      });
+      await comment.save();
+      console.log(`   Pending comment created for policy ${policy.title}`);
+    }
+
     // ===== 7. SMS subscriptions and SMS votes =====
     const smsPhones = ["+251911234567", "+251922345678", "+251933456789"];
     for (const phone of smsPhones) {
       const phoneHash = hashPhone(phone);
-      const existingSub = await SmsSubscription.findOne({ phoneHash });
-      if (!existingSub) {
-        await SmsSubscription.create({
-          phoneHash,
-          subscribed: true,
-          subscribedAt: new Date(),
-        });
-      }
+      await SmsSubscription.create({
+        phoneHash,
+        subscribed: true,
+        subscribedAt: new Date(),
+      });
     }
     console.log(`SMS subscriptions created.`);
 
@@ -448,11 +492,6 @@ async function seed() {
       if (policy.status !== "active") continue;
       for (const phone of smsPhones) {
         const phoneHash = hashPhone(phone);
-        const existing = await Vote.findOne({
-          policyId: policy._id,
-          phoneHash,
-        });
-        if (existing) continue;
         const value = generateVoteValue(policy.pollType, policy);
         const vote = new Vote({
           policyId: policy._id,
@@ -510,6 +549,7 @@ async function seed() {
     console.log(`Policies: ${createdPolicies.length}`);
     console.log(`Total votes: ${totalVotes}`);
     console.log(`Comments: ${totalComments}`);
+    console.log(`Flagged/pending comments: ${flaggedCount + pendingCount}`);
     console.log("===================================\n");
 
     await mongoose.disconnect();

@@ -3,6 +3,7 @@ const router = express.Router();
 const adminController = require("../controllers/adminController");
 const auth = require("../middleware/authMiddleware");
 const reportController = require("../controllers/reportController");
+const limiters = require("../config/rateLimits");
 
 // Planner management
 router.get("/planners", auth(["admin"]), adminController.listPlanners);
@@ -19,6 +20,11 @@ router.get(
   "/comments/pending",
   auth(["admin"]),
   adminController.getPendingComments,
+);
+router.get(
+  "/comments/flagged",
+  auth(["admin"]),
+  adminController.getFlaggedComments,
 );
 router.put("/comments/:id", auth(["admin"]), adminController.updateComment);
 router.post(
