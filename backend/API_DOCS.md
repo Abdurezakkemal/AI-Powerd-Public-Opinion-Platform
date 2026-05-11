@@ -1281,9 +1281,13 @@ All endpoints in this section require authentication with a valid JWT token (cit
 
 **Note for associates:** To grant an associate access to a specific analytics endpoint, they must have the corresponding permission (`view_analytics` for viewing, `export_data` for CSV export). The permissions are checked by the middleware before the request is processed.
 
+---
+
 ### 5.1 Policy analytics (summary)
 
 **`GET /analytics/:policyId`**
+
+Returns a snapshot of voting metrics for a single policy, including sentiment counts and top keywords from comments. Supports filtering by date range, demographics, and region.
 
 **Query parameters (all optional):**
 
@@ -1389,22 +1393,29 @@ All endpoints in this section require authentication with a valid JWT token (cit
 }
 ```
 
+---
+
 ### 5.2 Export analytics as CSV
 
 **`GET /analytics/:policyId/export`**
+
+Downloads raw vote data as CSV with demographic columns. Supports same filters as 5.1.
 
 **Query parameters:** same as 5.1 (`startDate`, `endDate`, `gender`, `ageRange`, `occupation`, `education`, `region`).
 
 **Response:** `text/csv` file attachment. Example content:
 
-    voteId,channel,value,region,ageRange,gender,occupation,education,createdAt
-    67f1a2b3...,app,opt1|opt2,Addis Ababa,25-34,male,private-sector,bachelors,2026-05-09T01:05:48.370Z
+| voteId      | channel | value      | region      | ageRange | gender | occupation     | education | createdAt                |
+| ----------- | ------- | ---------- | ----------- | -------- | ------ | -------------- | --------- | ------------------------ |
+| 67f1a2b3... | app     | opt1\|opt2 | Addis Ababa | 25-34    | male   | private-sector | bachelors | 2026-05-09T01:05:48.370Z |
+
+---
 
 ### 5.3 Get paginated comments (with filters)
 
 **`GET /analytics/:policyId/comments`**
 
-**Roles:** planner, admin
+Returns comments belonging to a policy, with moderator filters and the `isEdited` flag.
 
 **Query parameters (all optional):**
 
@@ -1453,24 +1464,30 @@ All endpoints in this section require authentication with a valid JWT token (cit
 
 **Note on `isEdited`:** True if `editedHistory` is non‑empty. Planners/admins can retrieve full history via `GET /comments/:id/history` (see 4.8).
 
-### 5.4 Heatmap (unified geographic & time‑series)
+---
+
+### 5.4 Heatmap – geographic + time (single policy)
 
 **`GET /analytics/heatmap`**
 
-This endpoint aggregates voting data over time and optionally by region.
+Aggregates votes over time and region for a specific policy, and includes **average sentiment** and **top keywords** from comments per bucket.
 
 **Roles:** planner, admin
 
-**Query parameters (all optional):**
+**Query parameters (all optional, except `policyId`):**
 
-| Parameter   | Type    | Default | Description                                                                                                                                                   |
-| ----------- | ------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `startDate` | string  | none    | ISO date. Filters votes and comments created on or after this date.                                                                                           |
-| `endDate`   | string  | none    | ISO date. Filters votes and comments created on or before this date.                                                                                          |
-| `interval`  | string  | `week`  | Grouping interval: `day`, `week`, or `month`.                                                                                                                 |
-| `policyId`  | string  | none    | If provided, only votes/comments belonging to that policy are included. Otherwise, data for **all policies** (subject to planner's visibility) is aggregated. |
-| `byRegion`  | boolean | `false` | If `true`, the response is grouped by region within each time bucket (geographic heatmap). If `false`, the response is a simple time series (global totals).  |
-| `regions`   | string  | none    | Comma‑separated list of region names, e.g., `Addis Ababa,Oromia`. Only applicable when `byRegion=true`.                                                       |
+| Parameter    | Type    | Default      | Description                                                                                                                                                  |
+| ------------ | ------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `policyId`   | string  | **required** | MongoDB ObjectId of the policy. Heatmap is per‑policy only.                                                                                                  |
+| `startDate`  | string  | none         | ISO date. Filters votes and comments created on or after this date.                                                                                          |
+| `endDate`    | string  | none         | ISO date. Filters votes and comments created on or before this date.                                                                                         |
+| `interval`   | string  | `week`       | Grouping interval: `day`, `week`, or `month`.                                                                                                                |
+| `byRegion`   | boolean | `false`      | If `true`, the response is grouped by region within each time bucket (geographic heatmap). If `false`, the response is a simple time series (global totals). |
+| `regions`    | string  | none         | Comma‑separated list of region names, e.g., `Addis Ababa,Oromia`. Only applicable when `byRegion=true`.                                                      |
+| `gender`     | string  | none         | Filter votes/comments by gender.                                                                                                                             |
+| `ageRange`   | string  | none         | Filter by age range.                                                                                                                                         |
+| `occupation` | string  | none         | Filter by occupation.                                                                                                                                        |
+| `education`  | string  | none         | Filter by education.                                                                                                                                         |
 
 **Response when `byRegion=false` (global time series):**
 
@@ -1484,7 +1501,9 @@ This endpoint aggregates voting data over time and optionally by region.
         "period": "2026-19",
         "totalVotes": 8,
         "averageRating": 4.1,
-        "yesPercentage": "62.5" // for binary policies
+        "yesPercentage": "62.5",
+        "averageSentiment": 0.45,
+        "topKeywords": [{ "keyword": "water", "count": 3 }]
       }
     ]
   },
@@ -1506,7 +1525,9 @@ This endpoint aggregates voting data over time and optionally by region.
         "region": "Addis Ababa",
         "totalVotes": 6,
         "averageRating": "4.50",
-        "yesPercentage": "16.7"
+        "yesPercentage": "16.7",
+        "averageSentiment": 0.82,
+        "topKeywords": [{ "keyword": "access", "count": 5 }]
       }
     ]
   },
@@ -1515,19 +1536,30 @@ This endpoint aggregates voting data over time and optionally by region.
 }
 ```
 
-### 5.5 Timeseries (vote count and ratings over time)
+**Note:** The fields returned depend on the policy’s `pollType`. For binary, `yesPercentage`; for rating/likert, `averageRating`; for multipleChoice, `topOptionId` and `topOptionPercentage`; for approval, `approvePercentage` and `netApproval`. Sentiment fields (`averageSentiment`, `topKeywords`) are always included.
+
+---
+
+### 5.5 Timeseries – trend over time with sentiment
 
 **`GET /analytics/:policyId/timeseries`**
+
+Returns time‑bucketed data for a single policy: vote metrics per bucket, plus **average sentiment score** and **top keywords** from comments in that bucket. Supports demographics and region filters.
 
 **Roles:** planner, admin
 
 **Query parameters (all optional):**
 
-| Parameter   | Type   | Default | Description                       |
-| ----------- | ------ | ------- | --------------------------------- |
-| `bucket`    | string | `day`   | `hour`, `day`, `week`, or `month` |
-| `startDate` | string | none    | ISO date                          |
-| `endDate`   | string | none    | ISO date                          |
+| Parameter    | Type   | Default | Description                                       |
+| ------------ | ------ | ------- | ------------------------------------------------- |
+| `bucket`     | string | `day`   | `hour`, `day`, `week`, or `month`                 |
+| `startDate`  | string | none    | ISO date                                          |
+| `endDate`    | string | none    | ISO date                                          |
+| `gender`     | string | none    | Filter votes/comments by gender (using snapshot). |
+| `ageRange`   | string | none    | Filter by age range.                              |
+| `occupation` | string | none    | Filter by occupation.                             |
+| `education`  | string | none    | Filter by education.                              |
+| `region`     | string | none    | Region name (e.g., `Addis Ababa`).                |
 
 **Response (200 OK) – for binary policy:**
 
@@ -1537,7 +1569,15 @@ This endpoint aggregates voting data over time and optionally by region.
   "data": {
     "bucket": "week",
     "data": [
-      { "bucket": "2026-19", "totalVotes": 5, "yesCount": 3, "noCount": 2 }
+      {
+        "bucket": "2026-19",
+        "totalVotes": 5,
+        "yesCount": 3,
+        "noCount": 2,
+        "yesPercentage": "60.0",
+        "averageSentiment": 0.25,
+        "topKeywords": [{ "keyword": "funding", "count": 2 }]
+      }
     ]
   },
   "message": "Timeseries retrieved",
@@ -1549,12 +1589,52 @@ This endpoint aggregates voting data over time and optionally by region.
 
 ```json
 {
+  "status": "success",
   "data": {
-    "bucket": "day",
-    "data": [{ "bucket": "2026-05-09", "totalVotes": 10, "averageRating": 4.2 }]
-  }
+    "bucket": "week",
+    "data": [
+      {
+        "bucket": "2026-19",
+        "totalVotes": 10,
+        "averageRating": 4.2,
+        "averageSentiment": 0.75,
+        "topKeywords": [{ "keyword": "good", "count": 4 }]
+      }
+    ]
+  },
+  "message": "Timeseries retrieved",
+  "timestamp": "..."
 }
 ```
+
+**Response for multipleChoice policy (shows top option count per bucket):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "bucket": "week",
+    "data": [
+      {
+        "bucket": "2026-19",
+        "totalVotes": 20,
+        "options": [
+          { "option": "opt1", "count": 12 },
+          { "option": "opt2", "count": 8 }
+        ],
+        "averageSentiment": 0.12,
+        "topKeywords": [{ "keyword": "roads", "count": 5 }]
+      }
+    ]
+  },
+  "message": "Timeseries retrieved",
+  "timestamp": "..."
+}
+```
+
+**Note:** For multipleChoice, the full option distribution is returned (`options` array). For approval, fields like `approveCount`, `rejectCount`, `abstainCount`, `approvePercentage` are included (not shown).
+
+---
 
 ### 5.6 Correlation (for multipleChoice policies only)
 
@@ -1589,9 +1669,13 @@ This endpoint aggregates voting data over time and optionally by region.
 }
 ```
 
-### 5.7 Demographic breakdown
+---
+
+### 5.7 Demographic breakdown – with sentiment
 
 **`GET /analytics/:policyId/demographics`**
+
+Returns a static comparison of a demographic dimension (age, gender, occupation, education, region) for a single policy, including vote metrics and **average sentiment** + **top keywords** for each group.
 
 **Roles:** planner, admin
 
@@ -1600,6 +1684,8 @@ This endpoint aggregates voting data over time and optionally by region.
 | Parameter   | Type   | Required | Description (one of)                                      |
 | ----------- | ------ | -------- | --------------------------------------------------------- |
 | `dimension` | string | yes      | `ageRange`, `gender`, `occupation`, `education`, `region` |
+| `startDate` | string | no       | ISO date                                                  |
+| `endDate`   | string | no       | ISO date                                                  |
 
 **Response (200 OK):**
 
@@ -1609,14 +1695,77 @@ This endpoint aggregates voting data over time and optionally by region.
   "data": {
     "dimension": "ageRange",
     "data": [
-      { "ageRange": "25-34", "totalVotes": 20, "averageRating": 4.2 },
-      { "ageRange": "35-44", "totalVotes": 12, "averageRating": 3.8 }
+      {
+        "ageRange": "25-34",
+        "totalVotes": 20,
+        "averageRating": 4.2,
+        "averageSentiment": 0.65,
+        "topKeywords": [{ "keyword": "good", "count": 4 }]
+      },
+      {
+        "ageRange": "35-44",
+        "totalVotes": 12,
+        "averageRating": 3.8,
+        "averageSentiment": -0.1,
+        "topKeywords": [{ "keyword": "expensive", "count": 2 }]
+      }
     ]
   },
   "message": "Demographic breakdown retrieved",
   "timestamp": "..."
 }
 ```
+
+**Note:** For binary policies, the metric is `yesPercentage`; for multipleChoice, `topOptionId` and `topOptionPercentage`; for approval, `approvePercentage` and `netApproval`. Sentiment fields are always present.
+
+---
+
+### 5.8 Cross‑policy analytics (shared metrics)
+
+**`GET /analytics/cross`**
+
+Aggregates shared metrics (total votes, comments, sentiment counts, top keywords) across **multiple policies** filtered by topics, region, demographics, and date range. Does **not** include poll‑type‑specific metrics.
+
+**Roles:** planner, admin
+
+**Query parameters (all optional):**
+
+| Parameter    | Type   | Description                                                                                                          |
+| ------------ | ------ | -------------------------------------------------------------------------------------------------------------------- |
+| `topics`     | string | Comma‑separated list of policy topics (e.g., `Agriculture,Health`). Policies must have at least one of these topics. |
+| `region`     | string | Target region (e.g., `Addis Ababa`). Policies that target this region are included.                                  |
+| `gender`     | string | Filter votes/comments by gender.                                                                                     |
+| `ageRange`   | string | Filter by age range.                                                                                                 |
+| `occupation` | string | Filter by occupation.                                                                                                |
+| `education`  | string | Filter by education.                                                                                                 |
+| `startDate`  | string | ISO date. Filters votes & comments created on or after this date.                                                    |
+| `endDate`    | string | ISO date. Filters votes & comments created on or before this date.                                                   |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "totalVotes": 1230,
+    "totalComments": 340,
+    "sentimentCounts": { "positive": 180, "negative": 90, "neutral": 70 },
+    "topKeywords": [
+      { "keyword": "education", "count": 45 },
+      { "keyword": "funding", "count": 30 }
+    ]
+  },
+  "message": "Cross‑policy analytics retrieved",
+  "timestamp": "..."
+}
+```
+
+**Error examples:**
+
+| Status | Code                    | Message                                                        |
+| ------ | ----------------------- | -------------------------------------------------------------- |
+| 403    | `FORBIDDEN`             | `"Only planners and admins can access cross‑policy analytics"` |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve cross‑policy analytics"`                  |
 
 ## 6. Admin Endpoints
 

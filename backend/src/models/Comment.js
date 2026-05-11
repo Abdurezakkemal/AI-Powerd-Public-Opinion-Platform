@@ -13,6 +13,12 @@ const commentSchema = new mongoose.Schema({
     default: null,
   },
   text: { type: String, required: true, maxlength: 2000 },
+  demographics: {
+    ageRange: String,
+    gender: String,
+    occupation: String,
+    education: String,
+  },
 
   language: { type: String, default: null },
   sentiment: {
@@ -23,6 +29,7 @@ const commentSchema = new mongoose.Schema({
     },
     confidence: { type: Number, default: null },
   },
+  // Inside commentSchema, add:
   keywords: { type: [String], default: [] },
   aiPrediction: { type: mongoose.Schema.Types.Mixed, default: null },
 

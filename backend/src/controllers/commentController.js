@@ -65,12 +65,22 @@ exports.postComment = async (req, res) => {
       }
     }
 
+    // Fetch user demographics snapshot
+    const user = await User.findById(req.user.id);
+    const demographicsSnapshot = {
+      ageRange: user.ageRange,
+      gender: user.gender,
+      occupation: user.occupation,
+      education: user.education,
+    };
+
     const isReply = !!parentCommentId;
     const comment = new Comment({
       policyId,
       userId: req.user.id,
       parentCommentId: parentCommentId || null,
       text,
+      demographics: demographicsSnapshot,
       visibility: "visible",
       hiddenReason: null,
       moderationStatus: isReply ? "none" : "pending_ai",
