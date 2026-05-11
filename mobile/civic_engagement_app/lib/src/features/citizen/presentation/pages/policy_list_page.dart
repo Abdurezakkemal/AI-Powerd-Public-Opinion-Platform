@@ -295,10 +295,11 @@ class _PolicyCard extends StatelessWidget {
             runSpacing: 8,
             children: [
               _Metric(icon: Icons.qr_code_2_rounded, text: policy.policyCode),
-              _Metric(
-                icon: Icons.star_rounded,
-                text: policy.averageRating.toStringAsFixed(1),
-              ),
+              if (policy.averageRating != null)
+                _Metric(
+                  icon: Icons.star_rounded,
+                  text: policy.averageRating!.toStringAsFixed(1),
+                ),
               _Metric(
                 icon: Icons.how_to_vote_outlined,
                 text: '${policy.totalVotes} votes',

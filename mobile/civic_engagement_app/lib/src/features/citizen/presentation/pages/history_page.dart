@@ -10,6 +10,7 @@ import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../domain/entities/vote_history.dart';
+import '../../domain/entities/vote_value.dart';
 import '../cubit/history_cubit.dart';
 import '../cubit/vote_cubit.dart';
 import '../widgets/rating_stars.dart';
@@ -98,6 +99,38 @@ class _HistoryCard extends StatelessWidget {
   final VoteHistory item;
   final VoidCallback? onComment;
 
+  String _formatVoteValue() {
+    // Get the poll type from the item, default to 'rating' if not available
+    final pollType = item.pollType ?? 'rating';
+    return VoteValueFormatter.format(item.value, pollType);
+  }
+
+  Widget _buildVoteDisplay() {
+    final pollType = item.pollType ?? 'rating';
+    
+    // For rating and likert with numeric values, show stars
+    if ((pollType == 'rating' || pollType == 'likert') && item.value is int) {
+      return RatingStars(rating: item.value as int, size: 22);
+    }
+    
+    // For all other types, show formatted text
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppTheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        _formatVoteValue(),
+        style: const TextStyle(
+          color: AppTheme.primary,
+          fontWeight: FontWeight.w700,
+          fontSize: 14,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return AppCard(
@@ -132,7 +165,7 @@ class _HistoryCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              RatingStars(rating: item.rating, size: 22),
+              _buildVoteDisplay(),
               const Spacer(),
               Text(
                 DateFormatters.compact(item.createdAt),

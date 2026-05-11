@@ -3,11 +3,12 @@ import '../../domain/entities/vote_history.dart';
 class VoteHistoryModel extends VoteHistory {
   const VoteHistoryModel({
     required super.id,
-    required super.rating,
+    required super.value,
     required super.channel,
     super.policyId,
     super.policyTitle,
     super.policyCode,
+    super.pollType,
     super.comment,
     super.sentiment,
     super.createdAt,
@@ -21,16 +22,12 @@ class VoteHistoryModel extends VoteHistory {
       policyId: policyMap?['id']?.toString() ?? policyMap?['_id']?.toString(),
       policyTitle: policyMap?['title']?.toString(),
       policyCode: policyMap?['policyCode']?.toString(),
-      rating: _toInt(json['rating']),
+      pollType: policyMap?['pollType']?.toString(),
+      value: json['value'] ?? json['rating'], // Support both old and new format
       comment: json['comment']?.toString(),
       channel: json['channel']?.toString() ?? 'app',
       sentiment: json['sentiment']?.toString(),
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
     );
-  }
-
-  static int _toInt(dynamic value) {
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 }

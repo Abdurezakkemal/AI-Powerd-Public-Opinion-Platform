@@ -1,5 +1,6 @@
 import '../../../../core/network/api_client.dart';
 import '../../../../core/session/session_store.dart';
+import '../../domain/entities/comment_page.dart';
 import '../../domain/entities/notification_page.dart';
 import '../../domain/entities/policy.dart';
 import '../../domain/entities/policy_page.dart';
@@ -8,6 +9,7 @@ import '../../domain/entities/vote_history.dart';
 import '../../domain/entities/vote_receipt.dart';
 import '../../domain/repositories/citizen_repository.dart';
 import '../models/citizen_notification_model.dart';
+import '../models/comment_model.dart';
 import '../models/policy_model.dart';
 import '../models/user_profile_model.dart';
 import '../models/vote_history_model.dart';
@@ -99,6 +101,7 @@ class CitizenRepositoryImpl implements CitizenRepository {
   @override
   Future<PolicyPage> getPolicies({
     String? status,
+    String? topic,
     int page = 1,
     int limit = 20,
   }) async {
@@ -106,6 +109,7 @@ class CitizenRepositoryImpl implements CitizenRepository {
       '/policies',
       query: {
         if (status != null && status != 'all') 'status': status,
+        if (topic != null && topic.isNotEmpty) 'topic': topic,
         'page': page,
         'limit': limit,
       },
@@ -135,10 +139,10 @@ class CitizenRepositoryImpl implements CitizenRepository {
   @override
   Future<VoteReceipt> submitVote({
     required String policyId,
-    required int rating,
+    required dynamic value,
     String? comment,
   }) async {
-    final body = <String, dynamic>{'policyId': policyId, 'rating': rating};
+    final body = <String, dynamic>{'policyId': policyId, 'value': value};
     final trimmedComment = comment?.trim();
     if (trimmedComment != null && trimmedComment.isNotEmpty) {
       body['comment'] = trimmedComment;
@@ -148,7 +152,7 @@ class CitizenRepositoryImpl implements CitizenRepository {
     return VoteReceipt(
       voteId: data['voteId']?.toString() ?? '',
       commentId: data['commentId']?.toString(),
-      rating: _toInt(data['rating'], fallback: rating),
+      value: data['value'] ?? value,
       message: response.message,
     );
   }
@@ -163,6 +167,92 @@ class CitizenRepositoryImpl implements CitizenRepository {
       body: {'comment': comment.trim()},
     );
     return response.message;
+  }
+
+  @override
+  Future<String> postComment({
+    required String policyId,
+    required String text,
+    String? parentCommentId,
+  }) async {
+    final response = await _apiClient.post(
+      '/comments',
+      body: {
+        'policyId': policyId,
+        'text': text.trim(),
+        if (parentCommentId != null) 'parentCommentId': parentCommentId,
+      },
+    );
+    return response.message;
+  }
+
+  @override
+  Future<String> reportComment({
+    required String commentId,
+    required String reason,
+  }) async {
+    final response = await _apiClient.post(
+      '/comments/$commentId/report',
+      body: {'reason': reason},
+    );
+    return response.message;
+  }
+
+  @override
+  Future<String> editComment({
+    required String commentId,
+    required String text,
+  }) async {
+    final response = await _apiClient.put(
+      '/comments/$commentId',
+      body: {'text': text.trim()},
+    );
+    return response.message;
+  }
+
+  @override
+  Future<String> appealComment({
+    required String commentId,
+    required String reason,
+  }) async {
+    final response = await _apiClient.post(
+      '/comments/$commentId/appeal',
+      body: {'reason': reason.trim()},
+    );
+    return response.message;
+  }
+
+  @override
+  Future<CommentPage> getPolicyComments({
+    required String policyId,
+    int page = 1,
+    int limit = 20,
+    String? sentiment,
+    String? status,
+  }) async {
+    final response = await _apiClient.get(
+      '/analytics/$policyId/comments',
+      query: {
+        'page': page,
+        'limit': limit,
+        if (sentiment != null && sentiment.isNotEmpty) 'sentiment': sentiment,
+        if (status != null && status.isNotEmpty) 'status': status,
+      },
+    );
+    final data = response.data as Map<String, dynamic>;
+    final rawComments = data['comments'];
+    final comments =
+        rawComments is List
+            ? rawComments
+                .whereType<Map<String, dynamic>>()
+                .map(CommentModel.fromJson)
+                .toList()
+            : <CommentModel>[];
+    return CommentPage(
+      comments: comments,
+      total: _toInt(data['total']),
+      page: _toInt(data['page'], fallback: page),
+    );
   }
 
   @override

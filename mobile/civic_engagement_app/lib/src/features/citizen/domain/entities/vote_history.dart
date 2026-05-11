@@ -3,11 +3,12 @@ import 'package:equatable/equatable.dart';
 class VoteHistory extends Equatable {
   const VoteHistory({
     required this.id,
-    required this.rating,
+    required this.value,
     required this.channel,
     this.policyId,
     this.policyTitle,
     this.policyCode,
+    this.pollType,
     this.comment,
     this.sentiment,
     this.createdAt,
@@ -17,7 +18,8 @@ class VoteHistory extends Equatable {
   final String? policyId;
   final String? policyTitle;
   final String? policyCode;
-  final int rating;
+  final String? pollType; // Type of poll: binary, multipleChoice, likert, approval, rating, rankedChoice
+  final dynamic value; // Can be int, String, or List<String> based on poll type
   final String? comment;
   final String channel;
   final String? sentiment;
@@ -31,7 +33,8 @@ class VoteHistory extends Equatable {
     policyId,
     policyTitle,
     policyCode,
-    rating,
+    pollType,
+    value,
     comment,
     channel,
     sentiment,

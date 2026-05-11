@@ -7,6 +7,7 @@ class PolicyState extends Equatable {
     this.policies = const [],
     this.selectedPolicy,
     this.filter = 'all',
+    this.topicFilter,
     this.page = 1,
     this.total = 0,
     this.hasMore = false,
@@ -18,6 +19,7 @@ class PolicyState extends Equatable {
   final List<Policy> policies;
   final Policy? selectedPolicy;
   final String filter;
+  final String? topicFilter;
   final int page;
   final int total;
   final bool hasMore;
@@ -29,6 +31,7 @@ class PolicyState extends Equatable {
     List<Policy>? policies,
     Policy? selectedPolicy,
     String? filter,
+    String? topicFilter,
     int? page,
     int? total,
     bool? hasMore,
@@ -40,6 +43,7 @@ class PolicyState extends Equatable {
       policies: policies ?? this.policies,
       selectedPolicy: selectedPolicy ?? this.selectedPolicy,
       filter: filter ?? this.filter,
+      topicFilter: topicFilter ?? this.topicFilter,
       page: page ?? this.page,
       total: total ?? this.total,
       hasMore: hasMore ?? this.hasMore,
@@ -54,6 +58,7 @@ class PolicyState extends Equatable {
     policies,
     selectedPolicy,
     filter,
+    topicFilter,
     page,
     total,
     hasMore,

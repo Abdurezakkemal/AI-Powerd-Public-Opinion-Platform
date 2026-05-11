@@ -15,14 +15,14 @@ class VoteCubit extends Cubit<VoteState> {
 
   Future<void> submitVote({
     required String policyId,
-    required int rating,
+    required dynamic value,
     String? comment,
   }) async {
     emit(const VoteState(status: RequestStatus.loading));
     try {
       final receipt = await _repository.submitVote(
         policyId: policyId,
-        rating: rating,
+        value: value,
         comment: comment,
       );
       emit(
@@ -33,7 +33,19 @@ class VoteCubit extends Cubit<VoteState> {
         ),
       );
     } on ApiException catch (error) {
-      emit(VoteState(status: RequestStatus.failure, message: error.message));
+      emit(
+        VoteState(
+          status: RequestStatus.failure,
+          message: error.message,
+        ),
+      );
+    } catch (error) {
+      emit(
+        const VoteState(
+          status: RequestStatus.failure,
+          message: 'An unexpected error occurred. Please check your connection and try again.',
+        ),
+      );
     }
   }
 

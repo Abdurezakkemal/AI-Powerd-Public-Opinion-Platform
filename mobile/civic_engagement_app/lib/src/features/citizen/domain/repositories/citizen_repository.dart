@@ -1,3 +1,4 @@
+import '../entities/comment_page.dart';
 import '../entities/notification_page.dart';
 import '../entities/policy.dart';
 import '../entities/policy_page.dart';
@@ -30,6 +31,7 @@ abstract class CitizenRepository {
 
   Future<PolicyPage> getPolicies({
     String? status,
+    String? topic,
     int page = 1,
     int limit = 20,
   });
@@ -38,11 +40,41 @@ abstract class CitizenRepository {
 
   Future<VoteReceipt> submitVote({
     required String policyId,
-    required int rating,
+    required dynamic value, // Can be int, String, or List<String> based on poll type
     String? comment,
   });
 
   Future<String> addComment({required String voteId, required String comment});
+
+  // Comment endpoints (Section 4.2-4.8)
+  Future<String> postComment({
+    required String policyId,
+    required String text,
+    String? parentCommentId,
+  });
+
+  Future<String> reportComment({
+    required String commentId,
+    required String reason,
+  });
+
+  Future<String> editComment({
+    required String commentId,
+    required String text,
+  });
+
+  Future<String> appealComment({
+    required String commentId,
+    required String reason,
+  });
+
+  Future<CommentPage> getPolicyComments({
+    required String policyId,
+    int page = 1,
+    int limit = 20,
+    String? sentiment,
+    String? status,
+  });
 
   Future<List<VoteHistory>> getHistory();
 

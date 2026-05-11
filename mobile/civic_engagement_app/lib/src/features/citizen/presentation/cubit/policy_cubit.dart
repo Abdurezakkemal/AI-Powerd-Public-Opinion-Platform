@@ -14,13 +14,25 @@ class PolicyCubit extends Cubit<PolicyState> {
   final CitizenRepository _repository;
   static const _pageSize = 20;
 
-  Future<void> loadPolicies({String? status, bool refresh = true}) async {
+  Future<void> loadPolicies({
+    String? status,
+    String? topic,
+    bool refresh = true,
+  }) async {
     final selectedStatus = status ?? state.filter;
+    final selectedTopic = topic ?? state.topicFilter;
     final nextPage = refresh ? 1 : state.page + 1;
-    emit(state.copyWith(status: RequestStatus.loading, filter: selectedStatus));
+    emit(
+      state.copyWith(
+        status: RequestStatus.loading,
+        filter: selectedStatus,
+        topicFilter: selectedTopic,
+      ),
+    );
     try {
       final page = await _repository.getPolicies(
         status: selectedStatus == 'all' ? null : selectedStatus,
+        topic: selectedTopic,
         page: nextPage,
         limit: _pageSize,
       );
@@ -36,11 +48,23 @@ class PolicyCubit extends Cubit<PolicyState> {
           total: page.total,
           hasMore: policies.length < page.total,
           filter: selectedStatus,
+          topicFilter: selectedTopic,
+          message: null, // Clear any previous error messages
         ),
       );
     } on ApiException catch (error) {
       emit(
-        state.copyWith(status: RequestStatus.failure, message: error.message),
+        state.copyWith(
+          status: RequestStatus.failure,
+          message: error.message,
+        ),
+      );
+    } catch (error) {
+      emit(
+        state.copyWith(
+          status: RequestStatus.failure,
+          message: 'Could not connect to server. Please check your connection and try again.',
+        ),
       );
     }
   }
@@ -53,6 +77,7 @@ class PolicyCubit extends Cubit<PolicyState> {
         state.copyWith(
           detailStatus: RequestStatus.success,
           selectedPolicy: policy,
+          message: null, // Clear any previous error messages
         ),
       );
     } on ApiException catch (error) {
@@ -60,6 +85,13 @@ class PolicyCubit extends Cubit<PolicyState> {
         state.copyWith(
           detailStatus: RequestStatus.failure,
           message: error.message,
+        ),
+      );
+    } catch (error) {
+      emit(
+        state.copyWith(
+          detailStatus: RequestStatus.failure,
+          message: 'Could not connect to server. Please check your connection and try again.',
         ),
       );
     }
