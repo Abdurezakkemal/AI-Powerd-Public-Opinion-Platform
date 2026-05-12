@@ -59,6 +59,13 @@ class _ReportCommentDialogState extends State<ReportCommentDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const Text('Why are you reporting this comment?'),
+            const SizedBox(height: 8),
+            const Text(
+              'When a comment receives 3 reports, it will be hidden '
+              '(visibility="hidden", moderationStatus="needs_review") '
+              'and flagged for moderator review.',
+              style: TextStyle(fontSize: 12, color: Colors.grey),
+            ),
             const SizedBox(height: 16),
             ..._reasons.entries.map(
               (entry) => RadioListTile<String>(

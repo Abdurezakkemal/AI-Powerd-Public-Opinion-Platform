@@ -72,8 +72,9 @@ class _EditCommentDialogState extends State<EditCommentDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Update your comment text below. For top-level comments, '
-                'AI will re-analyze sentiment and keywords.',
+                'Update your comment text below. Top-level comments will be '
+                're-analyzed by AI (moderationStatus set to "pending_ai"). '
+                'Replies are not re-analyzed.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 16),

@@ -5,17 +5,21 @@ class CommentModel extends Comment {
     required super.id,
     required super.policyId,
     required super.text,
-    required super.status,
+    required super.visibility,
+    required super.moderationStatus,
     required super.createdAt,
     super.parentCommentId,
     super.userId,
     super.userEmail,
+    super.hiddenReason,
+    super.moderationReason,
     super.sentiment,
     super.keywords,
     super.isOfficialReply,
     super.isEdited,
     super.reportCount,
     super.appeal,
+    super.flaggedSnapshot,
   });
 
   factory CommentModel.fromJson(Map<String, dynamic> json) {
@@ -26,13 +30,17 @@ class CommentModel extends Comment {
       text: json['text']?.toString() ?? '',
       userId: json['userId']?.toString(),
       userEmail: json['userEmail']?.toString(),
-      status: json['status']?.toString() ?? 'processing',
+      visibility: json['visibility']?.toString() ?? 'visible',
+      hiddenReason: json['hiddenReason']?.toString(),
+      moderationStatus: json['moderationStatus']?.toString() ?? 'none',
+      moderationReason: json['moderationReason']?.toString(),
       sentiment: _parseSentiment(json['sentiment']),
       keywords: _parseKeywords(json['keywords']),
       isOfficialReply: json['isOfficialReply'] == true,
       isEdited: json['isEdited'] == true,
       reportCount: _toInt(json['reportCount']),
       appeal: _parseAppeal(json['appeal']),
+      flaggedSnapshot: _parseFlaggedSnapshot(json['flaggedSnapshot']),
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
           DateTime.now(),
     );
@@ -72,5 +80,17 @@ class CommentModel extends Comment {
   static int _toInt(dynamic value) {
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  static FlaggedSnapshot? _parseFlaggedSnapshot(dynamic value) {
+    if (value is! Map<String, dynamic>) return null;
+    return FlaggedSnapshot(
+      text: value['text']?.toString() ?? '',
+      timestamp: DateTime.tryParse(value['timestamp']?.toString() ?? '') ??
+          DateTime.now(),
+      reportCountAtCapture: _toInt(value['reportCountAtCapture']),
+      sentiment: _parseSentiment(value['sentiment']),
+      keywords: _parseKeywords(value['keywords']),
+    );
   }
 }

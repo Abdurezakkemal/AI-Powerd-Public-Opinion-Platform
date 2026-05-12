@@ -217,7 +217,7 @@ class _CommentCard extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                 ),
-                _StatusChip(status: comment.status),
+                _StatusChip(comment: comment),
                 IconButton(
                   icon: const Icon(Icons.more_vert, size: 20),
                   onPressed: () => _showCommentMenu(context),
@@ -309,8 +309,8 @@ class _CommentCard extends StatelessWidget {
                 _showReplyDialog(context);
               },
             ),
-            // Edit option - only for comment author
-            if (isAuthor && comment.isApproved) ...[
+            // Edit option - only for comment author and visible comments
+            if (isAuthor && comment.isVisible) ...[
               ListTile(
                 leading: const Icon(Icons.edit),
                 title: const Text('Edit Comment'),
@@ -330,9 +330,8 @@ class _CommentCard extends StatelessWidget {
                   _showReportDialog(context);
                 },
               ),
-            // Appeal option - only for authors of flagged/deleted comments
-            if (isAuthor &&
-                (comment.status == 'flagged' || comment.status == 'deleted'))
+            // Appeal option - only for authors of hidden comments that need review
+            if (isAuthor && comment.canAppeal)
               ListTile(
                 leading: const Icon(Icons.gavel),
                 title: const Text('Appeal Decision'),
@@ -387,31 +386,51 @@ class _CommentCard extends StatelessWidget {
 }
 
 class _StatusChip extends StatelessWidget {
-  const _StatusChip({required this.status});
+  const _StatusChip({required this.comment});
 
-  final String status;
+  final Comment comment;
 
   @override
   Widget build(BuildContext context) {
     Color color;
     String label;
 
-    switch (status) {
-      case 'approved':
-        color = Colors.green;
-        label = 'Approved';
-      case 'flagged':
-        color = Colors.orange;
-        label = 'Flagged';
-      case 'deleted':
-        color = Colors.red;
-        label = 'Deleted';
-      case 'processing':
-        color = Colors.blue;
-        label = 'Processing';
-      default:
-        color = Colors.grey;
-        label = status;
+    // Determine status based on visibility and moderation status
+    if (comment.isHidden) {
+      // Hidden comments
+      switch (comment.hiddenReason) {
+        case 'profanity':
+          color = Colors.red;
+          label = 'Blocked';
+        case 'reports':
+          color = Colors.orange;
+          label = 'Flagged';
+        case 'moderator':
+          color = Colors.red;
+          label = 'Deleted';
+        default:
+          color = Colors.red;
+          label = 'Hidden';
+      }
+    } else {
+      // Visible comments - show moderation status
+      switch (comment.moderationStatus) {
+        case 'pending_ai':
+          color = Colors.blue;
+          label = 'Processing';
+        case 'needs_review':
+          color = Colors.orange;
+          label = 'Under Review';
+        case 'reviewed':
+          color = Colors.green;
+          label = 'Reviewed';
+        case 'none':
+          // No chip for normal visible comments
+          return const SizedBox.shrink();
+        default:
+          color = Colors.grey;
+          label = comment.moderationStatus;
+      }
     }
 
     return Chip(

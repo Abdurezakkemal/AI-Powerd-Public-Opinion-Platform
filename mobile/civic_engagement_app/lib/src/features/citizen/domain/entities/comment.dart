@@ -6,17 +6,21 @@ class Comment extends Equatable {
     required this.id,
     required this.policyId,
     required this.text,
-    required this.status,
+    required this.visibility,
+    required this.moderationStatus,
     required this.createdAt,
     this.parentCommentId,
     this.userId,
     this.userEmail,
+    this.hiddenReason,
+    this.moderationReason,
     this.sentiment,
     this.keywords,
     this.isOfficialReply = false,
     this.isEdited = false,
     this.reportCount = 0,
     this.appeal,
+    this.flaggedSnapshot,
   });
 
   final String id;
@@ -25,20 +29,25 @@ class Comment extends Equatable {
   final String text;
   final String? userId;
   final String? userEmail;
-  final String status; // processing, approved, flagged, deleted, pending_review
+  final String visibility; // "visible" or "hidden"
+  final String? hiddenReason; // null, "profanity", "reports", "moderator"
+  final String moderationStatus; // "pending_ai", "needs_review", "reviewed", "none"
+  final String? moderationReason; // "pending_ai", "low_confidence", "reports", "moderator_flag"
   final CommentSentiment? sentiment;
   final List<String>? keywords;
   final bool isOfficialReply;
   final bool isEdited;
   final int reportCount;
   final CommentAppeal? appeal;
+  final FlaggedSnapshot? flaggedSnapshot;
   final DateTime createdAt;
 
-  bool get isApproved => status == 'approved';
-  bool get isFlagged => status == 'flagged';
-  bool get isDeleted => status == 'deleted';
-  bool get isPending => status == 'processing' || status == 'pending_review';
-  bool get canAppeal => isFlagged || isDeleted;
+  bool get isVisible => visibility == 'visible';
+  bool get isHidden => visibility == 'hidden';
+  bool get isPendingAI => moderationStatus == 'pending_ai';
+  bool get needsReview => moderationStatus == 'needs_review';
+  bool get isReviewed => moderationStatus == 'reviewed';
+  bool get canAppeal => isHidden && needsReview;
   bool get hasAppeal => appeal != null;
 
   @override
@@ -49,14 +58,44 @@ class Comment extends Equatable {
         text,
         userId,
         userEmail,
-        status,
+        visibility,
+        hiddenReason,
+        moderationStatus,
+        moderationReason,
         sentiment,
         keywords,
         isOfficialReply,
         isEdited,
         reportCount,
         appeal,
+        flaggedSnapshot,
         createdAt,
+      ];
+}
+
+/// Immutable snapshot taken when a comment is flagged (reportCount >= 3)
+class FlaggedSnapshot extends Equatable {
+  const FlaggedSnapshot({
+    required this.text,
+    required this.timestamp,
+    required this.reportCountAtCapture,
+    this.sentiment,
+    this.keywords,
+  });
+
+  final String text;
+  final DateTime timestamp;
+  final int reportCountAtCapture;
+  final CommentSentiment? sentiment;
+  final List<String>? keywords;
+
+  @override
+  List<Object?> get props => [
+        text,
+        timestamp,
+        reportCountAtCapture,
+        sentiment,
+        keywords,
       ];
 }
 
