@@ -1,5 +1,6 @@
 const Comment = require("../models/Comment");
 const Policy = require("../models/Policy");
+const PolicyAssociate = require("../models/PolicyAssociate");
 const User = require("../models/User");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
@@ -130,6 +131,123 @@ exports.postComment = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to post comment",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== GET POLICY COMMENTS (for citizens) ==========
+exports.getPolicyComments = async (req, res) => {
+  try {
+    const { policyId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    const policy = await Policy.findById(policyId);
+    if (!policy)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+
+    // Citizens see only visible comments (any moderationStatus)
+    const filter = {
+      policyId,
+      visibility: "visible",
+      parentCommentId: null, // top-level only (replies fetched separately if needed)
+    };
+
+    const comments = await Comment.find(filter)
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit))
+      .populate("userId", "email")
+      .lean();
+
+    const formatted = comments.map((c) => ({
+      id: c._id,
+      text: c.text,
+      sentiment: c.sentiment?.label,
+      keywords: c.keywords,
+      isOfficialReply: c.isOfficialReply,
+      createdAt: c.createdAt,
+      userId: c.userId?._id,
+      isEdited: c.editedHistory && c.editedHistory.length > 0,
+    }));
+
+    const total = await Comment.countDocuments(filter);
+
+    return sendSuccess(
+      res,
+      { comments: formatted, total, page: Number(page) },
+      "Comments retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Get policy comments error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve comments",
+      null,
+      500,
+    );
+  }
+};
+// ========== GET SINGLE COMMENT BY ID ==========
+exports.getCommentById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const comment = await Comment.findById(id)
+      .populate("userId", "email")
+      .lean();
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+
+    const isModerator =
+      req.user.role === "admin" || req.user.role === "planner";
+
+    // Citizens can see any comment with visibility = "visible"
+    if (!isModerator && comment.visibility !== "visible") {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+    }
+
+    const response = {
+      id: comment._id,
+      text: comment.text,
+      sentiment: comment.sentiment?.label,
+      keywords: comment.keywords,
+      isOfficialReply: comment.isOfficialReply,
+      createdAt: comment.createdAt,
+      userId: comment.userId?._id,
+      isEdited: comment.editedHistory && comment.editedHistory.length > 0,
+      parentCommentId: comment.parentCommentId,
+      reportCount: isModerator ? comment.reportCount : undefined,
+      moderationStatus: isModerator ? comment.moderationStatus : undefined,
+      moderationReason: isModerator ? comment.moderationReason : undefined,
+    };
+
+    return sendSuccess(res, response, "Comment retrieved");
+  } catch (err) {
+    logger.error({ error: err.message }, "Get comment by ID error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve comment",
       null,
       500,
     );
@@ -312,6 +430,7 @@ exports.reportComment = async (req, res) => {
     );
   }
 };
+
 // ========== GET COMMENT EDIT HISTORY ==========
 exports.getCommentHistory = async (req, res) => {
   try {
@@ -342,6 +461,7 @@ exports.getCommentHistory = async (req, res) => {
     );
   }
 };
+
 // ========== MODERATION ENDPOINTS (for planners/admins) ==========
 exports.moderateComment = async (req, res) => {
   try {
@@ -373,7 +493,6 @@ exports.moderateComment = async (req, res) => {
       comment.policyId.createdBy.toString() === req.user.id.toString();
     let isModerator = false;
     if (!isAdmin && !isOwner) {
-      const PolicyAssociate = require("../models/PolicyAssociate");
       const associate = await PolicyAssociate.findOne({
         policyId: comment.policyId,
         plannerId: req.user.id,
@@ -443,12 +562,13 @@ exports.moderateComment = async (req, res) => {
     );
   }
 };
+
 // ========== APPEAL A MODERATION DECISION ==========
 exports.appealComment = async (req, res) => {
   try {
     const { commentId } = req.params;
     const { reason } = req.body;
-    if (!reason)
+    if (!reason) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -456,9 +576,10 @@ exports.appealComment = async (req, res) => {
         null,
         400,
       );
+    }
 
     const comment = await Comment.findById(commentId).populate("policyId");
-    if (!comment)
+    if (!comment) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -466,6 +587,7 @@ exports.appealComment = async (req, res) => {
         null,
         404,
       );
+    }
     if (comment.userId.toString() !== req.user.id.toString()) {
       return sendError(
         res,
@@ -475,11 +597,15 @@ exports.appealComment = async (req, res) => {
         403,
       );
     }
-    if (comment.status !== "flagged" && comment.status !== "deleted") {
+    // Check if comment is hidden and requires review
+    if (
+      comment.visibility !== "hidden" ||
+      comment.moderationStatus !== "needs_review"
+    ) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Only flagged or deleted comments can be appealed",
+        "Only hidden comments that need review can be appealed",
         null,
         400,
       );
@@ -546,7 +672,7 @@ exports.resolveAppeal = async (req, res) => {
     }
 
     const comment = await Comment.findById(commentId).populate("policyId");
-    if (!comment)
+    if (!comment) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -554,6 +680,7 @@ exports.resolveAppeal = async (req, res) => {
         null,
         404,
       );
+    }
     if (!comment.appeal || comment.appeal.status !== "pending") {
       return sendError(
         res,
