@@ -42,8 +42,10 @@ export function AuthProvider({ children }) {
   }, [logout]);
 
   useEffect(() => {
-    refreshUser();
-  }, [refreshUser]);
+    if (initializing) {
+      refreshUser();
+    }
+  }, []);
 
   const login = useCallback(async (email, password) => {
     const result = await authApi.login(email, password);
