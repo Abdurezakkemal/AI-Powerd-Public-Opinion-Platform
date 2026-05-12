@@ -15,6 +15,20 @@ router.post(
   commentController.postComment,
 );
 
+// Get comments for a policy (citizens & moderators)
+router.get(
+  "/policy/:policyId",
+  auth(["citizen", "planner", "admin"]),
+  commentController.getPolicyComments,
+);
+
+// Get single comment by ID (citizens & moderators)
+router.get(
+  "/:id",
+  auth(["citizen", "planner", "admin"]),
+  commentController.getCommentById,
+);
+
 // Report comment
 router.post(
   "/:commentId/report",

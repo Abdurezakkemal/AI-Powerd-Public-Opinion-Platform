@@ -1009,7 +1009,9 @@ All endpoints in this section require authentication with a valid JWT token (cit
 | 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many votes. Please wait X minutes."`                           |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Failed to submit vote"`                                            |
 
-#### 4.2 Post a comment (top‑level or reply)
+---
+
+### 4.2 Post a comment (top‑level or reply)
 
 **`POST /comments`**
 
@@ -1048,7 +1050,121 @@ All endpoints in this section require authentication with a valid JWT token (cit
 }
 ```
 
-#### 4.3 Report a comment
+---
+
+### 4.3 Get comments for a policy (public)
+
+**`GET /comments/policy/:policyId`**
+
+**Roles:** citizen, planner, admin (all authenticated)
+
+Returns top‑level comments that are visible to citizens (i.e., `visibility = "visible"`). Includes the `isEdited` flag. Replies are not included; fetch them via the analytics endpoint if needed.
+
+**Path parameter:**
+
+| Parameter  | Type   | Description                |
+| ---------- | ------ | -------------------------- |
+| `policyId` | string | MongoDB ObjectId of policy |
+
+**Query parameters (all optional):**
+
+| Parameter | Type    | Default | Description              |
+| --------- | ------- | ------- | ------------------------ |
+| `page`    | integer | 1       | Page number (1‑based)    |
+| `limit`   | integer | 20      | Items per page (max 100) |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "comments": [
+      {
+        "id": "67f1a2b3...",
+        "text": "Excellent policy!",
+        "sentiment": "positive",
+        "keywords": ["excellent"],
+        "isOfficialReply": false,
+        "createdAt": "2026-05-12T10:00:00Z",
+        "userId": "67f1a2b3...",
+        "isEdited": false
+      }
+    ],
+    "total": 1,
+    "page": 1
+  },
+  "message": "Comments retrieved",
+  "timestamp": "..."
+}
+```
+
+**Note:** Reported or hidden comments are excluded.
+
+---
+
+### 4.4 Get a single comment by ID
+
+**`GET /comments/:id`**
+
+**Roles:** citizen, planner, admin (all authenticated)
+
+Returns a comment by its ID. Citizens can see only comments with `visibility = "visible"`. Planners and admins see all fields (including `reportCount`, `moderationStatus`, `moderationReason`).
+
+**Path parameter:**
+
+| Parameter | Type   | Description                 |
+| --------- | ------ | --------------------------- |
+| `id`      | string | MongoDB ObjectId of comment |
+
+**Response (200 OK) – for citizen:**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "id": "67f1a2b3...",
+    "text": "Great idea!",
+    "sentiment": "positive",
+    "keywords": ["great"],
+    "isOfficialReply": false,
+    "createdAt": "2026-05-12T10:00:00Z",
+    "userId": "67f1a2b3...",
+    "isEdited": false,
+    "parentCommentId": null
+  },
+  "message": "Comment retrieved",
+  "timestamp": "..."
+}
+```
+
+**Response for planner/admin (additional fields):**
+
+```json
+    {
+      "status": "success",
+      "data": {
+        ... (same citizen fields) ...
+        "reportCount": 2,
+        "moderationStatus": "needs_review",
+        "moderationReason": "low_confidence",
+        "parentCommentId": null
+      },
+      "message": "Comment retrieved",
+      "timestamp": "..."
+    }
+```
+
+**Error responses:**
+
+| Status | Code        | Message                        |
+| ------ | ----------- | ------------------------------ |
+| 404    | `NOT_FOUND` | `"Comment not found"`          |
+| 500    | `INTERNAL`  | `"Failed to retrieve comment"` |
+
+---
+
+### 4.5 Report a comment
 
 **`POST /comments/:commentId/report`**
 
@@ -1059,9 +1175,7 @@ All endpoints in this section require authentication with a valid JWT token (cit
 
 **Request body:**
 
-```json
-{ "reason": "spam" } // one of: spam, hate speech, off‑topic, other
-```
+    { "reason": "spam" } // one of: spam, hate speech, off‑topic, other
 
 **Behaviour:**
 
@@ -1083,7 +1197,9 @@ All endpoints in this section require authentication with a valid JWT token (cit
 }
 ```
 
-#### 4.4 Moderate a comment
+---
+
+### 4.6 Moderate a comment
 
 **`PUT /comments/:commentId/moderate`**
 
@@ -1108,7 +1224,7 @@ All endpoints in this section require authentication with a valid JWT token (cit
 - `delete`: sets `visibility = "hidden"`, `hiddenReason = "moderator"`, `moderationStatus = "none"`, `moderationReason = null`. Text replaced with `"[deleted by moderator]"`.
 - `retry`: sets `moderationStatus = "pending_ai"`, `moderationReason = "pending_ai"`, resets `retryCount` and `nextRetry`. Only for `needs_review` comments.
 
-**Note:** Moderators cannot edit the original text – only the author (see 4.7).
+**Note:** Moderators cannot edit the original text – only the author (see 4.9).
 
 **Response (200 OK):**
 
@@ -1121,7 +1237,9 @@ All endpoints in this section require authentication with a valid JWT token (cit
 }
 ```
 
-#### 4.5 Appeal a moderation decision (citizen)
+---
+
+### 4.7 Appeal a moderation decision (citizen)
 
 **`POST /comments/:commentId/appeal`**
 
@@ -1153,7 +1271,9 @@ All endpoints in this section require authentication with a valid JWT token (cit
 }
 ```
 
-#### 4.6 Resolve an appeal
+---
+
+### 4.8 Resolve an appeal
 
 **`POST /comments/:commentId/resolve-appeal`**
 
@@ -1187,7 +1307,9 @@ All endpoints in this section require authentication with a valid JWT token (cit
 }
 ```
 
-#### 4.7 Edit a comment (author only)
+---
+
+### 4.9 Edit a comment (author only)
 
 **`PUT /comments/:id`**
 
@@ -1222,7 +1344,9 @@ All endpoints in this section require authentication with a valid JWT token (cit
 }
 ```
 
-### 4.8 Get comment edit history
+---
+
+### 4.10 Get comment edit history
 
 **`GET /comments/:id/history`**
 
