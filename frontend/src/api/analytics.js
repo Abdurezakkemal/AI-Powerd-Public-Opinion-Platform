@@ -17,4 +17,16 @@ export const analyticsApi = {
   heatmap(params = {}) {
     return apiClient.get("/analytics/heatmap", { params });
   },
+  timeseries(policyId, params = {}) {
+    return apiClient.get(`/analytics/${policyId}/timeseries`, { params });
+  },
+  correlation(policyId, params = {}) {
+    return apiClient.get(`/analytics/${policyId}/correlation`, { params });
+  },
+  demographics(policyId, params = {}) {
+    return apiClient.get(`/analytics/${policyId}/demographics`, { params });
+  },
+  cross(params = {}) {
+    return apiClient.get("/analytics/cross", { params });
+  },
 };

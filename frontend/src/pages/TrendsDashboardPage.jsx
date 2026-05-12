@@ -12,10 +12,10 @@ export function TrendsDashboardPage() {
   const [trends, setTrends] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [dates, setDates] = useState({
-    startDate: toDateInput(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)), // 30 days ago
+  const [dates, setDates] = useState(() => ({
+    startDate: toDateInput(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
     endDate: toDateInput(new Date()),
-  });
+  }));
 
   const loadTrends = async () => {
     setLoading(true);

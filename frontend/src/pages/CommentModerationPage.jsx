@@ -24,17 +24,21 @@ export function CommentModerationPage() {
   const [selectedComment, setSelectedComment] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [actionType, setActionType] = useState(null);
+  const [mode, setMode] = useState("pending");
+  const [selectedIds, setSelectedIds] = useState([]);
 
   const loadComments = async () => {
     setLoading(true);
     setError("");
     try {
-      const result = await adminApi.getPendingComments({
+      const loader = mode === "flagged" ? adminApi.getFlaggedComments : adminApi.getPendingComments;
+      const result = await loader({
         page,
         limit: 20,
       });
       setComments(result.comments || []);
       setTotalPages(result.pages || 1);
+      setSelectedIds([]);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to load pending comments"));
     } finally {
@@ -45,7 +49,7 @@ export function CommentModerationPage() {
   useEffect(() => {
     loadComments();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, mode]);
 
   const performAction = async (commentId, status) => {
     setActionLoading(commentId);
@@ -53,7 +57,11 @@ export function CommentModerationPage() {
     setNotice("");
 
     try {
-      await adminApi.updateComment(commentId, { status });
+      const payload =
+        status === "approve"
+          ? { moderationStatus: "reviewed", moderationReason: null }
+          : { moderationStatus: "reviewed", moderationReason: "moderator_flag" };
+      await adminApi.updateComment(commentId, payload);
       setNotice(`Comment ${status}.`);
       setModalOpen(false);
       setSelectedComment(null);
@@ -81,16 +89,33 @@ export function CommentModerationPage() {
     }
   };
 
+  const forceRetryComment = async (commentId) => {
+    setActionLoading(commentId);
+    setError("");
+    setNotice("");
+
+    try {
+      await adminApi.forceRetryComment(commentId);
+      setNotice("Comment force-queued for AI reprocessing.");
+      await loadComments();
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to force retry comment analysis"));
+    } finally {
+      setActionLoading("");
+    }
+  };
+
   const retryAll = async () => {
-    if (!confirm("Retry AI analysis for all pending comments?")) return;
+    const ids = selectedIds.length ? selectedIds : comments.map((comment) => comment._id);
+    if (!ids.length || !confirm(`Retry AI analysis for ${ids.length} selected comment(s)?`)) return;
 
     setActionLoading("retry-all");
     setError("");
     setNotice("");
 
     try {
-      await adminApi.retryAllComments();
-      setNotice("Batch retry initiated.");
+      const result = await adminApi.bulkRetryComments(ids);
+      setNotice(`Bulk retry completed: ${result.succeeded?.length || 0} succeeded, ${result.failed?.length || 0} failed.`);
       await loadComments();
     } catch (err) {
       setError(getErrorMessage(err, "Failed to retry all comments"));
@@ -125,7 +150,7 @@ export function CommentModerationPage() {
     <div>
       <PageHeader
         title="Comment Moderation"
-        description="Review and manage comments that failed AI sentiment analysis. Retry analysis, approve, reject, or delete."
+        description="Review comments needing attention. Retry AI analysis, force retry, review, or delete."
       />
 
       <div className="space-y-5">
@@ -137,6 +162,24 @@ export function CommentModerationPage() {
         )}
 
         <div className="flex gap-2">
+          <button
+            onClick={() => {
+              setMode("pending");
+              setPage(1);
+            }}
+            className={`rounded-lg px-3 py-2.5 text-sm font-bold ${mode === "pending" ? "bg-teal-700 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+          >
+            Pending
+          </button>
+          <button
+            onClick={() => {
+              setMode("flagged");
+              setPage(1);
+            }}
+            className={`rounded-lg px-3 py-2.5 text-sm font-bold ${mode === "flagged" ? "bg-teal-700 text-white" : "border border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+          >
+            Flagged
+          </button>
           <button
             onClick={loadComments}
             disabled={loading}
@@ -152,7 +195,7 @@ export function CommentModerationPage() {
             className="inline-flex items-center gap-2 rounded-lg border border-teal-300 bg-teal-50 px-3 py-2.5 text-sm font-bold text-teal-700 hover:bg-teal-100 disabled:opacity-50"
           >
             <RefreshCw className="h-4 w-4" />
-            Retry All ({comments.length})
+            Retry {selectedIds.length ? `Selected (${selectedIds.length})` : `All (${comments.length})`}
           </button>
         </div>
 
@@ -170,6 +213,19 @@ export function CommentModerationPage() {
                 className="rounded-lg border border-slate-200 bg-white p-4 hover:shadow-md transition-shadow"
               >
                 <div className="flex items-start justify-between gap-4 mb-3">
+                  <label className="pt-1">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 accent-teal-700"
+                      checked={selectedIds.includes(comment._id)}
+                      onChange={(event) => {
+                        setSelectedIds((current) =>
+                          event.target.checked ? [...current, comment._id] : current.filter((id) => id !== comment._id),
+                        );
+                      }}
+                      aria-label="Select comment"
+                    />
+                  </label>
                   <div className="flex-1">
                     <p className="text-sm font-semibold text-slate-600">
                       Policy: <span className="text-slate-900 font-bold">{comment.policyId?.title || "Deleted"}</span>
@@ -192,7 +248,7 @@ export function CommentModerationPage() {
                 </div>
 
                 <div className="mb-3 rounded-lg bg-slate-50 p-3">
-                  <p className="text-sm text-slate-900">{comment.comment}</p>
+                  <p className="text-sm text-slate-900">{comment.text}</p>
                 </div>
 
                 <div className="mb-3 space-y-1">
@@ -262,6 +318,15 @@ export function CommentModerationPage() {
                   </button>
 
                   <button
+                    onClick={() => forceRetryComment(comment._id)}
+                    disabled={actionLoading === comment._id}
+                    className="inline-flex items-center gap-1 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-700 hover:bg-amber-100 disabled:opacity-50"
+                  >
+                    <RefreshCw className="h-3.5 w-3.5" />
+                    Force Retry
+                  </button>
+
+                  <button
                     onClick={() => deleteComment(comment._id)}
                     disabled={actionLoading === comment._id}
                     className="inline-flex items-center gap-1 rounded-lg border border-rose-300 bg-white px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
@@ -304,7 +369,7 @@ export function CommentModerationPage() {
         <Modal title={`${actionType === "approve" ? "Approve" : "Reject"} Comment`} onClose={() => setModalOpen(false)}>
           <div className="space-y-4">
             <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-sm text-slate-900">"{selectedComment.comment}"</p>
+              <p className="text-sm text-slate-900">"{selectedComment.text}"</p>
             </div>
 
             <p className="text-sm text-slate-600">

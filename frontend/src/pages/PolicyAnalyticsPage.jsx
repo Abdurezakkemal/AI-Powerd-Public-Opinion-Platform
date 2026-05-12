@@ -16,12 +16,14 @@ import {
 } from "recharts";
 import { analyticsApi } from "../api/analytics";
 import { policyApi } from "../api/policies";
+import { plannerApi } from "../api/planners";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
 import { MetricCard } from "../components/MetricCard";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
+import { LANGUAGES } from "../constants/regions";
 import { formatDate, formatNumber, formatRating, getErrorMessage } from "../lib/format";
 
 const SENTIMENT_COLORS = {
@@ -45,6 +47,18 @@ export function PolicyAnalyticsPage() {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
+  const [timeseries, setTimeseries] = useState(null);
+  const [heatmap, setHeatmap] = useState(null);
+  const [demographics, setDemographics] = useState(null);
+  const [correlation, setCorrelation] = useState(null);
+  const [dimension, setDimension] = useState("region");
+  const [associates, setAssociates] = useState([]);
+  const [plannerMatches, setPlannerMatches] = useState([]);
+  const [associateForm, setAssociateForm] = useState({
+    language: "en",
+    plannerEmail: "",
+    permissions: ["view_analytics"],
+  });
 
   useEffect(() => {
     let active = true;
@@ -80,6 +94,59 @@ export function PolicyAnalyticsPage() {
   useEffect(() => {
     let active = true;
 
+    async function loadExtendedAnalytics() {
+      try {
+        const params = {
+          startDate: filters.startDate || undefined,
+          endDate: filters.endDate || undefined,
+        };
+        const [seriesResult, heatmapResult, demographicResult, associatesResult] = await Promise.allSettled([
+          analyticsApi.timeseries(id, { ...params, bucket: "week" }),
+          analyticsApi.heatmap({ ...params, policyId: id, interval: "week", byRegion: true }),
+          analyticsApi.demographics(id, { ...params, dimension }),
+          plannerApi.listAssociates(id),
+        ]);
+        if (!active) return;
+        setTimeseries(seriesResult.status === "fulfilled" ? seriesResult.value : null);
+        setHeatmap(heatmapResult.status === "fulfilled" ? heatmapResult.value : null);
+        setDemographics(demographicResult.status === "fulfilled" ? demographicResult.value : null);
+        setAssociates(associatesResult.status === "fulfilled" && Array.isArray(associatesResult.value) ? associatesResult.value : []);
+      } catch {
+        if (active) {
+          setTimeseries(null);
+          setHeatmap(null);
+          setDemographics(null);
+        }
+      }
+    }
+
+    loadExtendedAnalytics();
+    return () => {
+      active = false;
+    };
+  }, [id, filters.startDate, filters.endDate, dimension]);
+
+  useEffect(() => {
+    if (analytics?.pollType !== "multipleChoice") {
+      setCorrelation(null);
+      return;
+    }
+    let active = true;
+    analyticsApi.correlation(id, { minSupport: 1 })
+      .then((result) => {
+        if (active) setCorrelation(result);
+      })
+      .catch(() => {
+        if (active) setCorrelation(null);
+      });
+    return () => {
+      active = false;
+    };
+  }, [analytics?.pollType, id]);
+
+  useEffect(() => {
+    let active = true;
+
     async function loadComments() {
       setCommentsLoading(true);
       setError("");
@@ -107,14 +174,13 @@ export function PolicyAnalyticsPage() {
     };
   }, [id, commentPage, filters.sentiment, filters.startDate, filters.endDate]);
 
-  const ratingData = useMemo(
-    () =>
-      [1, 2, 3, 4, 5].map((rating) => ({
-        rating: `${rating} star`,
-        votes: analytics?.ratingDistribution?.[rating] || 0,
-      })),
-    [analytics],
-  );
+  const ratingData = useMemo(() => {
+    const distribution = analytics?.distribution || analytics?.ratingDistribution || {};
+    return [1, 2, 3, 4, 5].map((rating) => ({
+      rating: `${rating} star`,
+      votes: distribution[rating] || distribution[String(rating)] || 0,
+    }));
+  }, [analytics]);
 
   const sentimentData = useMemo(
     () =>
@@ -122,14 +188,6 @@ export function PolicyAnalyticsPage() {
         name,
         value: analytics?.sentimentCounts?.[name] || 0,
       })),
-    [analytics],
-  );
-
-  const voteSplitData = useMemo(
-    () => [
-      { channel: "App", votes: analytics?.appVotes || 0 },
-      { channel: "SMS", votes: analytics?.smsVotes || 0 },
-    ],
     [analytics],
   );
 
@@ -164,6 +222,71 @@ export function PolicyAnalyticsPage() {
       setError(getErrorMessage(err, "Failed to export CSV"));
     } finally {
       setExporting(false);
+    }
+  };
+
+  const metricValue = analytics?.averageRating ?? analytics?.average ?? analytics?.approvePercentage ?? analytics?.yesPercentage ?? 0;
+  const metricLabel = ["rating", "likert"].includes(analytics?.pollType) ? "Average rating" : analytics?.pollType === "approval" ? "Approval %" : analytics?.pollType === "binary" ? "Yes %" : "Primary metric";
+
+  const optionResultData = analytics?.results || analytics?.firstChoiceResults || [];
+  const timeseriesData = timeseries?.data || [];
+  const heatmapData = heatmap?.data || [];
+  const demographicData = demographics?.data || [];
+
+  const refreshAssociates = async () => {
+    try {
+      const result = await plannerApi.listAssociates(id);
+      setAssociates(Array.isArray(result) ? result : []);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to load associates"));
+    }
+  };
+
+  const searchAssociates = async () => {
+    try {
+      const result = await plannerApi.search(associateForm.language);
+      setPlannerMatches(Array.isArray(result) ? result : []);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to search planners"));
+    }
+  };
+
+  const addAssociate = async () => {
+    if (!associateForm.plannerEmail) {
+      setError("Choose a planner before adding an associate.");
+      return;
+    }
+    try {
+      await plannerApi.addAssociate(id, {
+        plannerEmail: associateForm.plannerEmail,
+        permissions: associateForm.permissions,
+      });
+      setAssociateForm((current) => ({ ...current, plannerEmail: "" }));
+      await refreshAssociates();
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to add associate"));
+    }
+  };
+
+  const toggleAssociatePermission = async (associate, permission) => {
+    const next = associate.permissions?.includes(permission)
+      ? associate.permissions.filter((item) => item !== permission)
+      : [...(associate.permissions || []), permission];
+    try {
+      await plannerApi.updateAssociate(id, associate._id, next);
+      await refreshAssociates();
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to update associate"));
+    }
+  };
+
+  const revokeAssociate = async (associate) => {
+    if (!window.confirm(`Revoke ${associate.plannerId?.email || "this associate"}?`)) return;
+    try {
+      await plannerApi.revokeAssociate(id, associate._id);
+      await refreshAssociates();
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to revoke associate"));
     }
   };
 
@@ -230,23 +353,59 @@ export function PolicyAnalyticsPage() {
       {analytics ? (
         <>
           <div className="mt-5 grid gap-4 md:grid-cols-3">
-            <MetricCard label="Average rating" value={formatRating(analytics.averageRating)} helper="Across selected date range" />
-            <MetricCard label="Total votes" value={formatNumber(analytics.totalVotes)} helper={`${formatNumber(analytics.appVotes)} app, ${formatNumber(analytics.smsVotes)} SMS`} />
+            <MetricCard label={metricLabel} value={["rating", "likert"].includes(analytics.pollType) ? formatRating(metricValue) : String(metricValue)} helper={analytics.pollType} />
+            <MetricCard label="Total votes" value={formatNumber(analytics.totalVotes)} helper="Across selected filters" />
             <MetricCard label="Comments analyzed" value={formatNumber(sentimentData.reduce((sum, item) => sum + item.value, 0))} helper="Sentiment-tagged comments" />
           </div>
 
           <div className="mt-5 grid gap-5 xl:grid-cols-2">
-            <ChartCard title="Rating distribution">
-              <ResponsiveContainer width="100%" height={280}>
-                <BarChart data={ratingData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="rating" />
-                  <YAxis allowDecimals={false} />
-                  <Tooltip />
-                  <Bar dataKey="votes" fill="#0f766e" radius={[6, 6, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </ChartCard>
+            {["rating", "likert"].includes(analytics.pollType) ? (
+              <ChartCard title="Rating distribution">
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={ratingData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="rating" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="votes" fill="#0f766e" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            ) : null}
+
+            {optionResultData.length ? (
+              <ChartCard title={analytics.pollType === "rankedChoice" ? "First choice results" : "Option results"}>
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={optionResultData.map((item) => ({ name: item.text || item.id, votes: item.count ?? item.firstChoiceCount ?? 0 }))}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="name" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="votes" fill="#0f766e" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            ) : null}
+
+            {analytics.pollType === "binary" ? (
+              <ChartCard title="Binary result">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <MetricCard label="Yes" value={formatNumber(analytics.yesCount)} helper={`${analytics.yesPercentage}%`} />
+                  <MetricCard label="No" value={formatNumber(analytics.noCount)} helper={`${analytics.noPercentage}%`} />
+                </div>
+              </ChartCard>
+            ) : null}
+
+            {analytics.pollType === "approval" ? (
+              <ChartCard title="Approval result">
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <MetricCard label="Approve" value={formatNumber(analytics.approveCount)} helper={`${analytics.approvePercentage}%`} />
+                  <MetricCard label="Reject" value={formatNumber(analytics.rejectCount)} helper={`${analytics.rejectPercentage}%`} />
+                  <MetricCard label="Abstain" value={formatNumber(analytics.abstainCount)} helper={`${analytics.abstainPercentage}%`} />
+                  <MetricCard label="Net approval" value={formatNumber(analytics.netApproval)} />
+                </div>
+              </ChartCard>
+            ) : null}
 
             <ChartCard title="Sentiment">
               {sentimentData.some((item) => item.value > 0) ? (
@@ -266,17 +425,85 @@ export function PolicyAnalyticsPage() {
               )}
             </ChartCard>
 
-            <ChartCard title="App vs SMS votes">
-              <ResponsiveContainer width="100%" height={260}>
-                <BarChart data={voteSplitData}>
+            <ChartCard title="Timeseries">
+              {timeseriesData.length ? (
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={timeseriesData}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="bucket" />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="totalVotes" fill="#14b8a6" radius={[6, 6, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <EmptyState title="No timeseries data" description="Votes over time will appear here." />
+              )}
+            </ChartCard>
+
+            <ChartCard title="Heatmap by region">
+              {heatmapData.length ? (
+                <div className="max-h-72 overflow-y-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                      <tr>
+                        <th className="px-3 py-2">Period</th>
+                        <th className="px-3 py-2">Region</th>
+                        <th className="px-3 py-2">Votes</th>
+                        <th className="px-3 py-2">Sentiment</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {heatmapData.map((item, index) => (
+                        <tr key={`${item.period}-${item.region}-${index}`}>
+                          <td className="px-3 py-2">{item.period}</td>
+                          <td className="px-3 py-2">{item.region || "All"}</td>
+                          <td className="px-3 py-2">{formatNumber(item.totalVotes)}</td>
+                          <td className="px-3 py-2">{item.averageSentiment}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <EmptyState title="No heatmap data" description="Regional vote buckets will appear here." />
+              )}
+            </ChartCard>
+
+            <ChartCard title="Demographic breakdown">
+              <div className="mb-3">
+                <select value={dimension} onChange={(event) => setDimension(event.target.value)} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600">
+                  <option value="region">Region</option>
+                  <option value="ageRange">Age range</option>
+                  <option value="gender">Gender</option>
+                  <option value="occupation">Occupation</option>
+                  <option value="education">Education</option>
+                </select>
+              </div>
+              {demographicData.length ? (
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={demographicData.map((item) => ({ name: item[dimension], votes: item.totalVotes }))}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="channel" />
+                  <XAxis dataKey="name" />
                   <YAxis allowDecimals={false} />
                   <Tooltip />
-                  <Bar dataKey="votes" fill="#14b8a6" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="votes" fill="#0f766e" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+              ) : <EmptyState title="No demographic data" description="Breakdowns appear after matching votes are available." />}
             </ChartCard>
+
+            {correlation?.correlations?.length ? (
+              <ChartCard title="Option correlation">
+                <div className="space-y-2">
+                  {correlation.correlations.map((item) => (
+                    <div key={`${item.optionA}-${item.optionB}`} className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700">
+                      <span className="font-bold">{item.optionA}</span> with <span className="font-bold">{item.optionB}</span>: {item.coOccurrenceCount} ({item.percentage}%)
+                    </div>
+                  ))}
+                </div>
+              </ChartCard>
+            ) : null}
 
             <ChartCard title="Keywords">
               {keywordData.length ? (
@@ -394,6 +621,73 @@ export function PolicyAnalyticsPage() {
             </button>
           </div>
         </div>
+      </section>
+
+      <section className="mt-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-lg font-bold text-slate-950">Associates</h3>
+            <p className="text-sm text-slate-500">Assign planners to help with analytics, exports, replies, and moderation.</p>
+          </div>
+          <button type="button" onClick={searchAssociates} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">Search planners</button>
+        </div>
+
+        <div className="grid gap-3 lg:grid-cols-[12rem_minmax(0,1fr)_auto]">
+          <select value={associateForm.language} onChange={(event) => setAssociateForm((current) => ({ ...current, language: event.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600">
+            {LANGUAGES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}
+          </select>
+          <select value={associateForm.plannerEmail} onChange={(event) => setAssociateForm((current) => ({ ...current, plannerEmail: event.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600">
+            <option value="">Choose planner</option>
+            {plannerMatches.map((planner) => <option key={planner._id} value={planner.email}>{planner.email}</option>)}
+          </select>
+          <button type="button" onClick={addAssociate} className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800">Add associate</button>
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          {["view_analytics", "moderate_comments", "reply_official", "export_data"].map((permission) => (
+            <label key={permission} className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-xs font-bold text-slate-700">
+              <input
+                type="checkbox"
+                className="h-4 w-4 accent-teal-700"
+                checked={associateForm.permissions.includes(permission)}
+                onChange={(event) => setAssociateForm((current) => ({
+                  ...current,
+                  permissions: event.target.checked
+                    ? [...current.permissions, permission]
+                    : current.permissions.filter((item) => item !== permission),
+                }))}
+              />
+              {permission}
+            </label>
+          ))}
+        </div>
+
+        {associates.length ? (
+          <div className="mt-4 divide-y divide-slate-100">
+            {associates.map((associate) => (
+              <div key={associate._id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <div>
+                  <p className="font-bold text-slate-950">{associate.plannerId?.email || "Unknown planner"}</p>
+                  <p className="text-xs text-slate-500">Assigned {formatDate(associate.assignedAt)}</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {["view_analytics", "moderate_comments", "reply_official", "export_data"].map((permission) => (
+                    <button
+                      key={permission}
+                      type="button"
+                      onClick={() => toggleAssociatePermission(associate, permission)}
+                      className={`rounded-full px-2.5 py-1 text-xs font-bold ${associate.permissions?.includes(permission) ? "bg-teal-100 text-teal-700" : "bg-slate-100 text-slate-500"}`}
+                    >
+                      {permission}
+                    </button>
+                  ))}
+                  <button type="button" onClick={() => revokeAssociate(associate)} className="rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50">Revoke</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <EmptyState title="No associates" description="Search by language and add a planner collaborator." />
+        )}
       </section>
     </div>
   );

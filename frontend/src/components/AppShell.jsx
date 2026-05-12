@@ -1,4 +1,4 @@
-import { BarChart3, FileText, LayoutDashboard, LogOut, Menu, Users, X, AlertCircle, TrendingUp, Clock, Lock } from "lucide-react";
+import { BarChart3, Bell, FileText, Inbox, LayoutDashboard, LogOut, Menu, Settings, Users, X, AlertCircle, TrendingUp, Clock, Lock } from "lucide-react";
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -6,11 +6,16 @@ import { useAuth } from "../auth/AuthContext";
 const baseLinks = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/policies", label: "Policies", icon: FileText },
+  { to: "/analytics/cross", label: "Cross Analytics", icon: BarChart3 },
+  { to: "/messages", label: "Messages", icon: Inbox },
+  { to: "/notifications", label: "Notifications", icon: Bell },
+  { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 const adminLinks = [
   { to: "/users", label: "Planner Accounts", icon: Users },
   { to: "/citizens", label: "Citizens", icon: Users },
+  { to: "/planner-requests", label: "Planner Requests", icon: Users },
   { to: "/comments/pending", label: "Pending Comments", icon: AlertCircle },
   { to: "/trends", label: "Trends", icon: TrendingUp },
   { to: "/audit-logs", label: "Audit Logs", icon: Clock },

@@ -29,6 +29,8 @@ export function AuditLogsPage() {
     action: "",
     userId: "",
     userRole: "",
+    startDate: "",
+    endDate: "",
   });
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -42,6 +44,8 @@ export function AuditLogsPage() {
         action: filters.action || undefined,
         userId: filters.userId || undefined,
         userRole: filters.userRole || undefined,
+        startDate: filters.startDate || undefined,
+        endDate: filters.endDate ? `${filters.endDate}T23:59:59.000Z` : undefined,
       });
       setLogs(result.logs || []);
       setTotalPages(result.pages || 1);
@@ -65,6 +69,8 @@ export function AuditLogsPage() {
         action: filters.action || undefined,
         userId: filters.userId || undefined,
         userRole: filters.userRole || undefined,
+        startDate: filters.startDate || undefined,
+        endDate: filters.endDate ? `${filters.endDate}T23:59:59.000Z` : undefined,
       });
 
       const url = window.URL.createObjectURL(blob);
@@ -86,7 +92,7 @@ export function AuditLogsPage() {
     ? logs.filter(
         (log) =>
           log._id?.toString()?.includes(searchQuery) ||
-          log.details?.toString()?.toLowerCase()?.includes(searchQuery.toLowerCase())
+          JSON.stringify(log.details || {}).toLowerCase().includes(searchQuery.toLowerCase())
       )
     : logs;
 
@@ -105,7 +111,7 @@ export function AuditLogsPage() {
         {/* Filters */}
         <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm space-y-4">
           <h3 className="font-bold text-slate-900">Filters</h3>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
             <label className="block">
               <span className="text-sm font-semibold text-slate-700">Action</span>
               <select
@@ -117,14 +123,30 @@ export function AuditLogsPage() {
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
               >
                 <option value="">All Actions</option>
-                <option value="CREATE">Create</option>
-                <option value="UPDATE">Update</option>
-                <option value="DELETE">Delete</option>
-                <option value="PUBLISH">Publish</option>
-                <option value="ACTIVATE">Activate</option>
-                <option value="CLOSE">Close</option>
-                <option value="APPROVE">Approve</option>
-                <option value="REJECT">Reject</option>
+                {[
+                  "CREATE_PLANNER",
+                  "UPDATE_PLANNER",
+                  "UPDATE_PLANNER_STATUS",
+                  "CREATE_POLICY",
+                  "UPDATE_POLICY",
+                  "PUBLISH_POLICY",
+                  "ACTIVATE_POLICY",
+                  "PAUSE_POLICY",
+                  "RESUME_POLICY",
+                  "CLOSE_POLICY",
+                  "ARCHIVE_POLICY",
+                  "RESTORE_POLICY",
+                  "UPDATE_COMMENT",
+                  "RETRY_COMMENT",
+                  "FORCE_RETRY_COMMENT",
+                  "BULK_RETRY_COMMENTS_BY_IDS",
+                  "DELETE_COMMENT",
+                  "INITIATE_PASSWORD_RESET",
+                  "SEND_MESSAGE",
+                  "TRAINING_COMPLETED",
+                ].map((action) => (
+                  <option key={action} value={action}>{action}</option>
+                ))}
               </select>
             </label>
 
@@ -143,6 +165,32 @@ export function AuditLogsPage() {
                 <option value="planner">Planner</option>
                 <option value="citizen">Citizen</option>
               </select>
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-semibold text-slate-700">Start Date</span>
+              <input
+                type="date"
+                value={filters.startDate}
+                onChange={(e) => {
+                  setFilters((prev) => ({ ...prev, startDate: e.target.value }));
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm font-semibold text-slate-700">End Date</span>
+              <input
+                type="date"
+                value={filters.endDate}
+                onChange={(e) => {
+                  setFilters((prev) => ({ ...prev, endDate: e.target.value }));
+                  setPage(1);
+                }}
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
+              />
             </label>
 
             <div className="flex gap-2 items-end">
@@ -220,8 +268,8 @@ export function AuditLogsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-sm text-slate-900 font-medium">{log.resourceType}</p>
-                      <p className="text-xs text-slate-500">{log.resourceId?.substring(0, 12)}...</p>
+                      <p className="text-sm text-slate-900 font-medium">{log.targetType || "Unknown"}</p>
+                      <p className="text-xs text-slate-500">{log.targetId ? `${log.targetId.substring(0, 12)}...` : "No target"}</p>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-sm text-slate-600 truncate max-w-xs">

@@ -99,8 +99,14 @@ exports.createPlanner = async (req, res) => {
       role: "planner",
       phoneHash: uniquePhonePlaceholder,
       region: "",
+      ageRange: "25-34",
+      gender: "prefer-not-to-say",
+      occupation: "government-employee",
+      education: "bachelors",
+      languagesSpoken: ["en"],
       verified: true,
       active: true,
+      trainingCompletedAt: new Date(),
     });
     await planner.save();
 

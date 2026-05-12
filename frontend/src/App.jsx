@@ -15,6 +15,12 @@ import { CitizenManagementPage } from "./pages/CitizenManagementPage";
 import { CommentModerationPage } from "./pages/CommentModerationPage";
 import { TrendsDashboardPage } from "./pages/TrendsDashboardPage";
 import { AuditLogsPage } from "./pages/AuditLogsPage";
+import { PlannerRequestsPage } from "./pages/PlannerRequestsPage";
+import { CrossAnalyticsPage } from "./pages/CrossAnalyticsPage";
+import { MessagesPage } from "./pages/MessagesPage";
+import { MessageDetailPage } from "./pages/MessageDetailPage";
+import { NotificationsPage } from "./pages/NotificationsPage";
+import { SettingsPage } from "./pages/SettingsPage";
 
 function ProtectedRoute({ roles }) {
   const { initializing, isAuthenticated, role } = useAuth();
@@ -58,6 +64,11 @@ export default function App() {
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
           <Route path="/change-password" element={<ChangePasswordPage />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/analytics/cross" element={<CrossAnalyticsPage />} />
+          <Route path="/messages" element={<MessagesPage />} />
+          <Route path="/messages/:id" element={<MessageDetailPage />} />
+          <Route path="/notifications" element={<NotificationsPage />} />
           <Route path="/policies" element={<PoliciesPage />} />
           <Route path="/policies/new" element={<PolicyFormPage mode="create" />} />
           <Route path="/policies/:id/edit" element={<PolicyFormPage mode="edit" />} />
@@ -65,6 +76,7 @@ export default function App() {
           <Route element={<ProtectedRoute roles={["admin"]} />}>
             <Route path="/users" element={<UsersPage />} />
             <Route path="/citizens" element={<CitizenManagementPage />} />
+            <Route path="/planner-requests" element={<PlannerRequestsPage />} />
             <Route path="/comments/pending" element={<CommentModerationPage />} />
             <Route path="/trends" element={<TrendsDashboardPage />} />
             <Route path="/audit-logs" element={<AuditLogsPage />} />

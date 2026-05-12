@@ -12,7 +12,7 @@ export function AIHealthCard() {
       try {
         const result = await adminApi.getAIHealth();
         setHealth(result);
-      } catch (err) {
+      } catch {
         setError("Unable to fetch AI service status");
       } finally {
         setLoading(false);
