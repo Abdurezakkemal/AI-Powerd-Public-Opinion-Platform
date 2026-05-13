@@ -3719,22 +3719,16 @@ All endpoints in this section require authentication with a planner or admin tok
 
 **GET /api/messages/:messageId**
 
-**Roles:** must be sender or recipient
+**Roles:** sender or recipient (planner/admin)
 
-**Path parameter:**
-
-- `messageId` – Message ID
-
-**Behaviour:** Automatically sets `read: true` if the requesting user is the recipient and the message was unread.
-
-**Response (200 OK):** returns the full message object with populated sender and recipient.
+**Behaviour:** Automatically marks the message as read if the recipient views it. If the authenticated user is neither the sender nor the recipient, the API returns `404 Not Found` to avoid revealing the existence of the message.
 
 **Error responses:**
 
-| Status | Code      | Message             |
-| ------ | --------- | ------------------- |
-| 403    | FORBIDDEN | "Access denied"     |
-| 404    | NOT_FOUND | "Message not found" |
+| Status | Code        | Message                        |
+| ------ | ----------- | ------------------------------ |
+| 404    | `NOT_FOUND` | `"Message not found"`          |
+| 500    | `INTERNAL`  | `"Failed to retrieve message"` |
 
 ---
 
@@ -3769,11 +3763,11 @@ All endpoints in this section require authentication with a planner or admin tok
 
 **Error responses:**
 
-| Status | Code             | Message                            |
-| ------ | ---------------- | ---------------------------------- |
-| 400    | VALIDATION_ERROR | "body required"                    |
-| 403    | FORBIDDEN        | "You cannot reply to this message" |
-| 404    | NOT_FOUND        | "Original message not found"       |
+| Status | Code                    | Message                        |
+| ------ | ----------------------- | ------------------------------ |
+| 400    | `VALIDATION_ERROR`      | `"body required"`              |
+| 404    | `NOT_FOUND`             | `"Original message not found"` |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to send reply"`       |
 
 ## 12. Notifications & Smart Alerts (Real‑time)
 
