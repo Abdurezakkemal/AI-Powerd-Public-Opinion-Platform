@@ -1164,6 +1164,69 @@ Returns a comment by its ID. Citizens can see only comments with `visibility = "
 
 ---
 
+### 4.4.1 Get replies for a comment
+
+**`GET /comments/:commentId/replies`**
+
+**Roles:** citizen, planner, admin (all authenticated)
+
+Returns all replies to a specific comment. Only returns replies with `visibility = "visible"` for citizens. Supports pagination.
+
+**Path parameter:**
+
+| Parameter   | Type   | Description                        |
+| ----------- | ------ | ---------------------------------- |
+| `commentId` | string | MongoDB ObjectId of parent comment |
+
+**Query parameters (all optional):**
+
+| Parameter | Type    | Default | Description              |
+| --------- | ------- | ------- | ------------------------ |
+| `page`    | integer | 1       | Page number (1‑based)    |
+| `limit`   | integer | 20      | Items per page (max 100) |
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "replies": [
+      {
+        "id": "67f1a2b3...",
+        "text": "I agree with this comment!",
+        "sentiment": "positive",
+        "keywords": ["agree"],
+        "isOfficialReply": false,
+        "createdAt": "2026-05-12T11:00:00Z",
+        "userId": "67f1a2b4...",
+        "userEmail": "user@example.com",
+        "isEdited": false,
+        "parentCommentId": "67f1a2b3...",
+        "policyId": "67f1a2b5...",
+        "visibility": "visible",
+        "moderationStatus": "none"
+      }
+    ],
+    "total": 3,
+    "page": 1
+  },
+  "message": "Replies retrieved",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code        | Message                        |
+| ------ | ----------- | ------------------------------ |
+| 404    | `NOT_FOUND` | `"Parent comment not found"`   |
+| 500    | `INTERNAL`  | `"Failed to retrieve replies"` |
+
+**Note:** Replies are returned in chronological order (oldest first). The `parentCommentId` field in each reply matches the requested `commentId`.
+
+---
+
 ### 4.5 Report a comment
 
 **`POST /comments/:commentId/report`**
