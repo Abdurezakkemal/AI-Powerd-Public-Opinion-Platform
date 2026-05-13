@@ -8,6 +8,7 @@ class NotificationsState extends Equatable {
     this.total = 0,
     this.unreadOnly = false,
     this.message,
+    this.hasNewNotification = false, // NEW: Flag for real-time notifications
   });
 
   final RequestStatus status;
@@ -16,6 +17,7 @@ class NotificationsState extends Equatable {
   final int total;
   final bool unreadOnly;
   final String? message;
+  final bool hasNewNotification; // NEW: Indicates a new notification arrived via WebSocket
 
   int get unreadCount => notifications.where((item) => !item.read).length;
 
@@ -26,6 +28,7 @@ class NotificationsState extends Equatable {
     int? total,
     bool? unreadOnly,
     String? message,
+    bool? hasNewNotification,
   }) {
     return NotificationsState(
       status: status ?? this.status,
@@ -34,16 +37,18 @@ class NotificationsState extends Equatable {
       total: total ?? this.total,
       unreadOnly: unreadOnly ?? this.unreadOnly,
       message: message,
+      hasNewNotification: hasNewNotification ?? this.hasNewNotification,
     );
   }
 
   @override
   List<Object?> get props => [
-    status,
-    actionStatus,
-    notifications,
-    total,
-    unreadOnly,
-    message,
-  ];
+        status,
+        actionStatus,
+        notifications,
+        total,
+        unreadOnly,
+        message,
+        hasNewNotification,
+      ];
 }

@@ -2,6 +2,7 @@ import 'package:equatable/equatable.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/error/api_exception.dart';
+import '../../../../core/services/notification_socket_service.dart';
 import '../../domain/entities/auth_session.dart';
 import '../../domain/entities/user_demographics.dart';
 import '../../domain/repositories/auth_repository.dart';
@@ -9,17 +10,41 @@ import '../../domain/repositories/auth_repository.dart';
 part 'auth_state.dart';
 
 class AuthCubit extends Cubit<AuthState> {
-  AuthCubit(this._repository) : super(const AuthState.checking());
+  AuthCubit(
+    this._repository,
+    this._socketService,
+  ) : super(const AuthState.checking());
 
   final AuthRepository _repository;
+  final NotificationSocketService _socketService;
 
   Future<void> restoreSession() async {
     final session = _repository.restoreSession();
     if (session == null) {
       emit(const AuthState.unauthenticated());
     } else {
+      // Connect WebSocket on session restore
+      _connectSocket(session);
       emit(AuthState.authenticated(session));
     }
+  }
+
+  /// Connect to WebSocket for real-time notifications
+  void _connectSocket(AuthSession session) {
+    // Only connect if userId is available
+    if (session.userId == null) {
+      print('Cannot connect WebSocket: userId is null');
+      return;
+    }
+    
+    print('Connecting WebSocket for user: ${session.userId}');
+    _socketService.connect(session.userId!, session.token);
+  }
+
+  /// Disconnect WebSocket
+  void _disconnectSocket() {
+    print('Disconnecting WebSocket');
+    _socketService.disconnect();
   }
 
   Future<void> register({
@@ -58,6 +83,8 @@ class AuthCubit extends Cubit<AuthState> {
     emit(const AuthState.loading());
     try {
       final session = await _repository.verifyOtp(email: email, code: code);
+      // Connect WebSocket after successful OTP verification
+      _connectSocket(session);
       emit(AuthState.authenticated(session));
     } on ApiException catch (error) {
       emit(AuthState.failure(error.message));
@@ -68,6 +95,8 @@ class AuthCubit extends Cubit<AuthState> {
     emit(const AuthState.loading());
     try {
       final session = await _repository.login(email: email, password: password);
+      // Connect WebSocket after successful login
+      _connectSocket(session);
       emit(AuthState.authenticated(session));
     } on ApiException catch (error) {
       emit(AuthState.failure(error.message));
@@ -101,6 +130,8 @@ class AuthCubit extends Cubit<AuthState> {
   }
 
   Future<void> logout() async {
+    // Disconnect WebSocket before logout
+    _disconnectSocket();
     await _repository.logout();
     emit(const AuthState.unauthenticated());
   }
@@ -147,10 +178,17 @@ class AuthCubit extends Cubit<AuthState> {
         newPhone: newPhone,
         code: code,
       );
-      // Phone change invalidates token, user must log in again
+      // Phone change invalidates token, disconnect socket and require re-login
+      _disconnectSocket();
       emit(AuthState.phoneChangeSuccess(message: message));
     } on ApiException catch (error) {
       emit(AuthState.failure(error.message));
     }
+  }
+
+  @override
+  Future<void> close() {
+    _disconnectSocket();
+    return super.close();
   }
 }

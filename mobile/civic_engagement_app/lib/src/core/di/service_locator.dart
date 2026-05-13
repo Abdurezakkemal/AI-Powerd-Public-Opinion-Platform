@@ -14,6 +14,7 @@ import '../../features/citizen/presentation/cubit/profile_cubit.dart';
 import '../../features/citizen/presentation/cubit/vote_cubit.dart';
 import '../config/app_config.dart';
 import '../network/api_client.dart';
+import '../services/notification_socket_service.dart';
 import '../session/session_store.dart';
 
 final serviceLocator = GetIt.instance;
@@ -38,18 +39,31 @@ Future<void> configureDependencies({bool reset = false}) async {
         baseUrls: AppConfig.apiBaseUrls,
       ),
     )
+    // NEW: Register WebSocket service for real-time notifications
+    ..registerLazySingleton<NotificationSocketService>(
+      NotificationSocketService.new,
+    )
     ..registerLazySingleton<AuthRepository>(
       () => AuthRepositoryImpl(serviceLocator(), serviceLocator()),
     )
     ..registerLazySingleton<CitizenRepository>(
       () => CitizenRepositoryImpl(serviceLocator(), serviceLocator()),
     )
-    ..registerFactory<AuthCubit>(() => AuthCubit(serviceLocator()))
+    ..registerFactory<AuthCubit>(
+      () => AuthCubit(
+        serviceLocator(),
+        serviceLocator(),
+      ),
+    )
     ..registerFactory<ProfileCubit>(() => ProfileCubit(serviceLocator()))
     ..registerFactory<PolicyCubit>(() => PolicyCubit(serviceLocator()))
     ..registerFactory<VoteCubit>(() => VoteCubit(serviceLocator()))
     ..registerFactory<HistoryCubit>(() => HistoryCubit(serviceLocator()))
+    // UPDATED: Pass socket service to NotificationsCubit
     ..registerFactory<NotificationsCubit>(
-      () => NotificationsCubit(serviceLocator()),
+      () => NotificationsCubit(
+        serviceLocator(),
+        serviceLocator(),
+      ),
     );
 }
