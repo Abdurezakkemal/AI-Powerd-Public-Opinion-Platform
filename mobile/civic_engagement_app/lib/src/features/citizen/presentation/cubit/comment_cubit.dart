@@ -1,6 +1,7 @@
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../domain/entities/comment.dart';
+import '../../domain/entities/user_interaction.dart';
 import '../../domain/repositories/citizen_repository.dart';
 import 'comment_state.dart';
 
@@ -224,6 +225,21 @@ class CommentCubit extends Cubit<CommentState> {
         text: text,
         parentCommentId: parentCommentId,
       );
+      
+      // Record comment interaction for personalized feed (only for top-level comments)
+      if (parentCommentId == null) {
+        try {
+          await _repository.recordInteraction(
+            UserInteraction(
+              policyId: policyId,
+              type: InteractionType.comment,
+            ),
+          );
+        } catch (_) {
+          // Silently fail - don't block comment success
+        }
+      }
+      
       emit(CommentPosted(message));
       // Reset to initial state after a brief delay to allow UI to react
       await Future.delayed(const Duration(milliseconds: 100));

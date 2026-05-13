@@ -22,6 +22,13 @@ router.get(
   commentController.getPolicyComments,
 );
 
+// Get replies for a comment (MUST be before /:id route)
+router.get(
+  "/:commentId/replies",
+  auth(["citizen", "planner", "admin"]),
+  commentController.getCommentReplies,
+);
+
 // Get single comment by ID (citizens & moderators)
 router.get(
   "/:id",

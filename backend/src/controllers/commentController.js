@@ -53,20 +53,40 @@ exports.postComment = async (req, res) => {
       );
     }
 
-    // For top-level comments (not replies), check if user already commented on this policy
+    // For top-level comments (not replies), check if user already has a comment linked to their vote
     if (!parentCommentId) {
-      const existingComment = await Comment.findOne({
+      // First, find the user's vote for this policy
+      const Vote = require("../models/Vote");
+      const userVote = await Vote.findOne({
         policyId,
         userId: req.user.id,
-        parentCommentId: null,
       });
-      if (existingComment) {
+      
+      // If user has a vote, check if there's already a comment linked to it
+      if (userVote) {
+        const existingComment = await Comment.findOne({
+          policyId,
+          userId: req.user.id,
+          voteId: userVote._id,
+          parentCommentId: null,
+        });
+        if (existingComment) {
+          return sendError(
+            res,
+            ErrorCodes.DUPLICATE,
+            "You have already commented on this policy",
+            null,
+            409,
+          );
+        }
+      } else {
+        // User hasn't voted yet, so they can't comment
         return sendError(
           res,
-          ErrorCodes.DUPLICATE,
-          "You have already commented on this policy",
+          ErrorCodes.FORBIDDEN,
+          "You must vote on this policy before commenting",
           null,
-          409,
+          403,
         );
       }
     }
@@ -94,9 +114,24 @@ exports.postComment = async (req, res) => {
     };
 
     const isReply = !!parentCommentId;
+    
+    // For top-level comments, try to link to existing vote
+    let voteId = null;
+    if (!isReply) {
+      const Vote = require("../models/Vote");
+      const existingVote = await Vote.findOne({
+        policyId,
+        userId: req.user.id,
+      });
+      if (existingVote) {
+        voteId = existingVote._id;
+      }
+    }
+    
     const comment = new Comment({
       policyId,
       userId: req.user.id,
+      voteId: voteId,
       parentCommentId: parentCommentId || null,
       text,
       demographics: demographicsSnapshot,
@@ -271,6 +306,75 @@ exports.getCommentById = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to retrieve comment",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== GET REPLIES FOR A COMMENT ==========
+exports.getCommentReplies = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    // Verify parent comment exists
+    const parentComment = await Comment.findById(commentId);
+    if (!parentComment) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Parent comment not found",
+        null,
+        404,
+      );
+    }
+
+    // Citizens see only visible replies
+    const filter = {
+      parentCommentId: commentId,
+      visibility: "visible",
+    };
+
+    const replies = await Comment.find(filter)
+      .sort({ createdAt: 1 }) // Replies in chronological order
+      .skip((page - 1) * limit)
+      .limit(Number(limit))
+      .populate("userId", "email")
+      .lean();
+
+    const formatted = replies.map((c) => ({
+      id: c._id,
+      text: c.text,
+      sentiment: c.sentiment?.label,
+      keywords: c.keywords,
+      isOfficialReply: c.isOfficialReply,
+      createdAt: c.createdAt,
+      userId: c.userId?._id,
+      userEmail: c.userId?.email,
+      isEdited: c.editedHistory && c.editedHistory.length > 0,
+      parentCommentId: c.parentCommentId,
+      policyId: c.policyId,
+      visibility: c.visibility,
+      moderationStatus: c.moderationStatus,
+      hiddenReason: c.hiddenReason,
+      reportCount: c.reportCount,
+      appeal: c.appeal,
+    }));
+
+    const total = await Comment.countDocuments(filter);
+
+    return sendSuccess(
+      res,
+      { replies: formatted, total, page: Number(page) },
+      "Replies retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Get comment replies error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve replies",
       null,
       500,
     );

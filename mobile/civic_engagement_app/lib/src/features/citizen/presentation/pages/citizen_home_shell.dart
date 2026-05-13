@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/di/service_locator.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../domain/repositories/citizen_repository.dart';
+import '../cubit/feed_cubit.dart';
 import '../cubit/notifications_cubit.dart';
 import 'account_page.dart';
+import 'feed_page.dart';
 import 'history_page.dart';
 import 'notifications_page.dart';
 import 'policy_list_page.dart';
@@ -23,11 +27,15 @@ class _CitizenHomeShellState extends State<CitizenHomeShell> {
     return Scaffold(
       body: IndexedStack(
         index: _selectedIndex,
-        children: const [
-          PolicyListPage(),
-          HistoryPage(),
-          NotificationsPage(),
-          AccountPage(),
+        children: [
+          const PolicyListPage(),
+          BlocProvider(
+            create: (_) => FeedCubit(serviceLocator<CitizenRepository>()),
+            child: const FeedPage(),
+          ),
+          const HistoryPage(),
+          const NotificationsPage(),
+          const AccountPage(),
         ],
       ),
       bottomNavigationBar: BlocBuilder<NotificationsCubit, NotificationsState>(
@@ -52,6 +60,11 @@ class _CitizenHomeShellState extends State<CitizenHomeShell> {
                     icon: Icon(Icons.policy_outlined),
                     activeIcon: Icon(Icons.policy_rounded),
                     label: 'Policies',
+                  ),
+                  const BottomNavigationBarItem(
+                    icon: Icon(Icons.recommend_outlined),
+                    activeIcon: Icon(Icons.recommend_rounded),
+                    label: 'For You',
                   ),
                   const BottomNavigationBarItem(
                     icon: Icon(Icons.history_outlined),

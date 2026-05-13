@@ -250,7 +250,7 @@ exports.verifyOtp = async (req, res) => {
 
     return sendSuccess(
       res,
-      { token, role: user.role },
+      { token, role: user.role, userId: user._id },
       "Email verified successfully. You can now log in.",
     );
   } catch (err) {

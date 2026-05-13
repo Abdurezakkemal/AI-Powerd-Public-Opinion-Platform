@@ -170,7 +170,7 @@ exports.getHistory = async (req, res) => {
               policyCode: vote.policyId.policyCode,
             }
           : null,
-        rating: vote.rating,
+        value: vote.value,
         comment: comment?.comment || null,
         channel: vote.channel,
         sentiment: comment?.sentiment?.label || null,

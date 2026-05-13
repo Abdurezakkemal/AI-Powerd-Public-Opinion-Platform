@@ -8,6 +8,8 @@ import '../../domain/entities/policy_page.dart';
 import '../../domain/entities/user_profile.dart';
 import '../../domain/entities/vote_history.dart';
 import '../../domain/entities/vote_receipt.dart';
+import '../../domain/entities/feed_policy.dart';
+import '../../domain/entities/user_interaction.dart';
 import '../../domain/repositories/citizen_repository.dart';
 import '../models/citizen_notification_model.dart';
 import '../models/comment_model.dart';
@@ -15,6 +17,7 @@ import '../models/planner_request_model.dart';
 import '../models/policy_model.dart';
 import '../models/user_profile_model.dart';
 import '../models/vote_history_model.dart';
+import '../models/feed_policy_model.dart';
 
 class CitizenRepositoryImpl implements CitizenRepository {
   CitizenRepositoryImpl(this._apiClient, this._sessionStore);
@@ -363,6 +366,29 @@ class CitizenRepositoryImpl implements CitizenRepository {
     }
     final response = await _apiClient.post('/planners/request', body: body);
     return PlannerRequestModel.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<FeedPolicy>> getPersonalizedFeed() async {
+    final response = await _apiClient.get('/feed');
+    final data = response.data;
+    
+    if (data is! List) {
+      return [];
+    }
+    
+    return data
+        .whereType<Map<String, dynamic>>()
+        .map(FeedPolicyModel.fromJson)
+        .toList();
+  }
+
+  @override
+  Future<void> recordInteraction(UserInteraction interaction) async {
+    await _apiClient.post(
+      '/feed/interact',
+      body: interaction.toJson(),
+    );
   }
 
   static int _toInt(dynamic value, {int fallback = 0}) {

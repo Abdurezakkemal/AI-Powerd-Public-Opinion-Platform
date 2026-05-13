@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/error/api_exception.dart';
 import '../../../../core/state/request_status.dart';
 import '../../domain/entities/vote_receipt.dart';
+import '../../domain/entities/user_interaction.dart';
 import '../../domain/repositories/citizen_repository.dart';
 
 part 'vote_state.dart';
@@ -25,6 +26,19 @@ class VoteCubit extends Cubit<VoteState> {
         value: value,
         comment: comment,
       );
+      
+      // Record vote interaction for personalized feed
+      try {
+        await _repository.recordInteraction(
+          UserInteraction(
+            policyId: policyId,
+            type: InteractionType.vote,
+          ),
+        );
+      } catch (_) {
+        // Silently fail - don't block vote success
+      }
+      
       emit(
         VoteState(
           status: RequestStatus.success,

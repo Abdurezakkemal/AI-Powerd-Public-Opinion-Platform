@@ -6,6 +6,8 @@ import '../entities/policy_page.dart';
 import '../entities/user_profile.dart';
 import '../entities/vote_history.dart';
 import '../entities/vote_receipt.dart';
+import '../entities/feed_policy.dart';
+import '../entities/user_interaction.dart';
 
 abstract class CitizenRepository {
   Future<UserProfile> getProfile();
@@ -107,4 +109,9 @@ abstract class CitizenRepository {
     String? organization,
     required String reason,
   });
+
+  // Personalized Feed (Section 13)
+  Future<List<FeedPolicy>> getPersonalizedFeed();
+
+  Future<void> recordInteraction(UserInteraction interaction);
 }
