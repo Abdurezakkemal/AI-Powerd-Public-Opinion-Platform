@@ -226,7 +226,7 @@ export function PolicyFormPage({ mode }) {
       } else {
         const result = await policyApi.create(payload);
         setCreatedCode(result.policyCode);
-        navigate(`/policies/${result.id}/edit`, { replace: true });
+        navigate("/policies", { replace: true });
       }
     } catch (err) {
       setServerError(getErrorMessage(err, "Failed to save policy"));

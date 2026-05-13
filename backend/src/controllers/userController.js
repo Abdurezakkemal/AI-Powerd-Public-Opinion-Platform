@@ -121,8 +121,12 @@ exports.changePassword = async (req, res) => {
       );
     }
 
-    user.passwordHash = await hashPassword(newPassword);
-    await user.save();
+    const passwordHash = await hashPassword(newPassword);
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { passwordHash } },
+      { runValidators: false },
+    );
 
     await createAuditLog({
       userId: req.user.id,

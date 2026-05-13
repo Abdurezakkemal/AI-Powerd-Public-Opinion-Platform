@@ -50,6 +50,7 @@ export const POLICY_TOPICS = [
 export const POLL_TYPES = ["rating", "binary", "multipleChoice", "likert", "approval", "rankedChoice"];
 
 export const LANGUAGES = [
+  { value: "all", label: "All Languages" },
   { value: "am", label: "Amharic" },
   { value: "om", label: "Oromo" },
   { value: "ti", label: "Tigrinya" },

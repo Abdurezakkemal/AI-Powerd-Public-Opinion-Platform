@@ -22,7 +22,11 @@ export function DashboardPage() {
   const [adminStats, setAdminStats] = useState(null);
   const [policies, setPolicies] = useState([]);
   const [policyStats, setPolicyStats] = useState({ totalVotes: 0, averageRating: 0 });
-  const [trainingLoading, setTrainingLoading] = useState(false);
+
+  // Clear error on component mount
+  useEffect(() => {
+    setError("");
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -76,19 +80,6 @@ export function DashboardPage() {
     };
   }, [role]);
 
-  const completeTraining = async () => {
-    setTrainingLoading(true);
-    setError("");
-    try {
-      await plannerApi.completeTraining();
-      await refreshUser();
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to complete training"));
-    } finally {
-      setTrainingLoading(false);
-    }
-  };
-
   const summary = useMemo(() => {
     if (role === "admin" && adminStats) {
       return {
@@ -121,20 +112,6 @@ export function DashboardPage() {
         }
       />
       <ErrorAlert message={error} />
-
-      {role === "planner" && !user?.trainingCompletedAt ? (
-        <section className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="font-bold text-amber-950">Planner training required</h3>
-              <p className="mt-1 text-sm text-amber-800">Complete the required training checkpoint before creating production policies.</p>
-            </div>
-            <button type="button" disabled={trainingLoading} onClick={completeTraining} className="rounded-lg bg-amber-700 px-4 py-2 text-sm font-bold text-white hover:bg-amber-800 disabled:opacity-50">
-              {trainingLoading ? "Completing..." : "Complete training"}
-            </button>
-          </div>
-        </section>
-      ) : null}
 
       <div className="grid gap-4 md:grid-cols-3">
         <MetricCard label="Active policies" value={formatNumber(summary.activePolicies)} icon={FileText} helper="Currently open for voting" />

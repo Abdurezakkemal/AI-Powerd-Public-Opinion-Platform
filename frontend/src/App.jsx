@@ -5,7 +5,6 @@ import { useAuth } from "./auth/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import { ForgotPasswordPage } from "./pages/ForgotPasswordPage";
 import { ResetPasswordPage } from "./pages/ResetPasswordPage";
-import { ChangePasswordPage } from "./pages/ChangePasswordPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { PoliciesPage } from "./pages/PoliciesPage";
 import { PolicyFormPage } from "./pages/PolicyFormPage";
@@ -14,7 +13,6 @@ import { UsersPage } from "./pages/UsersPage";
 import { CitizenManagementPage } from "./pages/CitizenManagementPage";
 import { CommentModerationPage } from "./pages/CommentModerationPage";
 import { TrendsDashboardPage } from "./pages/TrendsDashboardPage";
-import { AuditLogsPage } from "./pages/AuditLogsPage";
 import { PlannerRequestsPage } from "./pages/PlannerRequestsPage";
 import { CrossAnalyticsPage } from "./pages/CrossAnalyticsPage";
 import { MessagesPage } from "./pages/MessagesPage";
@@ -63,7 +61,6 @@ export default function App() {
         <Route element={<AppShell />}>
           <Route index element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/change-password" element={<ChangePasswordPage />} />
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/analytics/cross" element={<CrossAnalyticsPage />} />
           <Route path="/messages" element={<MessagesPage />} />
@@ -79,7 +76,6 @@ export default function App() {
             <Route path="/planner-requests" element={<PlannerRequestsPage />} />
             <Route path="/comments/pending" element={<CommentModerationPage />} />
             <Route path="/trends" element={<TrendsDashboardPage />} />
-            <Route path="/audit-logs" element={<AuditLogsPage />} />
           </Route>
         </Route>
       </Route>

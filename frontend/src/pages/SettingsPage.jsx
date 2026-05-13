@@ -7,16 +7,39 @@ import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
 import { PageHeader } from "../components/PageHeader";
 import { getErrorMessage } from "../lib/format";
+import { z } from "zod";
+import { useForm } from "react-hook-form";
+
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1, "Current password is required"),
+  newPassword: z.string().min(8, "New password must be at least 8 characters").regex(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/, "Password must contain at least one uppercase letter, one lowercase letter, one number, and one special character"),
+  confirmPassword: z.string().min(1, "Confirm password is required"),
+}).refine((data) => data.newPassword === data.confirmPassword, {
+  message: "Passwords do not match",
+  path: ["confirmPassword"],
+});
 
 export function SettingsPage() {
   const { user, refreshUser } = useAuth();
   const [region, setRegion] = useState(user?.region || "");
   const [emailForm, setEmailForm] = useState({ newEmail: "", code: "" });
-  const [phoneForm, setPhoneForm] = useState({ newPhone: "", code: "" });
   const [loading, setLoading] = useState(!user);
   const [submitting, setSubmitting] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors },
+  } = useForm({
+    defaultValues: {
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    },
+  });
 
   useEffect(() => {
     if (user) {
@@ -39,6 +62,29 @@ export function SettingsPage() {
       setSubmitting("");
     }
   }
+
+  const onPasswordSubmit = async (data) => {
+    setError("");
+    setNotice("");
+
+    const parsed = changePasswordSchema.safeParse(data);
+    if (!parsed.success) {
+      const firstError = parsed.error.issues[0];
+      setError(firstError.message);
+      return;
+    }
+
+    try {
+      setSubmitting("password");
+      await userApi.changePassword(data.currentPassword, data.newPassword);
+      setNotice("Password updated successfully.");
+      reset();
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to change password"));
+    } finally {
+      setSubmitting("");
+    }
+  };
 
   if (loading) return <LoadingState label="Loading settings" />;
 
@@ -67,8 +113,38 @@ export function SettingsPage() {
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
           <h3 className="text-lg font-bold text-slate-950">Password</h3>
-          <p className="mt-2 text-sm text-slate-600">Change your password using the dedicated password form.</p>
-          <Link to="/change-password" className="mt-4 inline-block rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800">Change password</Link>
+          <form className="mt-4 space-y-3" onSubmit={handleSubmit(onPasswordSubmit)}>
+            <label className="block">
+              <span className="text-sm font-semibold text-slate-700">Current password</span>
+              <input
+                type="password"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-teal-600"
+                {...register("currentPassword")}
+              />
+              {errors.currentPassword ? <span className="mt-1 block text-xs font-semibold text-rose-600">{errors.currentPassword.message}</span> : null}
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-slate-700">New password</span>
+              <input
+                type="password"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-teal-600"
+                {...register("newPassword")}
+              />
+              {errors.newPassword ? <span className="mt-1 block text-xs font-semibold text-rose-600">{errors.newPassword.message}</span> : null}
+            </label>
+            <label className="block">
+              <span className="text-sm font-semibold text-slate-700">Confirm new password</span>
+              <input
+                type="password"
+                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-teal-600"
+                {...register("confirmPassword")}
+              />
+              {errors.confirmPassword ? <span className="mt-1 block text-xs font-semibold text-rose-600">{errors.confirmPassword.message}</span> : null}
+            </label>
+            <button disabled={submitting === "password"} type="submit" className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-50">
+              {submitting === "password" ? "Updating..." : "Update password"}
+            </button>
+          </form>
         </section>
 
         <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
@@ -80,16 +156,6 @@ export function SettingsPage() {
             </div>
             <input placeholder="verification code" value={emailForm.code} onChange={(event) => setEmailForm((current) => ({ ...current, code: event.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-teal-600" />
             <button disabled={submitting === "email-verify"} type="button" onClick={() => run("email-verify", () => userApi.verifyEmailChange(emailForm.code), "Email updated.")} className="w-fit rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-50">Verify email</button>
-          </div>
-        </section>
-
-        <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-          <h3 className="text-lg font-bold text-slate-950">Phone change</h3>
-          <div className="mt-4 grid gap-3">
-            <input placeholder="+251912345678" value={phoneForm.newPhone} onChange={(event) => setPhoneForm((current) => ({ ...current, newPhone: event.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-teal-600" />
-            <button disabled={submitting === "phone-request"} type="button" onClick={() => run("phone-request", () => userApi.requestPhoneChange(phoneForm.newPhone), "Phone verification code requested.")} className="w-fit rounded-lg border border-teal-200 px-4 py-2 text-sm font-bold text-teal-700 hover:bg-teal-50 disabled:opacity-50">Send code</button>
-            <input placeholder="verification code" value={phoneForm.code} onChange={(event) => setPhoneForm((current) => ({ ...current, code: event.target.value }))} className="rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-teal-600" />
-            <button disabled={submitting === "phone-verify"} type="button" onClick={() => run("phone-verify", () => userApi.verifyPhoneChange(phoneForm.newPhone, phoneForm.code), "Phone updated. You may need to sign in again.")} className="w-fit rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-50">Verify phone</button>
           </div>
         </section>
       </div>

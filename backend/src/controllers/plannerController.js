@@ -233,8 +233,12 @@ exports.completeTraining = async (req, res) => {
         null,
         400,
       );
-    user.trainingCompletedAt = new Date();
-    await user.save();
+    const completedAt = new Date();
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { trainingCompletedAt: completedAt } },
+      { runValidators: false },
+    );
     await createAuditLog({
       userId: user._id,
       userRole: "planner",
@@ -263,21 +267,15 @@ exports.completeTraining = async (req, res) => {
 exports.searchPlannersByLanguage = async (req, res) => {
   try {
     const { language } = req.query;
-    if (!language || !["am", "om", "ti", "en"].includes(language)) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Valid language code required (am, om, ti, en)",
-        null,
-        400,
-      );
+    
+    let query = { role: "planner", active: true, deletedAt: null };
+    
+    // If language is specified and not "all", filter by language
+    if (language && language !== "all" && ["am", "om", "ti", "en"].includes(language)) {
+      query.languagesSpoken = language;
     }
-    const planners = await User.find({
-      role: "planner",
-      active: true,
-      languagesSpoken: language,
-      deletedAt: null,
-    })
+    
+    const planners = await User.find(query)
       .select("email region languagesSpoken trainingCompletedAt")
       .limit(50);
     return sendSuccess(res, planners, "Planners found");

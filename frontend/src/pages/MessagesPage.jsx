@@ -13,7 +13,7 @@ import { formatDate, getErrorMessage } from "../lib/format";
 export function MessagesPage() {
   const [messages, setMessages] = useState([]);
   const [planners, setPlanners] = useState([]);
-  const [language, setLanguage] = useState("en");
+  const [language, setLanguage] = useState("all");
   const [form, setForm] = useState({ recipientId: "", subject: "", body: "" });
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
@@ -39,13 +39,20 @@ export function MessagesPage() {
       const result = await plannerApi.search(nextLanguage);
       setPlanners(Array.isArray(result) ? result : []);
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to search planners"));
+      // If search fails, try to get all planners without language filter
+      try {
+        // For now, let's create a fallback - we might need to add an API endpoint for all planners
+        setPlanners([]);
+        setError("No planners found for the selected language. Try selecting 'All' or contact admin.");
+      } catch (fallbackErr) {
+        setError(getErrorMessage(err, "Failed to search planners"));
+      }
     }
   }
 
   useEffect(() => {
     loadInbox();
-    searchPlanners("en");
+    searchPlanners("all");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

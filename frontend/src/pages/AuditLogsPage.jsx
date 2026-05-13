@@ -34,6 +34,11 @@ export function AuditLogsPage() {
   });
   const [searchQuery, setSearchQuery] = useState("");
 
+  // Clear error on component mount
+  useEffect(() => {
+    setError("");
+  }, []);
+
   const loadLogs = async () => {
     setLoading(true);
     setError("");
