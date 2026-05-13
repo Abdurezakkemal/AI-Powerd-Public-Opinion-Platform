@@ -274,24 +274,62 @@ exports.deleteMe = async (req, res) => {
   }
 };
 
-// GET /users/me/export – GDPR data portability
+// GET /users/me/export – GDPR data portability with filters
 exports.exportMe = async (req, res) => {
   try {
     const userId = req.user.id;
+    const { startDate, endDate } = req.query;
 
-    const user = await User.findById(userId).select("-passwordHash -phoneHash");
+    // Parse date filters
+    let start = startDate ? new Date(startDate) : null;
+    let end = endDate ? new Date(endDate) : null;
+    if (start && isNaN(start.getTime())) start = null;
+    if (end && isNaN(end.getTime())) end = null;
+    if (start && end && start > end) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "startDate must be before endDate",
+        null,
+        400,
+      );
+    }
+
+    // Build date filter for votes, comments, notifications, messages
+    const dateFilter = {};
+    if (start) dateFilter.$gte = start;
+    if (end) dateFilter.$lte = end;
+
+    const voteFilter = { userId: userId };
+    const commentFilter = { userId: userId };
+    const notificationFilter = { userId: userId };
+    const messageFilter = {
+      $or: [{ senderId: userId }, { recipientId: userId }],
+    };
+    if (Object.keys(dateFilter).length) {
+      voteFilter.createdAt = dateFilter;
+      commentFilter.createdAt = dateFilter;
+      notificationFilter.createdAt = dateFilter;
+      messageFilter.createdAt = dateFilter;
+    }
+
+    // Fetch user profile
+    const user = await User.findById(userId).select(
+      "-passwordHash -phoneHash -tokenVersion",
+    );
     if (!user) {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
     }
 
-    const votes = await Vote.find({ userId: userId })
-      .populate("policyId", "title policyCode")
-      .lean();
-    const comments = await Comment.find({ userId: userId }).lean();
-    const notifications = await Notification.find({ userId: userId }).lean();
-    const messages = await Message.find({
-      $or: [{ senderId: userId }, { recipientId: userId }],
-    }).lean();
+    // Fetch votes, comments, notifications, messages
+    const [votes, comments, notifications, messages, plannerRequests] =
+      await Promise.all([
+        Vote.find(voteFilter).populate("policyId", "title policyCode").lean(),
+        Comment.find(commentFilter).lean(),
+        Notification.find(notificationFilter).lean(),
+        Message.find(messageFilter).lean(),
+        PlannerRequest.find({ userId: userId }).lean(),
+      ]);
 
     const exportData = {
       profile: {
@@ -331,9 +369,19 @@ exports.exportMe = async (req, res) => {
         read: m.read,
         createdAt: m.createdAt,
       })),
+      plannerRequests: plannerRequests.map((r) => ({
+        organization: r.organization,
+        reason: r.reason,
+        status: r.status,
+        createdAt: r.createdAt,
+        reviewedAt: r.reviewedAt,
+        rejectionReason: r.rejectionReason,
+      })),
     };
 
-    logger.info(`User ${userId} exported their data`);
+    logger.info(
+      `User ${userId} exported their data with filters start=${startDate} end=${endDate}`,
+    );
     res.setHeader("Content-Type", "application/json");
     res.setHeader(
       "Content-Disposition",

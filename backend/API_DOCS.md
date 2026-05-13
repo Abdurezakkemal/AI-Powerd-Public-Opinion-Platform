@@ -2756,7 +2756,16 @@ Error responses:
 
 **Authentication required** (citizen, planner, admin).
 
-Downloads a JSON file containing all personal data associated with the user, including profile, votes, comments, notifications, and messages.
+Downloads a JSON file containing all personal data associated with the user, including profile, votes, comments, notifications, messages, and planner requests.
+
+**Query parameters (all optional):**
+
+| Parameter   | Type   | Description                                                                                                        |
+| ----------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
+| `startDate` | string | ISO date (e.g., `2026-05-01`). Filters votes, comments, notifications, and messages created on or after this date. |
+| `endDate`   | string | ISO date. Filters votes, comments, notifications, and messages created on or before this date.                     |
+
+If `startDate` and `endDate` are omitted, all data is exported.
 
 **Response (200 OK):**
 
@@ -2811,16 +2820,27 @@ The JSON structure is as follows:
       "read": true,
       "createdAt": "2026-05-13T13:00:00Z"
     }
+  ],
+  "plannerRequests": [
+    {
+      "organization": "Ministry of Education",
+      "reason": "I want to create policies about school funding.",
+      "status": "pending",
+      "createdAt": "2026-05-01T00:00:00Z",
+      "reviewedAt": null,
+      "rejectionReason": null
+    }
   ]
 }
 ```
 
 **Error responses:**
 
-| Status | Code                    | Message                      |
-| ------ | ----------------------- | ---------------------------- |
-| 404    | `NOT_FOUND`             | "User not found"             |
-| 500    | `INTERNAL_SERVER_ERROR` | "Failed to export user data" |
+| Status | Code                    | Message                            |
+| ------ | ----------------------- | ---------------------------------- |
+| 400    | `VALIDATION_ERROR`      | "startDate must be before endDate" |
+| 404    | `NOT_FOUND`             | "User not found"                   |
+| 500    | `INTERNAL_SERVER_ERROR` | "Failed to export user data"       |
 
 ### 7.7 Request email change
 
