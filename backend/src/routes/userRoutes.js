@@ -11,6 +11,7 @@ router.get("/me", userController.getMe);
 router.put("/me", userController.updateMe);
 router.put("/me/password", userController.changePassword);
 router.delete("/me", userController.deleteMe);
+router.get("/me/export", userController.exportMe); // GDPR data export
 
 // History
 router.get("/me/history", userController.getHistory);
@@ -27,6 +28,8 @@ router.patch(
   userController.markAllNotificationsRead,
 );
 
+// Phone change
 router.post("/me/phone/request", userController.requestPhoneChange);
 router.post("/me/phone/verify", userController.verifyPhoneChange);
+
 module.exports = router;

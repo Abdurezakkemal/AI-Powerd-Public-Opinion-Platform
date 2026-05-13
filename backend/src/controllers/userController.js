@@ -2,11 +2,13 @@ const User = require("../models/User");
 const Vote = require("../models/Vote");
 const Comment = require("../models/Comment");
 const Notification = require("../models/Notification");
+const Message = require("../models/Message");
 const client = require("../config/redis");
 const {
   hashPassword,
   comparePassword,
   generateOTP,
+  hashPhone,
 } = require("../utils/helpers");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
@@ -201,7 +203,7 @@ exports.getHistory = async (req, res) => {
   }
 };
 
-// DELETE /users/me
+// DELETE /users/me – GDPR compliant anonymisation
 exports.deleteMe = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -212,15 +214,34 @@ exports.deleteMe = async (req, res) => {
 
     const originalEmail = user.email;
 
-    user.email = `deleted_${user._id}@deleted.com`;
-    user.passwordHash = "deleted";
-    user.phoneHash = null;
+    // Anonymise profile – use valid placeholder values from enums
+    user.email = `deleted_${Date.now()}_${user._id}@anonymised.com`;
+    user.region = "Addis Ababa"; // valid region
+    user.ageRange = "18-24"; // valid age range
+    user.gender = "prefer-not-to-say"; // valid gender
+    user.occupation = "other"; // valid occupation
+    user.education = "no-formal"; // valid education
+    user.phoneHash = null; // allows re‑registration with same phone
     user.active = false;
-    user.verified = false;
+    user.tokenVersion += 1; // invalidate any existing JWTs
     await user.save();
 
-    await Vote.updateMany({ userId: userId }, { $unset: { userId: "" } });
-    await Comment.updateMany({ userId: userId }, { $unset: { userId: "" } });
+    // Unlink votes and comments
+    await Vote.updateMany({ userId: userId }, { $set: { userId: null } });
+    await Comment.updateMany({ userId: userId }, { $set: { userId: null } });
+
+    // Delete notifications and messages
+    await Notification.deleteMany({ userId: userId });
+    // Only delete messages if the Message model exists
+    try {
+      const Message = require("../models/Message");
+      await Message.deleteMany({
+        $or: [{ senderId: userId }, { recipientId: userId }],
+      });
+    } catch (msgErr) {
+      // Message model not defined – ignore
+      logger.info("Message model not loaded; skipping message deletion");
+    }
 
     await createAuditLog({
       userId: userId,
@@ -237,6 +258,8 @@ exports.deleteMe = async (req, res) => {
       "Account deleted successfully. Your data has been anonymized.",
     );
   } catch (err) {
+    console.error("=== DELETE ACCOUNT ERROR ===");
+    console.error(err);
     logger.error(
       { error: err.message, stack: err.stack },
       "Delete account error",
@@ -244,7 +267,88 @@ exports.deleteMe = async (req, res) => {
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to delete account",
+      err.message || "Failed to delete account",
+      null,
+      500,
+    );
+  }
+};
+
+// GET /users/me/export – GDPR data portability
+exports.exportMe = async (req, res) => {
+  try {
+    const userId = req.user.id;
+
+    const user = await User.findById(userId).select("-passwordHash -phoneHash");
+    if (!user) {
+      return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+    }
+
+    const votes = await Vote.find({ userId: userId })
+      .populate("policyId", "title policyCode")
+      .lean();
+    const comments = await Comment.find({ userId: userId }).lean();
+    const notifications = await Notification.find({ userId: userId }).lean();
+    const messages = await Message.find({
+      $or: [{ senderId: userId }, { recipientId: userId }],
+    }).lean();
+
+    const exportData = {
+      profile: {
+        email: user.email,
+        region: user.region,
+        ageRange: user.ageRange,
+        gender: user.gender,
+        occupation: user.occupation,
+        education: user.education,
+        createdAt: user.createdAt,
+      },
+      votes: votes.map((v) => ({
+        policyId: v.policyId?._id || v.policyId,
+        policyTitle: v.policyId?.title,
+        policyCode: v.policyId?.policyCode,
+        value: v.value,
+        channel: v.channel,
+        createdAt: v.createdAt,
+      })),
+      comments: comments.map((c) => ({
+        text: c.text,
+        sentiment: c.sentiment,
+        keywords: c.keywords,
+        createdAt: c.createdAt,
+      })),
+      notifications: notifications.map((n) => ({
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        read: n.read,
+        createdAt: n.createdAt,
+      })),
+      messages: messages.map((m) => ({
+        direction: m.senderId.toString() === userId ? "sent" : "received",
+        subject: m.subject,
+        body: m.body,
+        read: m.read,
+        createdAt: m.createdAt,
+      })),
+    };
+
+    logger.info(`User ${userId} exported their data`);
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="user-data-${Date.now()}.json"`,
+    );
+    return res.send(JSON.stringify(exportData, null, 2));
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Export user data error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to export user data",
       null,
       500,
     );
@@ -465,7 +569,7 @@ exports.requestPhoneChange = async (req, res) => {
 
     const otp = generateOTP();
     const key = `phone_change:otp:${req.user.id}:${newPhone}`;
-    await redisClient.setEx(key, 300, otp);
+    await client.setEx(key, 300, otp);
 
     // Send OTP via SMS (mock: console.log)
     logger.info(`[MOCK SMS] Phone change OTP for ${newPhone}: ${otp}`);
@@ -496,7 +600,7 @@ exports.verifyPhoneChange = async (req, res) => {
       );
 
     const key = `phone_change:otp:${req.user.id}:${newPhone}`;
-    const stored = await redisClient.get(key);
+    const stored = await client.get(key);
     if (!stored || stored !== otp) {
       return sendError(
         res,
@@ -516,7 +620,7 @@ exports.verifyPhoneChange = async (req, res) => {
     user.tokenVersion += 1; // invalidate existing JWTs
     await user.save();
 
-    await redisClient.del(key);
+    await client.del(key);
 
     await createAuditLog({
       userId: user._id,
@@ -538,6 +642,7 @@ exports.verifyPhoneChange = async (req, res) => {
     );
   }
 };
+
 // ==================== NOTIFICATIONS ====================
 
 // GET /users/me/notifications
