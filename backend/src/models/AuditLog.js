@@ -17,4 +17,7 @@ const auditLogSchema = new mongoose.Schema({
 });
 
 auditLogSchema.index({ userId: 1, timestamp: -1 });
+// TTL index: automatically delete documents after 90 days (7776000 seconds)
+auditLogSchema.index({ timestamp: 1 }, { expireAfterSeconds: 7776000 });
+
 module.exports = mongoose.model("AuditLog", auditLogSchema);

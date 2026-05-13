@@ -240,6 +240,11 @@ exports.create = async (req, res) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
     const now = new Date();
+    
+    // Normalize dates to midnight for fair comparison (ignore time component)
+    start.setHours(0, 0, 0, 0);
+    now.setHours(0, 0, 0, 0);
+    
     if (start < now)
       return sendError(
         res,

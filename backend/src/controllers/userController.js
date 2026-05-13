@@ -2,12 +2,14 @@ const User = require("../models/User");
 const Vote = require("../models/Vote");
 const Comment = require("../models/Comment");
 const Notification = require("../models/Notification");
+const Message = require("../models/Message");
 const client = require("../config/redis");
 const {
   hashPassword,
   comparePassword,
   hashPhone,
   generateOTP,
+  hashPhone,
 } = require("../utils/helpers");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
@@ -122,8 +124,12 @@ exports.changePassword = async (req, res) => {
       );
     }
 
-    user.passwordHash = await hashPassword(newPassword);
-    await user.save();
+    const passwordHash = await hashPassword(newPassword);
+    await User.updateOne(
+      { _id: user._id },
+      { $set: { passwordHash } },
+      { runValidators: false },
+    );
 
     await createAuditLog({
       userId: req.user.id,
@@ -198,7 +204,7 @@ exports.getHistory = async (req, res) => {
   }
 };
 
-// DELETE /users/me
+// DELETE /users/me – GDPR compliant anonymisation
 exports.deleteMe = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -209,15 +215,34 @@ exports.deleteMe = async (req, res) => {
 
     const originalEmail = user.email;
 
-    user.email = `deleted_${user._id}@deleted.com`;
-    user.passwordHash = "deleted";
-    user.phoneHash = null;
+    // Anonymise profile – use valid placeholder values from enums
+    user.email = `deleted_${Date.now()}_${user._id}@anonymised.com`;
+    user.region = "Addis Ababa"; // valid region
+    user.ageRange = "18-24"; // valid age range
+    user.gender = "prefer-not-to-say"; // valid gender
+    user.occupation = "other"; // valid occupation
+    user.education = "no-formal"; // valid education
+    user.phoneHash = null; // allows re‑registration with same phone
     user.active = false;
-    user.verified = false;
+    user.tokenVersion += 1; // invalidate any existing JWTs
     await user.save();
 
-    await Vote.updateMany({ userId: userId }, { $unset: { userId: "" } });
-    await Comment.updateMany({ userId: userId }, { $unset: { userId: "" } });
+    // Unlink votes and comments
+    await Vote.updateMany({ userId: userId }, { $set: { userId: null } });
+    await Comment.updateMany({ userId: userId }, { $set: { userId: null } });
+
+    // Delete notifications and messages
+    await Notification.deleteMany({ userId: userId });
+    // Only delete messages if the Message model exists
+    try {
+      const Message = require("../models/Message");
+      await Message.deleteMany({
+        $or: [{ senderId: userId }, { recipientId: userId }],
+      });
+    } catch (msgErr) {
+      // Message model not defined – ignore
+      logger.info("Message model not loaded; skipping message deletion");
+    }
 
     await createAuditLog({
       userId: userId,
@@ -234,6 +259,8 @@ exports.deleteMe = async (req, res) => {
       "Account deleted successfully. Your data has been anonymized.",
     );
   } catch (err) {
+    console.error("=== DELETE ACCOUNT ERROR ===");
+    console.error(err);
     logger.error(
       { error: err.message, stack: err.stack },
       "Delete account error",
@@ -241,7 +268,136 @@ exports.deleteMe = async (req, res) => {
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to delete account",
+      err.message || "Failed to delete account",
+      null,
+      500,
+    );
+  }
+};
+
+// GET /users/me/export – GDPR data portability with filters
+exports.exportMe = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { startDate, endDate } = req.query;
+
+    // Parse date filters
+    let start = startDate ? new Date(startDate) : null;
+    let end = endDate ? new Date(endDate) : null;
+    if (start && isNaN(start.getTime())) start = null;
+    if (end && isNaN(end.getTime())) end = null;
+    if (start && end && start > end) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "startDate must be before endDate",
+        null,
+        400,
+      );
+    }
+
+    // Build date filter for votes, comments, notifications, messages
+    const dateFilter = {};
+    if (start) dateFilter.$gte = start;
+    if (end) dateFilter.$lte = end;
+
+    const voteFilter = { userId: userId };
+    const commentFilter = { userId: userId };
+    const notificationFilter = { userId: userId };
+    const messageFilter = {
+      $or: [{ senderId: userId }, { recipientId: userId }],
+    };
+    if (Object.keys(dateFilter).length) {
+      voteFilter.createdAt = dateFilter;
+      commentFilter.createdAt = dateFilter;
+      notificationFilter.createdAt = dateFilter;
+      messageFilter.createdAt = dateFilter;
+    }
+
+    // Fetch user profile
+    const user = await User.findById(userId).select(
+      "-passwordHash -phoneHash -tokenVersion",
+    );
+    if (!user) {
+      return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+    }
+
+    // Fetch votes, comments, notifications, messages
+    const [votes, comments, notifications, messages, plannerRequests] =
+      await Promise.all([
+        Vote.find(voteFilter).populate("policyId", "title policyCode").lean(),
+        Comment.find(commentFilter).lean(),
+        Notification.find(notificationFilter).lean(),
+        Message.find(messageFilter).lean(),
+        PlannerRequest.find({ userId: userId }).lean(),
+      ]);
+
+    const exportData = {
+      profile: {
+        email: user.email,
+        region: user.region,
+        ageRange: user.ageRange,
+        gender: user.gender,
+        occupation: user.occupation,
+        education: user.education,
+        createdAt: user.createdAt,
+      },
+      votes: votes.map((v) => ({
+        policyId: v.policyId?._id || v.policyId,
+        policyTitle: v.policyId?.title,
+        policyCode: v.policyId?.policyCode,
+        value: v.value,
+        channel: v.channel,
+        createdAt: v.createdAt,
+      })),
+      comments: comments.map((c) => ({
+        text: c.text,
+        sentiment: c.sentiment,
+        keywords: c.keywords,
+        createdAt: c.createdAt,
+      })),
+      notifications: notifications.map((n) => ({
+        type: n.type,
+        title: n.title,
+        message: n.message,
+        read: n.read,
+        createdAt: n.createdAt,
+      })),
+      messages: messages.map((m) => ({
+        direction: m.senderId.toString() === userId ? "sent" : "received",
+        subject: m.subject,
+        body: m.body,
+        read: m.read,
+        createdAt: m.createdAt,
+      })),
+      plannerRequests: plannerRequests.map((r) => ({
+        organization: r.organization,
+        reason: r.reason,
+        status: r.status,
+        createdAt: r.createdAt,
+        reviewedAt: r.reviewedAt,
+        rejectionReason: r.rejectionReason,
+      })),
+    };
+
+    logger.info(
+      `User ${userId} exported their data with filters start=${startDate} end=${endDate}`,
+    );
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="user-data-${Date.now()}.json"`,
+    );
+    return res.send(JSON.stringify(exportData, null, 2));
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Export user data error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to export user data",
       null,
       500,
     );
@@ -535,6 +691,7 @@ exports.verifyPhoneChange = async (req, res) => {
     );
   }
 };
+
 // ==================== NOTIFICATIONS ====================
 
 // GET /users/me/notifications

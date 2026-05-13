@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { adminApi } from "../api/admin";
 import { analyticsApi } from "../api/analytics";
+import { plannerApi } from "../api/planners";
 import { policyApi } from "../api/policies";
 import { useAuth } from "../auth/AuthContext";
 import { AIHealthCard } from "../components/AIHealthCard";
@@ -15,12 +16,17 @@ import { StatusBadge } from "../components/StatusBadge";
 import { formatDate, formatNumber, formatRating, getErrorMessage } from "../lib/format";
 
 export function DashboardPage() {
-  const { role } = useAuth();
+  const { role, user, refreshUser } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [adminStats, setAdminStats] = useState(null);
   const [policies, setPolicies] = useState([]);
   const [policyStats, setPolicyStats] = useState({ totalVotes: 0, averageRating: 0 });
+
+  // Clear error on component mount
+  useEffect(() => {
+    setError("");
+  }, []);
 
   useEffect(() => {
     let active = true;

@@ -1,4 +1,4 @@
-import { BarChart3, FileText, LayoutDashboard, LogOut, Menu, Users, X, AlertCircle, TrendingUp, Clock, Lock } from "lucide-react";
+import { BarChart3, Bell, FileText, Inbox, LayoutDashboard, LogOut, Menu, Settings, Users, X, AlertCircle, TrendingUp, Lock } from "lucide-react";
 import { useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
@@ -6,14 +6,18 @@ import { useAuth } from "../auth/AuthContext";
 const baseLinks = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/policies", label: "Policies", icon: FileText },
+  { to: "/analytics/cross", label: "Cross Analytics", icon: BarChart3 },
+  { to: "/messages", label: "Messages", icon: Inbox },
+  { to: "/notifications", label: "Notifications", icon: Bell },
+  { to: "/settings", label: "Settings", icon: Settings },
 ];
 
 const adminLinks = [
   { to: "/users", label: "Planner Accounts", icon: Users },
   { to: "/citizens", label: "Citizens", icon: Users },
+  { to: "/planner-requests", label: "Planner Requests", icon: Users },
   { to: "/comments/pending", label: "Pending Comments", icon: AlertCircle },
   { to: "/trends", label: "Trends", icon: TrendingUp },
-  { to: "/audit-logs", label: "Audit Logs", icon: Clock },
 ];
 
 export function AppShell() {
@@ -94,21 +98,6 @@ export function AppShell() {
           <div className="rounded-lg bg-slate-50 p-3">
             <p className="truncate text-sm font-semibold text-slate-950">{user?.email || "Dashboard user"}</p>
             <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">{role}</p>
-            <NavLink
-              to="/change-password"
-              onClick={() => setSidebarOpen(false)}
-              className={({ isActive }) =>
-                [
-                  "mt-3 flex items-center gap-2 rounded-lg px-2 py-2 text-xs font-semibold transition",
-                  isActive
-                    ? "bg-teal-700 text-white shadow-sm"
-                    : "text-slate-600 hover:bg-slate-100 hover:text-slate-700",
-                ].join(" ")
-              }
-            >
-              <Lock className="h-3.5 w-3.5" />
-              Change password
-            </NavLink>
           </div>
         </div>
       </aside>

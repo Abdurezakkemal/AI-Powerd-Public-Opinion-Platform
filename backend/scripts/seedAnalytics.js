@@ -195,10 +195,16 @@ async function seed() {
         email,
         passwordHash,
         phoneHash: `planner_dummy_${i}_${Date.now()}`,
-        region: "",
+        region: randomItem(ALL_REGIONS),
+        ageRange: randomItem(["25-34", "35-44", "45-54"]),
+        gender: randomItem(["male", "female"]),
+        occupation: randomItem(["government-employee", "private-sector"]),
+        education: randomItem(["bachelors", "postgraduate"]),
+        languagesSpoken: ["en", randomItem(["am", "om", "ti"])],
         role: "planner",
         verified: true,
         active: true,
+        trainingCompletedAt: new Date(),
       });
       await user.save();
       planners.push({ email, _id: user._id.toString() });
@@ -219,6 +225,10 @@ async function seed() {
           passwordHash,
           phoneHash,
           region,
+          ageRange: randomItem(["18-24", "25-34", "35-44", "45-54", "55+"]),
+          gender: randomItem(["male", "female", "non-binary"]),
+          occupation: randomItem(["student", "farmer", "merchant", "government-employee", "private-sector", "unemployed"]),
+          education: randomItem(["no-formal", "primary", "secondary", "diploma", "bachelors"]),
           role: "citizen",
           verified: true,
           active: true,
@@ -298,7 +308,7 @@ async function seed() {
           userId: citizen._id,
           phoneHash: citizen.phoneHash,
           channel: "app",
-          rating,
+          value: rating,
           region: citizen.region,
           createdAt,
         });
@@ -310,11 +320,9 @@ async function seed() {
           const commentText = generateComment(sentimentLabel);
           const sentimentObj = getSentimentObject(sentimentLabel);
           const keywords = extractKeywordsFromComment(commentText);
-          let processed = true;
-          let status = "processed";
+          let moderationStatus = "reviewed";
           if (Math.random() < 0.1) {
-            status = "pending_review";
-            processed = false;
+            moderationStatus = "needs_review";
             sentimentObj.label = "neutral";
             sentimentObj.confidence = 0;
           }
@@ -323,11 +331,10 @@ async function seed() {
             policyId: policy._id,
             userId: citizen._id,
             rating,
-            comment: commentText,
+            text: commentText,
             sentiment: sentimentObj,
             keywords,
-            processed,
-            status,
+            moderationStatus,
             retryCount: 0,
             nextRetry: null,
             createdAt,
@@ -368,7 +375,7 @@ async function seed() {
           userId: null,
           phoneHash,
           channel: "sms",
-          rating,
+          value: rating,
           region: null,
           createdAt,
         });

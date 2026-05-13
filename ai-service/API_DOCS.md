@@ -2,63 +2,52 @@
 
 ## 1. Overview
 
-The AI service provides sentiment analysis and keyword extraction for Ethiopian languages (Amharic, Oromo, Tigrinya) and English. It is a FastAPI application called by the backend worker (not exposed to clients).
+The AI service provides sentiment analysis, keyword extraction, language detection, and policy topic suggestion for Ethiopian languages (Amharic, Oromo, Tigrinya) and English. It acts as a lightweight proxy that forwards requests to dedicated Hugging Face Spaces for remote processing (default mode), with an optional local fallback for development or offline use.
 
-Features:
+**Features**:
 
--Sentiment labels: positive, negative, neutral (with confidence score)
--Keyword extraction (top 5)
--Language detection (fastText with mapping for Oromo dialects)
--Multiple sentiment models per language
--Benchmarking endpoint to compare models
+- Sentiment labels: `positive`, `negative`, `neutral` (with confidence score)
+- Keyword extraction (top 5)
+- Language detection (fastText with mapping for Oromo dialects)
+- Policy topic suggestion (zero‑shot classification)
+- Dual mode: `remote` (uses Spaces) or `local` (uses local models)
 
-## 2. Base URL (internal)
+## 2. Base URL
 
-| Environment    | URL                          |
-| -------------- | ---------------------------- |
-| Local (Docker) | **`http://ai-service:8000`** |
-| Local (direct) | **`http://localhost:8000`**  |
-| Production     | Internal network only        |
+| Environment | URL                     |
+| ----------- | ----------------------- |
+| Local       | `http://localhost:8000` |
+| Production  | Internal network only   |
 
 ## 3. Authentication
 
 All endpoints except `/health` require an internal API key.
 
-Include the key in the request header:
-
-```http
-X-Internal-API-Key: your-internal-api-key
-```
+    X-Internal-API-Key: your-internal-api-key
 
 The key must match the `INTERNAL_API_KEY` environment variable set in both the AI service and the backend. Requests without a valid key receive a `403 Forbidden` response with a JSON error body.
 
 ## 4. Uniform Response Format
 
-The service returns plain JSON (no status wrapper). Error responses are HTTP 500 with a JSON error object.
+Success responses are JSON objects (no `status` wrapper). Error responses return HTTP 500 with a `"detail"` field.
 
-Success example (**`/analyze`**):
+**Success example (`/analyze`)**:
 
 ```json
-{
-  "sentiment": "positive",
-  "confidence": 0.95,
-  "keywords": ["water", "access"],
-  "language": "am",
-  "sentiment_model": "rasyosef/bert-medium-amharic-finetuned-sentiment",
-  "keyword_model": "keybert"
-}
+    {
+      "sentiment": "positive",
+      "confidence": 0.73,
+      "keywords": ["policy", "good"],
+      "language": "am",
+      "sentiment_model": "twitter-xlm-roberta",
+      "keyword_model": "remote_keybert"
+    }
 ```
 
-Special case (cannot analyze):
+**Error example**:
 
 ```json
-{ "status": "cannot_analyze" }
-```
-
-Error example:
-
-```json
-**`{ "detail": "Model loading failed" }`**
+    { "detail": "Model loading failed" }
 ```
 
 ## 5. Endpoints
@@ -67,216 +56,199 @@ Error example:
 
 Primary endpoint for sentiment and keyword extraction.
 
-Request body:
+**Request body**:
 
-| Field    | Type   | Required | Description                                                                 |
-| -------- | ------ | -------- | --------------------------------------------------------------------------- |
-| text     | string | yes      | Comment text (max 500 chars)                                                |
-| language | string | no       | ISO code (**`am`**, **`om`**, **`ti`**, **`en`**); auto‑detected if omitted |
+| Field      | Type   | Required | Description                                                 |
+| ---------- | ------ | -------- | ----------------------------------------------------------- |
+| `text`     | string | yes      | Comment text (max 2000 characters)                          |
+| `language` | string | no       | ISO code (`am`, `om`, `ti`, `en`); auto‑detected if omitted |
 
-Response (200 OK):
+**Response (200 OK)**:
 
-| Field                 | Type             | Description                                      |
-| --------------------- | ---------------- | ------------------------------------------------ |
-| **`sentiment`**       | string           | **`positive`**, **`negative`**, or **`neutral`** |
-| **`confidence`**      | float            | 0.0–1.0                                          |
-| **`keywords`**        | array of strings | Top 5 keywords                                   |
-| **`language`**        | string           | Detected or provided language code               |
-| **`sentiment_model`** | string           | HuggingFace model ID used                        |
-| **`keyword_model`**   | string           | Always keybert                                   |
+| Field             | Type             | Description                                          |
+| ----------------- | ---------------- | ---------------------------------------------------- |
+| `sentiment`       | string           | `positive`, `negative`, or `neutral`                 |
+| `confidence`      | float            | 0.0–1.0                                              |
+| `keywords`        | array of strings | Top 5 keywords                                       |
+| `language`        | string           | Detected or provided language code                   |
+| `sentiment_model` | string           | Model used (e.g., `twitter-xlm-roberta`)             |
+| `keyword_model`   | string           | `remote_keybert` (remote) or `local_keybert` (local) |
 
-Special response (200 OK):
+**Error responses**:
 
-```json
-{ "status": "cannot_analyze" }
-```
+| Status | Code                  | Description                |
+| ------ | --------------------- | -------------------------- |
+| 403    | Forbidden             | Invalid or missing API key |
+| 500    | Internal Server Error | JSON with `"detail"` field |
 
-(occurs when text is empty or cannot be processed)
+### 5.2 POST /suggest-topics
 
-Error responses:
+Suggests policy topics from a predefined list using zero‑shot classification. Supports Amharic, Oromo, Tigrinya, and English.
 
-| Status | Code                  | Description                  |
-| ------ | --------------------- | ---------------------------- |
-| 500    | Internal Server Error | JSON with **`detail`** field |
+**Request body**:
 
-### 5.2 POST /benchmark
+| Field              | Type   | Required | Description                                     |
+| ------------------ | ------ | -------- | ----------------------------------------------- |
+| `text`             | string | yes      | Policy title + description (min 10 characters)  |
+| `candidate_topics` | array  | no       | Custom topic list (default uses 30+ categories) |
 
-Runs all sentiment models for the detected language and returns comparison results.
-
-Request body: same as **`/analyze`**.
-
-Response (200 OK):
-
-| Field                      | Type   | Description                                                                                          |
-| -------------------------- | ------ | ---------------------------------------------------------------------------------------------------- |
-| **`text`**                 | string | Normalised input text                                                                                |
-| **`detected_language`**    | string | Two‑letter code                                                                                      |
-| **`detection_raw_label`**  | string | Raw fastText label (e.g., **`__label__amh_Ethi`**)                                                   |
-| **`detection_confidence`** | float  | fastText confidence                                                                                  |
-| **`results`**              | array  | List of model results (each with **`model_name`**, **`sentiment`**, **`confidence`**, **`time_ms`**) |
-| **`keywords`**             | array  | Top keywords from default model                                                                      |
-| **`keyword_model`**        | string | Always **`keybert`**                                                                                 |
-
-Example response:
+**Response (200 OK)**:
 
 ```json
-{
-  "text": "ይህ ፖሊሲ ጥሩ ነው",
-  "detected_language": "am",
-  "detection_raw_label": "**`__label__amh_Ethi`**",
-  "detection_confidence": 0.98,
-  "results": [
     {
-      "model_name": "rasyosef/bert-medium-amharic-finetuned-sentiment",
-      "sentiment": "positive",
-      "confidence": 0.95,
-      "time_ms": 45.2
-    },
-    {
-      "model_name": "Hailay/FT_EXLMR",
-      "sentiment": "positive",
-      "confidence": 0.91,
-      "time_ms": 123.5
+      "topics": [
+        { "topic": "Roads", "confidence": 0.76 },
+        { "topic": "Transport", "confidence": 0.06 },
+        { "topic": "Public Safety", "confidence": 0.02 }
+      ]
     }
-  ],
-  "keywords": ["ፖሊሲ", "ጥሩ"],
-  "keyword_model": "keybert"
-}
 ```
 
-Error responses: same as **`/analyze`**.
+**Default topics** (if `candidate_topics` not provided):
+
+- Health
+- Education
+- Water Supply
+- Electricity
+- Housing
+- Transport
+- Roads
+- Bridges
+- Railways
+- Airports
+- Digital Infrastructure
+- Agriculture
+- Irrigation
+- Livestock
+- Forestry
+- Environment
+- Climate Change
+- Economy
+- Employment
+- Small Business
+- Industry
+- Trade
+- Tourism
+- Social Protection
+- Pension
+- Disability Support
+- Food Security
+- Poverty Reduction
+- Governance
+- Justice
+- Police
+- Defense
+- Public Safety
+- Urban Planning
+- Rural Development
+- Land Administration
+- Migration
+- Sports
+- Culture
+- Youth
+- Women Affairs
+- Diaspora
+
+**Error responses**: 500 with `{"detail": "..."}`.
 
 ### 5.3 GET /health
 
-Health check.
+Health check. Returns `{"status": "ok"}`.
 
-Response (200 OK):
+### 5.4 POST /benchmark (Deprecated)
 
-```json
-{ "status": "ok" }
-```
+Removed in remote mode. Returns `501 Not Implemented`. (Available only in local mode for model comparison.)
 
-## 5.4 POST /suggest-topics
+## 6. Environment Variables
 
-**New endpoint** – suggests policy topics from a predefined list using zero‑shot classification. Supports Amharic, Oromo, Tigrinya, and English.
+| Variable              | Description                                 | Default                                                    |
+| --------------------- | ------------------------------------------- | ---------------------------------------------------------- |
+| `AI_MODE`             | `remote` (use Spaces) or `local` (fallback) | `remote`                                                   |
+| `LANGID_SPACE_URL`    | URL of fasttext‑langid Space                | `https://abyayel-fasttext-langid.hf.space/detect`          |
+| `SENTIMENT_SPACE_URL` | URL of sentiment‑models Space               | `https://abyayel-sentiment-models.hf.space/sentiment`      |
+| `TOPIC_SPACE_URL`     | URL of topic‑model Space                    | `https://abyayel-topic-model.hf.space/suggest-topics`      |
+| `KEYWORD_SPACE_URL`   | URL of keyword‑extractor Space              | `https://abyayel-keyword-extractor.hf.space/extract`       |
+| `INTERNAL_API_KEY`    | Internal API key for authentication         | (must be set in production)                                |
+| `FASTTEXT_MODEL_PATH` | Local fastText model path (local mode)      | `lid.176.ftz` (compressed) or auto‑downloaded 1.2 GB model |
 
-**Request body:**
+## 7. Language Detection
 
-| Field            | Type   | Required | Description                                             |
-| ---------------- | ------ | -------- | ------------------------------------------------------- |
-| text             | string | yes      | Policy title and description (min 10 chars)             |
-| candidate_topics | array  | no       | Custom topic list (if omitted, uses default 30+ topics) |
+- **Remote**: Uses `fasttext-langid` Space (Facebook 1.2 GB model, hosted in cloud).
+- **Local**: Uses the same Facebook model (auto‑downloaded) or compressed `lid.176.ftz`.
 
-**Response (200 OK):**
+**Mapping of fastText labels to our language codes**:
 
-| Field  | Type  | Description                                                 |
-| ------ | ----- | ----------------------------------------------------------- |
-| topics | array | List of objects with `topic` and `confidence` (sorted desc) |
+| Language | Our Code | fastText label(s) mapped to our code           |
+| -------- | -------- | ---------------------------------------------- |
+| Amharic  | `am`     | `amh_Ethi`                                     |
+| Tigrinya | `ti`     | `tir_Ethi`                                     |
+| Oromo    | `om`     | `orm_Latn`, `gaz_Latn`, `gax_Latn`, `hae_Latn` |
+| English  | `en`     | `eng_Latn`                                     |
 
-**Example response:**
+If detection fails (confidence too low or no label), the service defaults to `en`.
 
-```json
-{
-  "topics": [
-    { "topic": "Health", "confidence": 0.417 },
-    { "topic": "Poverty Reduction", "confidence": 0.162 },
-    { "topic": "Infrastructure", "confidence": 0.144 }
-  ]
-}
-```
+## 8. Sentiment Models
 
-**Error responses:** same as `/analyze` (500 with `{"detail": "..."}`).
+**Remote mode (default)**:
 
-**Default topics** (30+ categories for policy domains):
+The sentiment Space loads two models:
 
-    - Health, Education, Water Supply, Electricity, Housing, Transport, Roads, Bridges, Railways, Airports, Digital Infrastructure
-    - Agriculture, Irrigation, Livestock, Forestry, Environment, Climate Change
-    - Economy, Employment, Small Business, Industry, Trade, Tourism
-    - Social Protection, Pension, Disability Support, Food Security, Poverty Reduction
-    - Governance, Justice, Police, Defense, Public Safety
-    - Urban Planning, Rural Development, Land Administration, Migration
-    - Sports, Culture, Youth, Women Affairs, Diaspora
+- **Amharic / English**: `cardiffnlp/twitter-xlm-roberta-base-sentiment` (supports neutral)
+- **Tigrinya**: `fgaim/tiroberta-sentiment` (binary positive/negative only; neutral is approximated by fallback)
 
-## 6. Language Detection
+**Local mode**: The original model registry is used, which includes additional models:
 
-Uses fastText with model **`lid.176.bin`** (1.2 GB). Auto‑downloads on first run if not present.
+| Language              | Model ID                                           |
+| --------------------- | -------------------------------------------------- |
+| Amharic               | `rasyosef/bert-medium-amharic-finetuned-sentiment` |
+| Amharic (additional)  | `Hailay/FT_EXLMR`                                  |
+| Oromo                 | `Hailay/FT_EXLMR`                                  |
+| Tigrinya              | `fgaim/tiroberta-sentiment`                        |
+| Tigrinya (additional) | `Hailay/FT_EXLMR`                                  |
+| English               | `cardiffnlp/twitter-xlm-roberta-base-sentiment`    |
 
-Supported languages and detection mapping:
+All models are lazy‑loaded and cached in memory.
 
-| Language | Code     | Example fastText labels                                                                            |
-| -------- | -------- | -------------------------------------------------------------------------------------------------- |
-| Amharic  | **`am`** | **`__label__amh_Ethi`**                                                                            |
-| Oromo    | **`om`** | **`__label__gaz_Latn`**, **`__label__orm_Latn`**, **`__label__hae_Latn`** (all mapped to **`om`**) |
-| Tigrinya | **`ti`** | **`__label__tir_Ethi`**                                                                            |
-| English  | **`en`** | **`__label__eng_Latn`**                                                                            |
+## 9. Keyword Extraction
 
-If confidence is low or detection fails, the service defaults to en.
+- **Remote mode**: Uses a Space with `sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2` + KeyBERT. Returns top 5 keywords.
+- **Local mode**: Uses the same KeyBERT setup with the multilingual sentence transformer. Stopwords are used for Amharic, Oromo, Tigrinya, and English.
 
-## 7. Sentiment Models
+## 10. Limitations
 
-Models are lazy‑loaded and cached in memory.
-
-| Language              | Model ID                                               | Type     |
-| --------------------- | ------------------------------------------------------ | -------- |
-| Amharic               | **`rasyosef/bert-medium-amharic-finetuned-sentiment`** | Pipeline |
-| Amharic (additional)  | **`Hailay/FT_EXLMR`**                                  | Custom   |
-| Oromo                 | **`Hailay/FT_EXLMR`**                                  | Custom   |
-| Tigrinya              | **`fgaim/tiroberta-sentiment`**                        | Pipeline |
-| Tigrinya (additional) | **`Hailay/FT_EXLMR`**                                  | Custom   |
-| English               | **`cardiffnlp/twitter-xlm-roberta-base-sentiment`**    | Pipeline |
-
-## 8. Keyword Extraction
-
-- Model: KeyBERT with sentence transformer **`paraphrase-multilingual-MiniLM-L12-v2`**
-- Output: Top 5 keywords (cleaned, deduplicated, min length 3)
-- Stopwords: Used for Amharic, Oromo, Tigrinya, English
-
-The keyword model is also lazy‑loaded and cached.
-
-## 9. Limitations
-
-| Issue                      | Description                                                                                           |
-| -------------------------- | ----------------------------------------------------------------------------------------------------- |
-| Romanised Amharic/Tigrinya | Latin script text may be detected as English. Use Ethiopic script for best results.                   |
-| Oromo dialects             | fastText dialect codes (**`gaz`**,**`hae`**, etc.) are mapped to **`om`** – no loss of functionality. |
-| Ge'ez script Oromo         | May rarely be detected as Amharic.                                                                    |
-| Model accuracy             | Pretrained models may not be perfect across all domains; use **`/benchmark`** to compare.             |
-
-## 10. Environment Variables
-
-| Variable                  | Description                        | Default                              |
-| ------------------------- | ---------------------------------- | ------------------------------------ |
-| **`FASTTEXT_MODEL_PATH`** | Path to fastText **`lid.176.bin`** | Auto‑downloaded to HuggingFace cache |
-| **`HF_HOME`**             | HuggingFace cache directory        | **`~/.cache/huggingface`**           |
+- **Remote mode**: Requires internet access. Spaces have cold start delays (first request after inactivity may take several seconds). Free tier may throttle heavy usage.
+- **Oromo sentiment**: Not supported in remote mode; Oromo comments always return `neutral` with low confidence (0.3), triggering manual review. In local mode, the `Hailay/FT_EXLMR` model can be used, but accuracy is low (around 30%).
+- **Romanised script**: Text written in Latin script (e.g., “Selam”) may be detected as English; use Ethiopic script for best results.
+- **Neutral detection**: The Tigrinya model in remote mode is binary; neutral is approximated. In local mode, the same applies.
 
 ## 11. Example cURL Commands
 
-Analyze (Amharic)
+**Analyze (Amharic, auto‑detect language)**:
 
 ```bash
-curl -X POST http://localhost:8000/analyze \
- -H "Content-Type: application/json" \
- -d '{"text": "ይህ ፖሊሲ ጥሩ ነው"}'
+    curl -X POST http://localhost:8000/analyze \
+      -H "Content-Type: application/json" \
+      -d '{"text": "ይህ ፖሊሲ ጥሩ ነው"}'
 ```
 
-Analyze (auto language detection)
+**Analyze (English, explicit language)**:
 
 ```bash
-curl -X POST http://localhost:8000/analyze \
- -H "Content-Type: application/json" \
- -d '{"text": "This policy is great"}'
+    curl -X POST http://localhost:8000/analyze \
+      -H "Content-Type: application/json" \
+      -d '{"text": "This policy is excellent", "language": "en"}'
 ```
 
-Benchmark (Tigrinya)
+**Suggest topics**:
 
 ```bash
-curl -X POST http://localhost:8000/benchmark \
- -H "Content-Type: application/json" \
- -d '{"text": "እዚ ፖሊሲ ጽቡቕ እዩ"}'
+    curl -X POST http://localhost:8000/suggest-topics \
+      -H "Content-Type: application/json" \
+      -d '{"text": "Improve road safety in rural areas"}'
 ```
 
-Health check
+**Health check**:
 
 ```bash
-curl http://localhost:8000`/health
+    curl http://localhost:8000/health
 ```

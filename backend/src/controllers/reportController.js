@@ -66,10 +66,29 @@ exports.getDashboardStats = async (req, res) => {
       }),
     ]);
 
+    // Calculate average rating from rating-type polls only
     const ratingAgg = await Vote.aggregate([
-      { $group: { _id: null, avg: { $avg: "$rating" } } },
+      {
+        $lookup: {
+          from: "policies",
+          localField: "policyId",
+          foreignField: "_id",
+          as: "policy",
+        },
+      },
+      {
+        $match: {
+          "policy.pollType": "rating",
+        },
+      },
+      {
+        $group: {
+          _id: null,
+          avg: { $avg: "$value" },
+        },
+      },
     ]);
-    const avgRatingOverall = ratingAgg.length ? ratingAgg[0].avg : 0;
+    const avgRatingOverall = ratingAgg.length && ratingAgg[0].avg !== null ? parseFloat(ratingAgg[0].avg.toFixed(2)) : 0;
 
     const aiHealth = await getAIHealth();
 
@@ -95,7 +114,7 @@ exports.getDashboardStats = async (req, res) => {
           total: totalVotes,
           app: appVotes,
           sms: smsVotes,
-          averageRating: parseFloat(avgRatingOverall.toFixed(2)),
+          averageRating: avgRatingOverall,
         },
         comments: {
           total: totalComments,

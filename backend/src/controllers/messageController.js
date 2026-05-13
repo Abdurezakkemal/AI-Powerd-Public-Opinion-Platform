@@ -131,10 +131,17 @@ exports.getMessage = async (req, res) => {
       ? message.recipientId.toString()
       : "";
     const senderIdStr = message.senderId ? message.senderId.toString() : "";
-    const userIdStr = req.user.id.toString(); // convert to string for comparison
+    const userIdStr = req.user.id.toString();
 
     if (recipientIdStr !== userIdStr && senderIdStr !== userIdStr) {
-      return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
+      // Do not reveal that the message exists – treat as not found
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Message not found",
+        null,
+        404,
+      );
     }
 
     if (!message.read && recipientIdStr === userIdStr) {
@@ -184,12 +191,13 @@ exports.replyToMessage = async (req, res) => {
     const userIdStr = req.user.id.toString();
 
     if (recipientIdStr !== userIdStr && senderIdStr !== userIdStr) {
+      // Do not reveal that the original message exists
       return sendError(
         res,
-        ErrorCodes.FORBIDDEN,
-        "You cannot reply to this message",
+        ErrorCodes.NOT_FOUND,
+        "Original message not found",
         null,
-        403,
+        404,
       );
     }
 

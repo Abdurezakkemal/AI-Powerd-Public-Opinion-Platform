@@ -9,6 +9,8 @@ import {
   Play,
   Power,
   RefreshCw,
+  Archive,
+  RotateCcw,
   Search,
   Trash2,
 } from "lucide-react";
@@ -62,6 +64,8 @@ export function PoliciesPage() {
     search: "",
     startDate: "",
     endDate: "",
+    topic: "",
+    includeArchived: false,
   });
 
   const loadPolicies = async () => {
@@ -71,6 +75,8 @@ export function PoliciesPage() {
       const result = await policyApi.list({
         status: filters.status || undefined,
         region: filters.region || undefined,
+        topic: filters.topic || undefined,
+        includeArchived: filters.includeArchived || filters.status === "archived" ? true : undefined,
         owner: "me",
         page,
         limit: PAGE_SIZE,
@@ -87,7 +93,7 @@ export function PoliciesPage() {
   useEffect(() => {
     loadPolicies();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.status, filters.region, page]);
+  }, [filters.status, filters.region, filters.topic, filters.includeArchived, page]);
 
   const filteredPolicies = useMemo(() => {
     const query = filters.search.trim().toLowerCase();
@@ -179,7 +185,7 @@ export function PoliciesPage() {
       </div>
 
       <section className="mt-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-3 md:grid-cols-[1.2fr_repeat(4,minmax(0,1fr))]">
+        <div className="grid gap-3 md:grid-cols-[1.2fr_repeat(5,minmax(0,1fr))]">
           <label className="relative block">
             <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
             <input
@@ -231,7 +237,23 @@ export function PoliciesPage() {
             onChange={(event) => resetToFirstPage("endDate", event.target.value)}
             aria-label="Filter by end date"
           />
+
+          <input
+            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600"
+            placeholder="Topic"
+            value={filters.topic}
+            onChange={(event) => resetToFirstPage("topic", event.target.value)}
+          />
         </div>
+        <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
+          <input
+            type="checkbox"
+            className="h-4 w-4 accent-teal-700"
+            checked={filters.includeArchived}
+            onChange={(event) => resetToFirstPage("includeArchived", event.target.checked)}
+          />
+          Include archived policies
+        </label>
       </section>
 
       {loading ? (
@@ -325,6 +347,16 @@ export function PoliciesPage() {
                           {["draft", "published"].includes(policy.status) ? (
                             <Button disabled={busy} icon={Trash2} variant="danger" onClick={() => deletePolicy(policy)}>
                               Delete
+                            </Button>
+                          ) : null}
+                          {policy.status !== "draft" && policy.status !== "archived" ? (
+                            <Button disabled={busy} icon={Archive} variant="danger" onClick={() => runAction(`archive-${policy.id}`, () => policyApi.archive(policy.id), "Policy archived.")}>
+                              Archive
+                            </Button>
+                          ) : null}
+                          {policy.status === "archived" ? (
+                            <Button disabled={busy} icon={RotateCcw} onClick={() => runAction(`restore-${policy.id}`, () => policyApi.restore(policy.id), "Policy restored to draft.")}>
+                              Restore
                             </Button>
                           ) : null}
                           <Button disabled={busy} icon={Copy} onClick={() => clonePolicy(policy)}>

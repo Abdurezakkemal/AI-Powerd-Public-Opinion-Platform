@@ -34,7 +34,7 @@ apiClient.interceptors.response.use(
       error.message ||
       "Request failed";
 
-    if (status === 401 || ["ACCOUNT_DISABLED", "NOT_VERIFIED"].includes(code)) {
+    if ((status === 401 && code !== "INVALID_CREDENTIALS") || ["ACCOUNT_DISABLED", "NOT_VERIFIED"].includes(code)) {
       clearStoredAuth();
       if (window.location.pathname !== "/login") {
         window.location.assign("/login");

@@ -28,14 +28,20 @@ export const adminApi = {
   getPendingComments(params = {}) {
     return apiClient.get("/admin/comments/pending", { params });
   },
+  getFlaggedComments(params = {}) {
+    return apiClient.get("/admin/comments/flagged", { params });
+  },
   updateComment(id, payload) {
     return apiClient.put(`/admin/comments/${id}`, payload);
   },
   retryComment(id) {
     return apiClient.post(`/admin/comments/${id}/retry`);
   },
-  retryAllComments() {
-    return apiClient.post("/admin/comments/retry-all");
+  forceRetryComment(id) {
+    return apiClient.post(`/admin/comments/${id}/force-retry`);
+  },
+  bulkRetryComments(commentIds, params = {}) {
+    return apiClient.post("/admin/comments/bulk/retry-by-ids", { commentIds }, { params });
   },
   deleteComment(id) {
     return apiClient.delete(`/admin/comments/${id}`);

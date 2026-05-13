@@ -3,41 +3,168 @@ load_dotenv()
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional, List, Any, Dict
-import time
+import os
+import aiohttp
+import logging
+import asyncio
 
-from .utils.language_detector import detect_language, detect_language_full
 from .utils.preprocess import normalize_text
-from .models.sentiment import ModelManager
-from .models.keywords import KeywordManager
-from .models.topic import get_topic_model
-from .middleware.authMiddleware import InternalAPIKeyMiddleware
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Service for Multilingual Sentiment Analysis")
 
-app.add_middleware(InternalAPIKeyMiddleware)
+# ---------- Mode selection ----------
+AI_MODE = os.environ.get("AI_MODE", "remote").lower()
 
-# Default topics for zero‑shot suggestion
-DEFAULT_TOPICS = [
-    # Core public services
-    "Health", "Education", "Water Supply", "Electricity", "Housing", "Transport",
-    # Infrastructure
-    "Roads", "Bridges", "Railways", "Airports", "Digital Infrastructure",
-    # Agriculture & Environment
-    "Agriculture", "Irrigation", "Livestock", "Forestry", "Environment", "Climate Change",
-    # Economy & Jobs
-    "Economy", "Employment", "Small Business", "Industry", "Trade", "Tourism",
-    # Social Welfare
-    "Social Protection", "Pension", "Disability Support", "Food Security", "Poverty Reduction",
-    # Governance & Security
-    "Governance", "Justice", "Police", "Defense", "Public Safety",
-    # Urban & Rural Development
-    "Urban Planning", "Rural Development", "Land Administration", "Migration",
-    # Other
-    "Sports", "Culture", "Youth", "Women Affairs", "Diaspora"
-]
+# ---------- Remote URLs (only used in remote mode) ----------
+LANGID_URL = os.environ.get("LANGID_SPACE_URL", "https://abyayel-fasttext-langid.hf.space/detect")
+SENTIMENT_URL = os.environ.get("SENTIMENT_SPACE_URL", "https://abyayel-sentiment-models.hf.space/sentiment")
+TOPIC_URL = os.environ.get("TOPIC_SPACE_URL", "https://abyayel-topic-model.hf.space/suggest-topics")
+KEYWORD_URL = os.environ.get("KEYWORD_SPACE_URL", "https://abyayel-keyword-extractor.hf.space/extract")
 
-# ------------------- Request/Response Models -------------------
+# ---------- Remote helper functions with retries ----------
+async def detect_language_remote(text: str, retries: int = 2):
+    async with aiohttp.ClientSession() as session:
+        for attempt in range(retries + 1):
+            try:
+                async with session.post(LANGID_URL, json={"text": text}, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        error_text = await resp.text()
+                        logger.error(f"LangID space error: status {resp.status}, body: {error_text}")
+                        return {"language": "en", "raw_label": None, "confidence": 0.0}
+                    data = await resp.json()
+                    lang_map = {"amh": "am", "tir": "ti", "eng": "en", "orm": "om", "gaz": "om", "gax": "om", "hae": "om"}
+                    raw = data.get("language", "eng")
+                    lang = lang_map.get(raw, "en")
+                    return {"language": lang, "raw_label": data.get("raw_label", raw), "confidence": data.get("confidence", 0.0)}
+            except asyncio.TimeoutError:
+                logger.warning(f"LangID timeout (attempt {attempt+1}/{retries+1})")
+                if attempt == retries:
+                    return {"language": "en", "raw_label": None, "confidence": 0.0}
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"LangID exception: {e}")
+                if attempt == retries:
+                    return {"language": "en", "raw_label": None, "confidence": 0.0}
+                await asyncio.sleep(1)
 
+async def analyze_sentiment_remote(text: str, language: str, retries: int = 2):
+    async with aiohttp.ClientSession() as session:
+        for attempt in range(retries + 1):
+            try:
+                async with session.post(SENTIMENT_URL, json={"text": text, "language": language}, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        error_text = await resp.text()
+                        logger.error(f"Sentiment space error: status {resp.status}, body: {error_text}")
+                        return {"sentiment": "neutral", "confidence": 0.3, "model": "error_fallback"}
+                    return await resp.json()
+            except asyncio.TimeoutError:
+                logger.warning(f"Sentiment timeout (attempt {attempt+1}/{retries+1})")
+                if attempt == retries:
+                    return {"sentiment": "neutral", "confidence": 0.3, "model": "error_fallback"}
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Sentiment exception: {e}")
+                if attempt == retries:
+                    return {"sentiment": "neutral", "confidence": 0.3, "model": "error_fallback"}
+                await asyncio.sleep(1)
+
+async def extract_keywords_remote(text: str, language: str, top_n: int = 5, retries: int = 2):
+    async with aiohttp.ClientSession() as session:
+        for attempt in range(retries + 1):
+            try:
+                async with session.post(KEYWORD_URL, json={"text": text, "language": language, "top_n": top_n}, timeout=aiohttp.ClientTimeout(total=10)) as resp:
+                    if resp.status != 200:
+                        error_text = await resp.text()
+                        logger.error(f"Keyword space error: status {resp.status}, body: {error_text}")
+                        return []
+                    data = await resp.json()
+                    return data.get("keywords", [])
+            except asyncio.TimeoutError:
+                logger.warning(f"Keyword timeout (attempt {attempt+1}/{retries+1})")
+                if attempt == retries:
+                    return []
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Keyword exception: {e}")
+                if attempt == retries:
+                    return []
+                await asyncio.sleep(1)
+
+async def suggest_topics_remote(text: str, retries: int = 2):
+    async with aiohttp.ClientSession() as session:
+        for attempt in range(retries + 1):
+            try:
+                async with session.post(TOPIC_URL, json={"text": text}, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status != 200:
+                        error_text = await resp.text()
+                        logger.error(f"Topic space error: status {resp.status}, body: {error_text}")
+                        return {"topics": [{"topic": "General", "confidence": 1.0}]}
+                    return await resp.json()
+            except asyncio.TimeoutError:
+                logger.warning(f"Topic timeout (attempt {attempt+1}/{retries+1})")
+                if attempt == retries:
+                    return {"topics": [{"topic": "General", "confidence": 1.0}]}
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.error(f"Topic exception: {e}")
+                if attempt == retries:
+                    return {"topics": [{"topic": "General", "confidence": 1.0}]}
+                await asyncio.sleep(1)
+
+# ---------- Local model lazy loading ----------
+def load_local_language_detector():
+    from .utils.language_detector import detect_language_full
+    return detect_language_full
+
+def load_local_sentiment():
+    from .models.sentiment import ModelManager
+    return ModelManager
+
+def load_local_keywords():
+    from .models.keywords import KeywordManager
+    return KeywordManager
+
+def load_local_topic():
+    from .models.topic import get_topic_model
+    return get_topic_model
+
+# ---------- Unified functions (choose mode) ----------
+async def detect_language(text: str):
+    if AI_MODE == "local":
+        func = load_local_language_detector()
+        return await asyncio.to_thread(func, text)
+    else:
+        return await detect_language_remote(text)
+
+async def analyze_sentiment(text: str, language: str):
+    if AI_MODE == "local":
+        mgr = load_local_sentiment()
+        model = mgr.get_model_for_language(language)
+        sentiment, confidence = await asyncio.to_thread(model.predict, text, language)
+        return {"sentiment": sentiment, "confidence": confidence, "model": model.name}
+    else:
+        return await analyze_sentiment_remote(text, language)
+
+async def extract_keywords(text: str, language: str, top_n: int = 5):
+    if AI_MODE == "local":
+        mgr = load_local_keywords()
+        keywords = await asyncio.to_thread(mgr.extract, text, language, top_n)
+        return keywords
+    else:
+        return await extract_keywords_remote(text, language, top_n)
+
+async def get_topics(text: str):
+    if AI_MODE == "local":
+        get_model = load_local_topic()
+        model = get_model()
+        suggestions = await asyncio.to_thread(model.suggest, text, None)
+        return {"topics": suggestions[:3]}
+    else:
+        return await suggest_topics_remote(text)
+
+# ---------- Request/Response Models ----------
 class AnalyzeRequest(BaseModel):
     text: str
     language: Optional[str] = None
@@ -49,6 +176,13 @@ class AnalyzeResponse(BaseModel):
     language: str
     sentiment_model: str
     keyword_model: str
+
+class SuggestTopicsRequest(BaseModel):
+    text: str
+    candidate_topics: Optional[List[str]] = None
+
+class SuggestTopicsResponse(BaseModel):
+    topics: List[Dict[str, Any]]
 
 class BenchmarkRequest(BaseModel):
     text: str
@@ -63,96 +197,38 @@ class BenchmarkResponse(BaseModel):
     keywords: List[str]
     keyword_model: str
 
-class SuggestTopicsRequest(BaseModel):
-    text: str
-    candidate_topics: Optional[List[str]] = None
-
-class SuggestTopicsResponse(BaseModel):
-    topics: List[Dict[str, Any]]   # [{"topic": "Agriculture", "confidence": 0.85}, ...]
-
-# ------------------- Endpoints -------------------
-
+# ---------- Endpoints ----------
 @app.post("/analyze", response_model=AnalyzeResponse)
 async def analyze(request: AnalyzeRequest):
     cleaned_text = normalize_text(request.text)
-    
-    # Detect language if not provided
+
     language = request.language
     if language is None:
-        language = detect_language(cleaned_text)
-    
-    # Get default sentiment model for language
-    sentiment_model = ModelManager.get_model_for_language(language)
-    sentiment, confidence = sentiment_model.predict(cleaned_text, language)
-    
-    # Extract keywords using KeywordManager
-    keywords = KeywordManager.extract(cleaned_text, language=language, top_n=5)
-    keyword_model_name = KeywordManager.get_default_model_name()
-    
+        detection = await detect_language(cleaned_text)
+        language = detection["language"]
+        logger.debug(f"Detected language: {language} (conf: {detection['confidence']})")
+
+    sentiment_result = await analyze_sentiment(cleaned_text, language)
+    keywords = await extract_keywords(cleaned_text, language, top_n=5)
+
     return AnalyzeResponse(
-        sentiment=sentiment,
-        confidence=confidence,
+        sentiment=sentiment_result["sentiment"],
+        confidence=sentiment_result["confidence"],
         keywords=keywords,
         language=language,
-        sentiment_model=sentiment_model.name,
-        keyword_model=keyword_model_name
-    )
-
-@app.post("/benchmark", response_model=BenchmarkResponse)
-async def benchmark_models(request: BenchmarkRequest):
-    cleaned_text = normalize_text(request.text)
-    
-    language = request.language
-    detection_raw = None
-    detection_conf = None
-    if language is None:
-        detection = detect_language_full(cleaned_text)
-        language = detection['language']
-        detection_raw = detection['raw_label']
-        detection_conf = detection['confidence']
-    
-    # Get all sentiment models for this language
-    models = ModelManager.get_all_models_for_language(language)
-    results = []
-    
-    for model in models:
-        start = time.time()
-        try:
-            sentiment, conf = model.predict(cleaned_text, language)
-        except Exception as e:
-            sentiment, conf = f"error: {str(e)}", 0.0
-        elapsed = (time.time() - start) * 1000  # ms
-        
-        results.append({
-            "model_name": model.name,
-            "sentiment": sentiment,
-            "confidence": round(conf, 4) if isinstance(conf, float) else conf,
-            "time_ms": round(elapsed, 2)
-        })
-    
-    # Extract keywords using default keyword model
-    keywords = KeywordManager.extract(cleaned_text, language=language, top_n=5)
-    keyword_model_name = KeywordManager.get_default_model_name()
-    
-    return BenchmarkResponse(
-        text=cleaned_text,
-        detected_language=language,
-        detection_raw_label=detection_raw,
-        detection_confidence=detection_conf,
-        results=results,
-        keywords=keywords,
-        keyword_model=keyword_model_name
+        sentiment_model=sentiment_result["model"],
+        keyword_model="remote_keybert" if AI_MODE == "remote" else "local_keybert"
     )
 
 @app.post("/suggest-topics", response_model=SuggestTopicsResponse)
 async def suggest_topics(request: SuggestTopicsRequest):
     cleaned_text = normalize_text(request.text)
-    model = get_topic_model()
-    candidate = request.candidate_topics or DEFAULT_TOPICS
-    suggestions = model.suggest(cleaned_text, candidate)
-    # Return top 3 (you can adjust limit)
-    top_suggestions = suggestions[:3] if len(suggestions) >= 3 else suggestions
-    return SuggestTopicsResponse(topics=top_suggestions)
+    result = await get_topics(cleaned_text)
+    return SuggestTopicsResponse(topics=result["topics"])
+
+@app.post("/benchmark", response_model=BenchmarkResponse)
+async def benchmark_models(request: BenchmarkRequest):
+    raise HTTPException(status_code=501, detail="Benchmark not implemented in this mode.")
 
 @app.get("/health")
 async def health():

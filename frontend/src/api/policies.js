@@ -41,7 +41,16 @@ export const policyApi = {
   clone(id) {
     return apiClient.post(`/policies/${id}/clone`);
   },
+  archive(id) {
+    return apiClient.patch(`/policies/${id}/archive`);
+  },
+  restore(id) {
+    return apiClient.patch(`/policies/${id}/restore`);
+  },
   history(id) {
     return apiClient.get(`/policies/${id}/history`);
+  },
+  suggestTopics(text) {
+    return apiClient.post("/policies/suggest-topics", { text });
   },
 };

@@ -16,8 +16,14 @@ export const userApi = {
   requestEmailChange(newEmail) {
     return apiClient.post("/users/me/email/request", { newEmail });
   },
-  verifyEmailChange(token) {
-    return apiClient.post("/users/me/email/verify", { token });
+  verifyEmailChange(code) {
+    return apiClient.post("/users/me/email/verify", { code });
+  },
+  requestPhoneChange(newPhone) {
+    return apiClient.post("/users/me/phone/request", { newPhone });
+  },
+  verifyPhoneChange(newPhone, code) {
+    return apiClient.post("/users/me/phone/verify", { newPhone, code });
   },
   getNotifications(params = {}) {
     return apiClient.get("/users/me/notifications", { params });

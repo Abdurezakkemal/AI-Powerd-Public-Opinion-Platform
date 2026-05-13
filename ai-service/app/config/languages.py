@@ -1,24 +1,23 @@
 # ai-service/app/config/languages.py
 
+# Only the models we actually load. Oromo omitted (will use dummy).
 SENTIMENT_MODELS = {
-    "am": {  # Amharic
-        "model": "Hailay/FT_EXLMR",
-        "labels": {0: "negative", 1: "neutral", 2: "positive"},  # Verify after first test
-        "description": "EXLMR fine-tuned on AfriSenti (supports multiple Ethiopian languages)"
-    },
-    "om": {  # Afaan Oromo
-        "model": "Hailay/FT_EXLMR",
-        "labels": {0: "negative", 1: "neutral", 2: "positive"},  # Same model, same labels
-        "description": "EXLMR fine-tuned on AfriSenti (supports multiple Ethiopian languages)"
-    },
-    "ti": {  # Tigrinya
-        "model": "Hailay/FT_EXLMR",
-        "labels": {0: "negative", 1: "neutral", 2: "positive"},
-        "description": "EXLMR fine-tuned on AfriSenti (supports multiple Ethiopian languages)"
-    },
-    "en": {  # English fallback
+    "am": {
         "model": "cardiffnlp/twitter-xlm-roberta-base-sentiment",
         "labels": {0: "negative", 1: "neutral", 2: "positive"},
-        "description": "XLM-R fine-tuned on Twitter sentiment"
+        "description": "XLM-R Twitter sentiment (Amharic & English)"
+    },
+    "ti": {
+        "model": "ensemble",  # special marker; we'll handle in code
+        "models": [
+            {"name": "fgaim/tiroberta-sentiment", "type": "pipeline", "task": "sentiment-analysis"},
+            {"name": "cardiffnlp/twitter-xlm-roberta-base-sentiment", "type": "pipeline", "task": "sentiment-analysis"}
+        ],
+        "description": "Ensemble of binary Tigrinya model + Twitter model"
+    },
+    "en": {
+        "model": "cardiffnlp/twitter-xlm-roberta-base-sentiment",
+        "labels": {0: "negative", 1: "neutral", 2: "positive"},
+        "description": "XLM-R Twitter sentiment (English)"
     }
 }

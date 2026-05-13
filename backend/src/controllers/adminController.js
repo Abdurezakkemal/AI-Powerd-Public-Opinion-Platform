@@ -99,8 +99,14 @@ exports.createPlanner = async (req, res) => {
       role: "planner",
       phoneHash: uniquePhonePlaceholder,
       region: "",
+      ageRange: "25-34",
+      gender: "prefer-not-to-say",
+      occupation: "government-employee",
+      education: "bachelors",
+      languagesSpoken: ["en"],
       verified: true,
       active: true,
+      trainingCompletedAt: new Date(),
     });
     await planner.save();
 
@@ -161,15 +167,22 @@ exports.updatePlanner = async (req, res) => {
     }
 
     const changes = {};
+    const updates = {};
     if (password) {
-      planner.passwordHash = await hashPassword(password);
+      updates.passwordHash = await hashPassword(password);
       changes.password = "updated";
     }
     if (active !== undefined) {
-      planner.active = active;
+      updates.active = active;
       changes.active = active;
     }
-    await planner.save();
+    if (Object.keys(updates).length) {
+      await User.updateOne(
+        { _id: planner._id },
+        { $set: updates },
+        { runValidators: false },
+      );
+    }
 
     await createAuditLog({
       userId: req.user.id,
@@ -186,7 +199,7 @@ exports.updatePlanner = async (req, res) => {
     );
     return sendSuccess(
       res,
-      { id: planner._id, email: planner.email, active: planner.active },
+      { id: planner._id, email: planner.email, active: active ?? planner.active },
       "Planner updated successfully",
     );
   } catch (err) {
@@ -230,8 +243,11 @@ exports.updatePlannerStatus = async (req, res) => {
       );
     }
 
-    planner.active = active;
-    await planner.save();
+    await User.updateOne(
+      { _id: planner._id },
+      { $set: { active } },
+      { runValidators: false },
+    );
 
     await createAuditLog({
       userId: req.user.id,
@@ -239,7 +255,7 @@ exports.updatePlannerStatus = async (req, res) => {
       action: "UPDATE_PLANNER_STATUS",
       targetType: "User",
       targetId: planner._id,
-      details: { email: planner.email, active: planner.active },
+      details: { email: planner.email, active },
       req,
     });
 
@@ -249,7 +265,7 @@ exports.updatePlannerStatus = async (req, res) => {
     );
     return sendSuccess(
       res,
-      { plannerId: planner._id, active: planner.active },
+      { plannerId: planner._id, active },
       `Planner account ${statusText} successfully`,
     );
   } catch (err) {

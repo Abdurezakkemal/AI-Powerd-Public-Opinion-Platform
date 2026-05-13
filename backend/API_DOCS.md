@@ -2813,7 +2813,99 @@ Error responses:
 | 404    | NOT_FOUND             | "User not found"           |
 | 500    | INTERNAL_SERVER_ERROR | "Failed to delete account" |
 
-### 7.6 Request email change
+### 7.6 Export user data (GDPR)
+
+**`GET /users/me/export`**
+
+**Authentication required** (citizen, planner, admin).
+
+Downloads a JSON file containing all personal data associated with the user, including profile, votes, comments, notifications, messages, and planner requests.
+
+**Query parameters (all optional):**
+
+| Parameter   | Type   | Description                                                                                                        |
+| ----------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
+| `startDate` | string | ISO date (e.g., `2026-05-01`). Filters votes, comments, notifications, and messages created on or after this date. |
+| `endDate`   | string | ISO date. Filters votes, comments, notifications, and messages created on or before this date.                     |
+
+If `startDate` and `endDate` are omitted, all data is exported.
+
+**Response (200 OK):**
+
+- Content‑Type: `application/json`
+- Content‑Disposition: `attachment; filename="user-data-<timestamp>.json"`
+
+The JSON structure is as follows:
+
+```json
+{
+  "profile": {
+    "email": "user@example.com",
+    "region": "Addis Ababa",
+    "ageRange": "25-34",
+    "gender": "male",
+    "occupation": "private-sector",
+    "education": "bachelors",
+    "createdAt": "2026-05-13T16:02:56.587Z"
+  },
+  "votes": [
+    {
+      "policyId": "67f1a2b3...",
+      "policyTitle": "Clean Water Initiative",
+      "policyCode": "CLEAN123",
+      "value": "yes",
+      "channel": "app",
+      "createdAt": "2026-05-13T10:00:00Z"
+    }
+  ],
+  "comments": [
+    {
+      "text": "Great policy!",
+      "sentiment": { "label": "positive", "confidence": 0.95 },
+      "keywords": ["great"],
+      "createdAt": "2026-05-13T11:00:00Z"
+    }
+  ],
+  "notifications": [
+    {
+      "type": "POLICY_CLOSED",
+      "title": "Policy closed: Clean Water Initiative",
+      "message": "The policy has closed.",
+      "read": true,
+      "createdAt": "2026-05-13T12:00:00Z"
+    }
+  ],
+  "messages": [
+    {
+      "direction": "sent",
+      "subject": "Collaboration request",
+      "body": "Can you help?",
+      "read": true,
+      "createdAt": "2026-05-13T13:00:00Z"
+    }
+  ],
+  "plannerRequests": [
+    {
+      "organization": "Ministry of Education",
+      "reason": "I want to create policies about school funding.",
+      "status": "pending",
+      "createdAt": "2026-05-01T00:00:00Z",
+      "reviewedAt": null,
+      "rejectionReason": null
+    }
+  ]
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                            |
+| ------ | ----------------------- | ---------------------------------- |
+| 400    | `VALIDATION_ERROR`      | "startDate must be before endDate" |
+| 404    | `NOT_FOUND`             | "User not found"                   |
+| 500    | `INTERNAL_SERVER_ERROR` | "Failed to export user data"       |
+
+### 7.7 Request email change
 
 **`POST /users/me/email/request`**
 
@@ -2848,7 +2940,7 @@ Response (200 OK):
 | 409    | DUPLICATE_ENTRY     | "Email already in use by another account"                 |
 | 429    | RATE_LIMIT_EXCEEDED | "Too many email change requests. Please try again later." |
 
-### 7.7 Verify email change
+### 7.8 Verify email change
 
 **`POST /users/me/email/verify`**
 
@@ -2882,7 +2974,7 @@ Response (200 OK):
 | 400 | `VALIDATION_ERROR` | `"Invalid verification code"` |
 | 429 | `RATE_LIMIT_EXCEEDED` | `"Too many verification attempts. Please request a new code."` |
 
-### 7.8 Request phone number change
+### 7.9 Request phone number change
 
 **`POST /users/me/phone/request`**
 
@@ -2922,7 +3014,7 @@ Sends an OTP to the **new phone number** to verify ownership. The old phone numb
 
 ---
 
-### 7.9 Verify phone number change
+### 7.10 Verify phone number change
 
 **`POST /users/me/phone/verify`**
 
@@ -2964,7 +3056,7 @@ Verifies the OTP sent to the new phone number and updates the user’s phone has
 - The `tokenVersion` is incremented, invalidating any existing JWT tokens (the user must log in again).
 - An audit log entry (`PHONE_CHANGE`) is recorded.
 
-### 7.10 Get notifications
+### 7.11 Get notifications
 
 **`GET /users/me/notifications`**
 
@@ -3009,7 +3101,7 @@ Query parameters (all optional):
 | 401 | `UNAUTHORIZED` | Missing or invalid token |
 | 500 | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve notifications"` |
 
-### 7.11 Mark a single notification as read
+### 7.12 Mark a single notification as read
 
 **`PATCH /users/me/notifications/:id/read`**
 
@@ -3030,7 +3122,7 @@ Query parameters (all optional):
 | 404    | `NOT_FOUND` | `"Notification not found"`              |
 | 500    | `INTERNAL`  | `"Failed to mark notification as read"` |
 
-### 7.12 Mark all notifications as read
+### 7.13 Mark all notifications as read
 
 **`PATCH /users/me/notifications/read-all`**
 
@@ -3690,22 +3782,16 @@ All endpoints in this section require authentication with a planner or admin tok
 
 **GET /api/messages/:messageId**
 
-**Roles:** must be sender or recipient
+**Roles:** sender or recipient (planner/admin)
 
-**Path parameter:**
-
-- `messageId` – Message ID
-
-**Behaviour:** Automatically sets `read: true` if the requesting user is the recipient and the message was unread.
-
-**Response (200 OK):** returns the full message object with populated sender and recipient.
+**Behaviour:** Automatically marks the message as read if the recipient views it. If the authenticated user is neither the sender nor the recipient, the API returns `404 Not Found` to avoid revealing the existence of the message.
 
 **Error responses:**
 
-| Status | Code      | Message             |
-| ------ | --------- | ------------------- |
-| 403    | FORBIDDEN | "Access denied"     |
-| 404    | NOT_FOUND | "Message not found" |
+| Status | Code        | Message                        |
+| ------ | ----------- | ------------------------------ |
+| 404    | `NOT_FOUND` | `"Message not found"`          |
+| 500    | `INTERNAL`  | `"Failed to retrieve message"` |
 
 ---
 
@@ -3740,11 +3826,11 @@ All endpoints in this section require authentication with a planner or admin tok
 
 **Error responses:**
 
-| Status | Code             | Message                            |
-| ------ | ---------------- | ---------------------------------- |
-| 400    | VALIDATION_ERROR | "body required"                    |
-| 403    | FORBIDDEN        | "You cannot reply to this message" |
-| 404    | NOT_FOUND        | "Original message not found"       |
+| Status | Code                    | Message                        |
+| ------ | ----------------------- | ------------------------------ |
+| 400    | `VALIDATION_ERROR`      | `"body required"`              |
+| 404    | `NOT_FOUND`             | `"Original message not found"` |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to send reply"`       |
 
 ## 12. Notifications & Smart Alerts (Real‑time)
 
