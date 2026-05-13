@@ -48,11 +48,8 @@ class _ReplyCommentDialogState extends State<ReplyCommentDialog> {
               backgroundColor: Colors.green,
             ),
           );
-          // Refresh comments list after successful reply
-          context.read<CommentCubit>().loadComments(
-                policyId: widget.policyId,
-                refresh: true,
-              );
+          // Refresh replies for the parent comment
+          context.read<CommentCubit>().loadReplies(widget.parentComment.id);
         } else if (state is CommentError) {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(

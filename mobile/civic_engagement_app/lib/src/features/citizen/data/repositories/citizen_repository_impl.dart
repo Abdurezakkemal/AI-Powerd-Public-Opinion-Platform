@@ -1,7 +1,8 @@
 import '../../../../core/network/api_client.dart';
 import '../../../../core/session/session_store.dart';
-import '../../domain/entities/comment_page.dart';
+import '../../domain/entities/comment.dart';
 import '../../domain/entities/notification_page.dart';
+import '../../domain/entities/planner_request.dart';
 import '../../domain/entities/policy.dart';
 import '../../domain/entities/policy_page.dart';
 import '../../domain/entities/user_profile.dart';
@@ -10,6 +11,7 @@ import '../../domain/entities/vote_receipt.dart';
 import '../../domain/repositories/citizen_repository.dart';
 import '../models/citizen_notification_model.dart';
 import '../models/comment_model.dart';
+import '../models/planner_request_model.dart';
 import '../models/policy_model.dart';
 import '../models/user_profile_model.dart';
 import '../models/vote_history_model.dart';
@@ -102,6 +104,8 @@ class CitizenRepositoryImpl implements CitizenRepository {
   Future<PolicyPage> getPolicies({
     String? status,
     String? topic,
+    List<String>? topics,
+    bool includeArchived = false,
     int page = 1,
     int limit = 20,
   }) async {
@@ -110,6 +114,10 @@ class CitizenRepositoryImpl implements CitizenRepository {
       query: {
         if (status != null && status != 'all') 'status': status,
         if (topic != null && topic.isNotEmpty) 'topic': topic,
+        // Support multiple topics (repeatable query param)
+        if (topics != null && topics.isNotEmpty)
+          for (var t in topics) 'topic': t,
+        if (includeArchived) 'includeArchived': true,
         'page': page,
         'limit': limit,
       },
@@ -230,16 +238,13 @@ class CitizenRepositoryImpl implements CitizenRepository {
     required String policyId,
     int page = 1,
     int limit = 20,
-    String? sentiment,
-    String? status,
   }) async {
+    // UPDATED: Use public endpoint instead of analytics endpoint
     final response = await _apiClient.get(
-      '/analytics/$policyId/comments',
+      '/comments/policy/$policyId',
       query: {
         'page': page,
         'limit': limit,
-        if (sentiment != null && sentiment.isNotEmpty) 'sentiment': sentiment,
-        if (status != null && status.isNotEmpty) 'status': status,
       },
     );
     final data = response.data as Map<String, dynamic>;
@@ -253,6 +258,41 @@ class CitizenRepositoryImpl implements CitizenRepository {
             : <CommentModel>[];
     return CommentPage(
       comments: comments,
+      total: _toInt(data['total']),
+      page: _toInt(data['page'], fallback: page),
+    );
+  }
+
+  @override
+  Future<Comment> getComment(String commentId) async {
+    final response = await _apiClient.get('/comments/$commentId');
+    return CommentModel.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<CommentPage> getCommentReplies({
+    required String commentId,
+    int page = 1,
+    int limit = 20,
+  }) async {
+    final response = await _apiClient.get(
+      '/comments/$commentId/replies',
+      query: {
+        'page': page,
+        'limit': limit,
+      },
+    );
+    final data = response.data as Map<String, dynamic>;
+    final rawReplies = data['replies'];
+    final replies =
+        rawReplies is List
+            ? rawReplies
+                .whereType<Map<String, dynamic>>()
+                .map(CommentModel.fromJson)
+                .toList()
+            : <CommentModel>[];
+    return CommentPage(
+      comments: replies,
       total: _toInt(data['total']),
       page: _toInt(data['page'], fallback: page),
     );
@@ -307,6 +347,22 @@ class CitizenRepositoryImpl implements CitizenRepository {
     final response = await _apiClient.patch('/users/me/notifications/read-all');
     final data = response.data as Map<String, dynamic>? ?? {};
     return _toInt(data['modifiedCount']);
+  }
+
+  @override
+  Future<PlannerRequest> requestPlannerStatus({
+    String? organization,
+    required String reason,
+  }) async {
+    final body = <String, dynamic>{
+      'reason': reason.trim(),
+    };
+    final trimmedOrg = organization?.trim();
+    if (trimmedOrg != null && trimmedOrg.isNotEmpty) {
+      body['organization'] = trimmedOrg;
+    }
+    final response = await _apiClient.post('/planners/request', body: body);
+    return PlannerRequestModel.fromJson(response.data as Map<String, dynamic>);
   }
 
   static int _toInt(dynamic value, {int fallback = 0}) {

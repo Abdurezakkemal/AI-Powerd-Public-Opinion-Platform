@@ -17,29 +17,37 @@ class PolicyCubit extends Cubit<PolicyState> {
   Future<void> loadPolicies({
     String? status,
     String? topic,
+    List<String>? topics,  // NEW: Support multiple topics
     bool refresh = true,
   }) async {
     final selectedStatus = status ?? state.filter;
     final selectedTopic = topic ?? state.topicFilter;
+    final selectedTopics = topics ?? state.topicFilters;  // NEW
     final nextPage = refresh ? 1 : state.page + 1;
+    
     emit(
       state.copyWith(
         status: RequestStatus.loading,
         filter: selectedStatus,
         topicFilter: selectedTopic,
+        topicFilters: selectedTopics,  // NEW
       ),
     );
+    
     try {
       final page = await _repository.getPolicies(
         status: selectedStatus == 'all' ? null : selectedStatus,
         topic: selectedTopic,
+        topics: selectedTopics.isEmpty ? null : selectedTopics,  // NEW
         page: nextPage,
         limit: _pageSize,
       );
+      
       final policies =
           refresh
               ? page.policies
               : <Policy>[...state.policies, ...page.policies];
+              
       emit(
         state.copyWith(
           status: RequestStatus.success,
@@ -49,6 +57,7 @@ class PolicyCubit extends Cubit<PolicyState> {
           hasMore: policies.length < page.total,
           filter: selectedStatus,
           topicFilter: selectedTopic,
+          topicFilters: selectedTopics,  // NEW
           message: null, // Clear any previous error messages
         ),
       );
@@ -67,6 +76,25 @@ class PolicyCubit extends Cubit<PolicyState> {
         ),
       );
     }
+  }
+
+  // NEW: Add topic to filter list
+  void addTopicFilter(String topic) {
+    if (!state.topicFilters.contains(topic)) {
+      final newTopics = [...state.topicFilters, topic];
+      loadPolicies(topics: newTopics, refresh: true);
+    }
+  }
+
+  // NEW: Remove topic from filter list
+  void removeTopicFilter(String topic) {
+    final newTopics = state.topicFilters.where((t) => t != topic).toList();
+    loadPolicies(topics: newTopics, refresh: true);
+  }
+
+  // NEW: Clear all topic filters
+  void clearTopicFilters() {
+    loadPolicies(topics: [], refresh: true);
   }
 
   Future<void> loadPolicy(String id) async {

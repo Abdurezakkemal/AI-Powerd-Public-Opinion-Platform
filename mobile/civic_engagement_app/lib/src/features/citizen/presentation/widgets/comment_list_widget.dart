@@ -122,7 +122,10 @@ class _CommentListWidgetState extends State<CommentListWidget> {
           );
         }
 
-        return const Center(child: Text('No comments available'));
+        // Handle CommentInitial and other states - show empty state
+        return const Center(
+          child: Text('No comments yet. Be the first to comment!'),
+        );
       },
     );
   }
@@ -140,17 +143,23 @@ class _CommentCard extends StatelessWidget {
   void _showReportDialog(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (context) => ReportCommentDialog(commentId: comment.id),
+      builder: (dialogContext) => BlocProvider.value(
+        value: context.read<CommentCubit>(),
+        child: ReportCommentDialog(commentId: comment.id),
+      ),
     );
   }
 
   void _showEditDialog(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (context) => EditCommentDialog(
-        commentId: comment.id,
-        currentText: comment.text,
-        policyId: policyId,
+      builder: (dialogContext) => BlocProvider.value(
+        value: context.read<CommentCubit>(),
+        child: EditCommentDialog(
+          commentId: comment.id,
+          currentText: comment.text,
+          policyId: policyId,
+        ),
       ),
     );
   }
@@ -158,9 +167,12 @@ class _CommentCard extends StatelessWidget {
   void _showReplyDialog(BuildContext context) {
     showDialog<void>(
       context: context,
-      builder: (context) => ReplyCommentDialog(
-        policyId: policyId,
-        parentComment: comment,
+      builder: (dialogContext) => BlocProvider.value(
+        value: context.read<CommentCubit>(),
+        child: ReplyCommentDialog(
+          policyId: policyId,
+          parentComment: comment,
+        ),
       ),
     );
   }
@@ -175,104 +187,115 @@ class _CommentCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isReply = comment.parentCommentId != null;
     
-    return Card(
-      margin: EdgeInsets.only(
-        left: isReply ? 32 : 16,  // Indent replies
-        right: 16,
-        top: 8,
-        bottom: 8,
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Reply indicator
-            if (isReply) ...[
-              Row(
-                children: [
-                  Icon(
-                    Icons.subdirectory_arrow_right,
-                    size: 16,
-                    color: Colors.grey.shade600,
-                  ),
-                  const SizedBox(width: 4),
-                  Text(
-                    'Reply',
-                    style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade600,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-            ],
-            Row(
+    return Column(
+      children: [
+        Card(
+          margin: EdgeInsets.only(
+            left: isReply ? 32 : 16,  // Indent replies
+            right: 16,
+            top: 8,
+            bottom: 8,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    comment.userEmail ?? 'Anonymous',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                ),
-                _StatusChip(comment: comment),
-                IconButton(
-                  icon: const Icon(Icons.more_vert, size: 20),
-                  onPressed: () => _showCommentMenu(context),
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(comment.text),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                if (comment.sentiment != null) ...[
-                  _SentimentChip(sentiment: comment.sentiment!),
-                  const SizedBox(width: 8),
-                ],
-                if (comment.isEdited) ...[
-                  const Icon(Icons.edit, size: 16, color: Colors.grey),
-                  const SizedBox(width: 4),
-                  const Text('Edited', style: TextStyle(color: Colors.grey)),
-                  const SizedBox(width: 8),
-                ],
-                if (comment.isOfficialReply) ...[
-                  const Icon(Icons.verified, size: 16, color: Colors.blue),
-                  const SizedBox(width: 4),
-                  const Text('Official', style: TextStyle(color: Colors.blue)),
-                ],
-              ],
-            ),
-            if (comment.keywords != null && comment.keywords!.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 4,
-                children: comment.keywords!
-                    .take(3)
-                    .map(
-                      (keyword) => Chip(
-                        label: Text(keyword),
-                        visualDensity: VisualDensity.compact,
+                // Reply indicator
+                if (isReply) ...[
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.subdirectory_arrow_right,
+                        size: 16,
+                        color: Colors.grey.shade600,
                       ),
-                    )
-                    .toList(),
-              ),
-            ],
-            const SizedBox(height: 4),
-            Text(
-              _formatDate(comment.createdAt),
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Colors.grey,
+                      const SizedBox(width: 4),
+                      Text(
+                        'Reply',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.grey.shade600,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ],
                   ),
+                  const SizedBox(height: 8),
+                ],
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        comment.userEmail ?? 'Anonymous',
+                        style: Theme.of(context).textTheme.titleSmall,
+                      ),
+                    ),
+                    _StatusChip(comment: comment),
+                    IconButton(
+                      icon: const Icon(Icons.more_vert, size: 20),
+                      onPressed: () => _showCommentMenu(context),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(comment.text),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    if (comment.sentiment != null) ...[
+                      _SentimentChip(sentiment: comment.sentiment!),
+                      const SizedBox(width: 8),
+                    ],
+                    if (comment.isEdited) ...[
+                      const Icon(Icons.edit, size: 16, color: Colors.grey),
+                      const SizedBox(width: 4),
+                      const Text('Edited', style: TextStyle(color: Colors.grey)),
+                      const SizedBox(width: 8),
+                    ],
+                    if (comment.isOfficialReply) ...[
+                      const Icon(Icons.verified, size: 16, color: Colors.blue),
+                      const SizedBox(width: 4),
+                      const Text('Official', style: TextStyle(color: Colors.blue)),
+                    ],
+                  ],
+                ),
+                if (comment.keywords != null && comment.keywords!.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 4,
+                    children: comment.keywords!
+                        .take(3)
+                        .map(
+                          (keyword) => Chip(
+                            label: Text(keyword),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Text(
+                  _formatDate(comment.createdAt),
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: Colors.grey,
+                      ),
+                ),
+                // Show replies button for top-level comments only
+                if (!isReply) ...[
+                  const SizedBox(height: 8),
+                  _RepliesSection(comment: comment, policyId: policyId),
+                ],
+              ],
             ),
-          ],
+          ),
         ),
-      ),
+        // Show replies if loaded
+        if (!isReply) _RepliesList(comment: comment, policyId: policyId),
+      ],
     );
   }
 
@@ -293,54 +316,58 @@ class _CommentCard extends StatelessWidget {
 
   void _showCommentMenu(BuildContext context) {
     final isAuthor = _isCurrentUserAuthor();
+    final cubit = context.read<CommentCubit>();
 
     showModalBottomSheet<void>(
       context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Reply option - available to everyone
-            ListTile(
-              leading: const Icon(Icons.reply),
-              title: const Text('Reply'),
-              onTap: () {
-                Navigator.pop(context);
-                _showReplyDialog(context);
-              },
-            ),
-            // Edit option - only for comment author and visible comments
-            if (isAuthor && comment.isVisible) ...[
+      builder: (bottomSheetContext) => BlocProvider.value(
+        value: cubit,
+        child: SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Reply option - available to everyone
               ListTile(
-                leading: const Icon(Icons.edit),
-                title: const Text('Edit Comment'),
+                leading: const Icon(Icons.reply),
+                title: const Text('Reply'),
                 onTap: () {
-                  Navigator.pop(context);
-                  _showEditDialog(context);
+                  Navigator.pop(bottomSheetContext);
+                  _showReplyDialog(context);
                 },
               ),
+              // Edit option - only for comment author and visible comments
+              if (isAuthor && comment.isVisible) ...[
+                ListTile(
+                  leading: const Icon(Icons.edit),
+                  title: const Text('Edit Comment'),
+                  onTap: () {
+                    Navigator.pop(bottomSheetContext);
+                    _showEditDialog(context);
+                  },
+                ),
+              ],
+              // Report option - only for non-authors
+              if (!isAuthor)
+                ListTile(
+                  leading: const Icon(Icons.flag),
+                  title: const Text('Report Comment'),
+                  onTap: () {
+                    Navigator.pop(bottomSheetContext);
+                    _showReportDialog(context);
+                  },
+                ),
+              // Appeal option - only for authors of hidden comments that need review
+              if (isAuthor && comment.canAppeal)
+                ListTile(
+                  leading: const Icon(Icons.gavel),
+                  title: const Text('Appeal Decision'),
+                  onTap: () {
+                    Navigator.pop(bottomSheetContext);
+                    _showAppealDialog(context);
+                  },
+                ),
             ],
-            // Report option - only for non-authors
-            if (!isAuthor)
-              ListTile(
-                leading: const Icon(Icons.flag),
-                title: const Text('Report Comment'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showReportDialog(context);
-                },
-              ),
-            // Appeal option - only for authors of hidden comments that need review
-            if (isAuthor && comment.canAppeal)
-              ListTile(
-                leading: const Icon(Icons.gavel),
-                title: const Text('Appeal Decision'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showAppealDialog(context);
-                },
-              ),
-          ],
+          ),
         ),
       ),
     );
@@ -348,10 +375,11 @@ class _CommentCard extends StatelessWidget {
 
   void _showAppealDialog(BuildContext context) {
     final reasonController = TextEditingController();
+    final cubit = context.read<CommentCubit>();
 
     showDialog<void>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (dialogContext) => AlertDialog(
         title: const Text('Appeal Moderation'),
         content: TextField(
           controller: reasonController,
@@ -364,17 +392,17 @@ class _CommentCard extends StatelessWidget {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
             onPressed: () {
               if (reasonController.text.trim().isNotEmpty) {
-                context.read<CommentCubit>().appealComment(
-                      commentId: comment.id,
-                      reason: reasonController.text,
-                    );
-                Navigator.pop(context);
+                cubit.appealComment(
+                  commentId: comment.id,
+                  reason: reasonController.text,
+                );
+                Navigator.pop(dialogContext);
               }
             },
             child: const Text('Submit Appeal'),
@@ -474,6 +502,117 @@ class _SentimentChip extends StatelessWidget {
           style: TextStyle(color: color, fontSize: 12),
         ),
       ],
+    );
+  }
+}
+
+class _RepliesSection extends StatelessWidget {
+  const _RepliesSection({
+    required this.comment,
+    required this.policyId,
+  });
+
+  final Comment comment;
+  final String policyId;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<CommentCubit, CommentState>(
+      builder: (context, state) {
+        final cubit = context.read<CommentCubit>();
+        final repliesLoaded = cubit.areRepliesLoaded(comment.id);
+        final repliesLoading = cubit.areRepliesLoading(comment.id);
+        final replies = cubit.getReplies(comment.id);
+
+        if (repliesLoading) {
+          return Row(
+            children: [
+              const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Loading replies...',
+                style: TextStyle(
+                  color: Colors.grey.shade600,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+          );
+        }
+
+        if (!repliesLoaded) {
+          return TextButton.icon(
+            onPressed: () => cubit.loadReplies(comment.id),
+            icon: const Icon(Icons.comment, size: 16),
+            label: const Text('Show replies'),
+            style: TextButton.styleFrom(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          );
+        }
+
+        if (replies.isEmpty) {
+          return Text(
+            'No replies yet',
+            style: TextStyle(
+              color: Colors.grey.shade600,
+              fontSize: 12,
+              fontStyle: FontStyle.italic,
+            ),
+          );
+        }
+
+        return TextButton.icon(
+          onPressed: () => cubit.loadReplies(comment.id), // Refresh replies
+          icon: const Icon(Icons.refresh, size: 16),
+          label: Text('${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}'),
+          style: TextButton.styleFrom(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            minimumSize: Size.zero,
+            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _RepliesList extends StatelessWidget {
+  const _RepliesList({
+    required this.comment,
+    required this.policyId,
+  });
+
+  final Comment comment;
+  final String policyId;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<CommentCubit, CommentState>(
+      builder: (context, state) {
+        final cubit = context.read<CommentCubit>();
+        final repliesLoaded = cubit.areRepliesLoaded(comment.id);
+        final replies = cubit.getReplies(comment.id);
+
+        if (!repliesLoaded || replies.isEmpty) {
+          return const SizedBox.shrink();
+        }
+
+        return Column(
+          children: replies
+              .map((reply) => _CommentCard(
+                    comment: reply,
+                    policyId: policyId,
+                  ))
+              .toList(),
+        );
+      },
     );
   }
 }

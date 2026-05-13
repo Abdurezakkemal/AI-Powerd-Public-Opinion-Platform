@@ -203,28 +203,116 @@ class _PolicyHeader extends StatelessWidget {
 class _FilterChips extends StatelessWidget {
   const _FilterChips();
 
+  // Common policy topics (from backend API documentation)
+  static const List<String> availableTopics = [
+    'Agriculture',
+    'Water',
+    'Infrastructure',
+    'Health',
+    'Education',
+    'Transportation',
+    'Environment',
+    'Economy',
+    'Security',
+    'Technology',
+  ];
+
   @override
   Widget build(BuildContext context) {
     return BlocBuilder<PolicyCubit, PolicyState>(
       builder: (context, state) {
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-          child: Row(
-            children: [
-              _chip(context, 'All', 'all', state.filter),
-              const SizedBox(width: 8),
-              _chip(context, 'Active', 'active', state.filter),
-              const SizedBox(width: 8),
-              _chip(context, 'Paused', 'paused', state.filter),
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Status filters
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+              child: Row(
+                children: [
+                  _statusChip(context, 'All', 'all', state.filter),
+                  const SizedBox(width: 8),
+                  _statusChip(context, 'Active', 'active', state.filter),
+                  const SizedBox(width: 8),
+                  _statusChip(context, 'Paused', 'paused', state.filter),
+                ],
+              ),
+            ),
+            
+            // Topic filters section
+            if (state.topicFilters.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
+                child: Row(
+                  children: [
+                    Text(
+                      'Filtered by topics:',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppTheme.mutedText,
+                      ),
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      onPressed: () => context.read<PolicyCubit>().clearTopicFilters(),
+                      icon: const Icon(Icons.clear_all, size: 16),
+                      label: const Text('Clear all'),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(0, 32),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: Row(
+                  children: state.topicFilters.map((topic) {
+                    return Padding(
+                      padding: const EdgeInsets.only(right: 8),
+                      child: Chip(
+                        label: Text(topic),
+                        deleteIcon: const Icon(Icons.close, size: 16),
+                        onDeleted: () => context.read<PolicyCubit>().removeTopicFilter(topic),
+                        backgroundColor: AppTheme.primary.withValues(alpha: 0.1),
+                        labelStyle: const TextStyle(
+                          color: AppTheme.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        deleteIconColor: AppTheme.primary,
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
             ],
-          ),
+            
+            // Add topic filter button
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+              child: OutlinedButton.icon(
+                onPressed: () => _showTopicFilterDialog(context, state.topicFilters),
+                icon: const Icon(Icons.filter_list, size: 18),
+                label: Text(
+                  state.topicFilters.isEmpty ? 'Filter by topic' : 'Add more topics',
+                ),
+                style: OutlinedButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
+                ),
+              ),
+            ),
+          ],
         );
       },
     );
   }
 
-  Widget _chip(
+  Widget _statusChip(
     BuildContext context,
     String label,
     String value,
@@ -249,6 +337,43 @@ class _FilterChips extends StatelessWidget {
       labelStyle: TextStyle(
         color: active ? Colors.white : AppTheme.mutedText,
         fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+
+  void _showTopicFilterDialog(BuildContext context, List<String> selectedTopics) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Filter by Topics'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView(
+            shrinkWrap: true,
+            children: availableTopics.map((topic) {
+              final isSelected = selectedTopics.contains(topic);
+              return CheckboxListTile(
+                title: Text(topic),
+                value: isSelected,
+                onChanged: (selected) {
+                  if (selected == true) {
+                    context.read<PolicyCubit>().addTopicFilter(topic);
+                  } else {
+                    context.read<PolicyCubit>().removeTopicFilter(topic);
+                  }
+                  Navigator.of(dialogContext).pop();
+                },
+                activeColor: AppTheme.primary,
+              );
+            }).toList(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }

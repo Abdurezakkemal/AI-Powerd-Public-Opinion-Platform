@@ -4,18 +4,49 @@ import '../../domain/entities/comment.dart';
 import '../../domain/repositories/citizen_repository.dart';
 import 'comment_state.dart';
 
+/// Represents a comment with its loaded replies
+class CommentWithReplies {
+  const CommentWithReplies({
+    required this.comment,
+    this.replies = const [],
+    this.repliesLoaded = false,
+    this.repliesLoading = false,
+    this.hasMoreReplies = false,
+  });
+
+  final Comment comment;
+  final List<Comment> replies;
+  final bool repliesLoaded;
+  final bool repliesLoading;
+  final bool hasMoreReplies;
+
+  CommentWithReplies copyWith({
+    Comment? comment,
+    List<Comment>? replies,
+    bool? repliesLoaded,
+    bool? repliesLoading,
+    bool? hasMoreReplies,
+  }) {
+    return CommentWithReplies(
+      comment: comment ?? this.comment,
+      replies: replies ?? this.replies,
+      repliesLoaded: repliesLoaded ?? this.repliesLoaded,
+      repliesLoading: repliesLoading ?? this.repliesLoading,
+      hasMoreReplies: hasMoreReplies ?? this.hasMoreReplies,
+    );
+  }
+}
+
 class CommentCubit extends Cubit<CommentState> {
   CommentCubit(this._repository) : super(const CommentInitial());
 
   final CitizenRepository _repository;
-  List<Comment> _allComments = [];
+  List<CommentWithReplies> _allComments = [];
   int _currentPage = 1;
   int _total = 0;
 
   Future<void> loadComments({
     required String policyId,
-    String? sentiment,
-    String? status,
     bool refresh = false,
   }) async {
     if (refresh) {
@@ -30,14 +61,16 @@ class CommentCubit extends Cubit<CommentState> {
       final page = await _repository.getPolicyComments(
         policyId: policyId,
         page: _currentPage,
-        sentiment: sentiment,
-        status: status,
       );
 
+      final commentsWithReplies = page.comments
+          .map((comment) => CommentWithReplies(comment: comment))
+          .toList();
+
       if (refresh) {
-        _allComments = page.comments;
+        _allComments = commentsWithReplies;
       } else {
-        _allComments.addAll(page.comments);
+        _allComments.addAll(commentsWithReplies);
       }
 
       _total = page.total;
@@ -45,7 +78,7 @@ class CommentCubit extends Cubit<CommentState> {
 
       emit(
         CommentLoaded(
-          comments: List.from(_allComments),
+          comments: _allComments.map((c) => c.comment).toList(),
           total: _total,
           page: _currentPage,
           hasMore: _allComments.length < _total,
@@ -58,8 +91,6 @@ class CommentCubit extends Cubit<CommentState> {
 
   Future<void> loadMore({
     required String policyId,
-    String? sentiment,
-    String? status,
   }) async {
     if (_allComments.length >= _total) return;
 
@@ -67,16 +98,18 @@ class CommentCubit extends Cubit<CommentState> {
       final page = await _repository.getPolicyComments(
         policyId: policyId,
         page: _currentPage + 1,
-        sentiment: sentiment,
-        status: status,
       );
 
-      _allComments.addAll(page.comments);
+      final commentsWithReplies = page.comments
+          .map((comment) => CommentWithReplies(comment: comment))
+          .toList();
+
+      _allComments.addAll(commentsWithReplies);
       _currentPage = page.page;
 
       emit(
         CommentLoaded(
-          comments: List.from(_allComments),
+          comments: _allComments.map((c) => c.comment).toList(),
           total: _total,
           page: _currentPage,
           hasMore: _allComments.length < _total,
@@ -85,6 +118,97 @@ class CommentCubit extends Cubit<CommentState> {
     } catch (e) {
       emit(CommentError(e.toString()));
     }
+  }
+
+  Future<void> loadReplies(String commentId) async {
+    final commentIndex = _allComments.indexWhere((c) => c.comment.id == commentId);
+    if (commentIndex == -1) return;
+
+    final commentWithReplies = _allComments[commentIndex];
+    if (commentWithReplies.repliesLoaded || commentWithReplies.repliesLoading) return;
+
+    // Update loading state
+    _allComments[commentIndex] = commentWithReplies.copyWith(repliesLoading: true);
+    _emitCurrentState();
+
+    try {
+      final repliesPage = await _repository.getCommentReplies(commentId: commentId);
+      
+      _allComments[commentIndex] = commentWithReplies.copyWith(
+        replies: repliesPage.comments,
+        repliesLoaded: true,
+        repliesLoading: false,
+        hasMoreReplies: repliesPage.hasMore,
+      );
+      
+      _emitCurrentState();
+    } catch (e) {
+      _allComments[commentIndex] = commentWithReplies.copyWith(repliesLoading: false);
+      _emitCurrentState();
+      emit(CommentError(e.toString()));
+    }
+  }
+
+  List<Comment> getReplies(String commentId) {
+    final commentWithReplies = _allComments.firstWhere(
+      (c) => c.comment.id == commentId,
+      orElse: () => CommentWithReplies(
+        comment: Comment(
+          id: '',
+          policyId: '',
+          text: '',
+          visibility: '',
+          moderationStatus: '',
+          createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+        ),
+      ),
+    );
+    return commentWithReplies.replies;
+  }
+
+  bool areRepliesLoaded(String commentId) {
+    final commentWithReplies = _allComments.firstWhere(
+      (c) => c.comment.id == commentId,
+      orElse: () => CommentWithReplies(
+        comment: Comment(
+          id: '',
+          policyId: '',
+          text: '',
+          visibility: '',
+          moderationStatus: '',
+          createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+        ),
+      ),
+    );
+    return commentWithReplies.repliesLoaded;
+  }
+
+  bool areRepliesLoading(String commentId) {
+    final commentWithReplies = _allComments.firstWhere(
+      (c) => c.comment.id == commentId,
+      orElse: () => CommentWithReplies(
+        comment: Comment(
+          id: '',
+          policyId: '',
+          text: '',
+          visibility: '',
+          moderationStatus: '',
+          createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+        ),
+      ),
+    );
+    return commentWithReplies.repliesLoading;
+  }
+
+  void _emitCurrentState() {
+    emit(
+      CommentLoaded(
+        comments: _allComments.map((c) => c.comment).toList(),
+        total: _total,
+        page: _currentPage,
+        hasMore: _allComments.length < _total,
+      ),
+    );
   }
 
   Future<void> postComment({

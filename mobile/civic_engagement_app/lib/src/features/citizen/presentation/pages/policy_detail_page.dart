@@ -585,22 +585,23 @@ class _CommentsTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return BlocProvider(
       create: (_) => CommentCubit(serviceLocator<CitizenRepository>()),
-      child: Column(
-        children: [
-          PostCommentWidget(
-            policyId: policy.id,
-            onCommentPosted: () {
-              // Refresh comments after posting
-              context.read<CommentCubit>().loadComments(
-                    policyId: policy.id,
-                    refresh: true,
-                  );
-            },
-          ),
-          Expanded(
-            child: CommentListWidget(policyId: policy.id),
-          ),
-        ],
+      child: Builder(
+        builder: (context) => Column(
+          children: [
+            PostCommentWidget(
+              policyId: policy.id,
+              onCommentPosted: () {
+                context.read<CommentCubit>().loadComments(
+                      policyId: policy.id,
+                      refresh: true,
+                    );
+              },
+            ),
+            Expanded(
+              child: CommentListWidget(policyId: policy.id),
+            ),
+          ],
+        ),
       ),
     );
   }

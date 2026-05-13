@@ -1,5 +1,6 @@
-import '../entities/comment_page.dart';
+import '../entities/comment.dart';
 import '../entities/notification_page.dart';
+import '../entities/planner_request.dart';
 import '../entities/policy.dart';
 import '../entities/policy_page.dart';
 import '../entities/user_profile.dart';
@@ -29,15 +30,19 @@ abstract class CitizenRepository {
 
   Future<String> deleteAccount();
 
+  // Policy endpoints (Section 3)
   Future<PolicyPage> getPolicies({
     String? status,
     String? topic,
+    List<String>? topics, // NEW: Support multiple topics
+    bool includeArchived = false, // NEW: Include archived policies
     int page = 1,
     int limit = 20,
   });
 
   Future<Policy> getPolicy(String id);
 
+  // Voting endpoint (Section 4.1)
   Future<VoteReceipt> submitVote({
     required String policyId,
     required dynamic value, // Can be int, String, or List<String> based on poll type
@@ -68,12 +73,21 @@ abstract class CitizenRepository {
     required String reason,
   });
 
+  // UPDATED: Use public endpoint instead of analytics endpoint
   Future<CommentPage> getPolicyComments({
     required String policyId,
     int page = 1,
     int limit = 20,
-    String? sentiment,
-    String? status,
+  });
+
+  // NEW: Get single comment by ID (Section 4.4)
+  Future<Comment> getComment(String commentId);
+
+  // NEW: Get replies for a comment
+  Future<CommentPage> getCommentReplies({
+    required String commentId,
+    int page = 1,
+    int limit = 20,
   });
 
   Future<List<VoteHistory>> getHistory();
@@ -87,4 +101,10 @@ abstract class CitizenRepository {
   Future<void> markNotificationRead(String id);
 
   Future<int> markAllNotificationsRead();
+
+  // Planner onboarding (Section 10.1)
+  Future<PlannerRequest> requestPlannerStatus({
+    String? organization,
+    required String reason,
+  });
 }

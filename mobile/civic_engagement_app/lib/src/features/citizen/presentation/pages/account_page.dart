@@ -10,6 +10,7 @@ import '../../../../core/widgets/error_view.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../cubit/profile_cubit.dart';
+import 'planner_request_page.dart';
 
 class AccountPage extends StatefulWidget {
   const AccountPage({super.key});
@@ -139,6 +140,37 @@ class _AccountPageState extends State<AccountPage> {
                       ),
                     ],
                   ),
+                ),
+              ],
+            ),
+          ),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionTitle(
+                  icon: Icons.work_outline_rounded,
+                  title: 'Become a Planner',
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Planners can create and manage policy proposals. Apply to become a planner if you work in policy development.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppTheme.mutedText,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (context) => const PlannerRequestPage(),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.send_outlined),
+                  label: const Text('Request Planner Status'),
                 ),
               ],
             ),
