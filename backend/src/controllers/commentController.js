@@ -533,6 +533,7 @@ exports.reportComment = async (req, res) => {
     if (comment.reportCount >= 3) {
       const policy = await Policy.findById(comment.policyId);
       if (policy) {
+        // Notify policy owner
         await createNotification({
           userId: policy.createdBy,
           type: "COMMENT_FLAGGED",
@@ -542,6 +543,25 @@ exports.reportComment = async (req, res) => {
           severity: "warning",
           source: "system",
         });
+
+        // Notify associates with moderate_comments permission
+        const PolicyAssociate = require("../models/PolicyAssociate");
+        const associates = await PolicyAssociate.find({
+          policyId: comment.policyId,
+          revokedAt: null,
+          permissions: { $in: ["moderate_comments"] },
+        }).select("plannerId");
+        for (const associate of associates) {
+          await createNotification({
+            userId: associate.plannerId,
+            type: "COMMENT_FLAGGED",
+            title: "Comment flagged for review",
+            message: `A comment (ID: ${commentId}) has been reported ${comment.reportCount} times.`,
+            data: { commentId, policyId: comment.policyId },
+            severity: "warning",
+            source: "system",
+          });
+        }
       }
     }
 

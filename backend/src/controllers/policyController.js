@@ -240,11 +240,11 @@ exports.create = async (req, res) => {
     const start = new Date(startDate);
     const end = new Date(endDate);
     const now = new Date();
-    
+
     // Normalize dates to midnight for fair comparison (ignore time component)
     start.setHours(0, 0, 0, 0);
     now.setHours(0, 0, 0, 0);
-    
+
     if (start < now)
       return sendError(
         res,
@@ -882,6 +882,25 @@ exports.close = async (req, res) => {
       req,
     });
 
+    // Notify associates with view_analytics permission
+    const PolicyAssociate = require("../models/PolicyAssociate");
+    const associates = await PolicyAssociate.find({
+      policyId: policy._id,
+      revokedAt: null,
+      permissions: "view_analytics",
+    }).select("plannerId");
+    for (const associate of associates) {
+      await createNotification({
+        userId: associate.plannerId,
+        type: "POLICY_CLOSED",
+        title: "Policy Closed",
+        message: `Policy "${policy.title}" has been manually closed.`,
+        data: { policyId: policy._id, policyCode: policy.policyCode },
+        severity: "info",
+        source: "system",
+      });
+    }
+
     logger.info(
       `Policy ${policy._id} (${policy.policyCode}) closed by ${req.user.id}`,
     );
@@ -902,7 +921,6 @@ exports.close = async (req, res) => {
     );
   }
 };
-
 // PATCH /api/policies/:id/pause
 exports.pause = async (req, res) => {
   try {
@@ -1172,6 +1190,41 @@ exports.extendEndDate = async (req, res) => {
       details: { policyCode: policy.policyCode, oldEndDate, newEndDate },
       req,
     });
+
+    // Notify all voters and associates (view_analytics)
+    const Vote = require("../models/Vote");
+    const PolicyAssociate = require("../models/PolicyAssociate");
+    const voters = await Vote.find({
+      policyId: policy._id,
+      userId: { $ne: null },
+    }).distinct("userId");
+    const associates = await PolicyAssociate.find({
+      policyId: policy._id,
+      revokedAt: null,
+      permissions: "view_analytics",
+    }).select("plannerId");
+    const userIds = [
+      ...new Set([
+        ...voters.map((v) => v.toString()),
+        ...associates.map((a) => a.plannerId.toString()),
+      ]),
+    ];
+    for (const uid of userIds) {
+      await createNotification({
+        userId: uid,
+        type: "POLICY_EXTENDED",
+        title: "Policy Extended",
+        message: `Policy "${policy.title}" end date has been extended to ${newEndDate}.`,
+        data: {
+          policyId: policy._id,
+          policyCode: policy.policyCode,
+          newEndDate,
+        },
+        severity: "info",
+        source: "system",
+      });
+    }
+
     logger.info(
       `Policy ${policy._id} end date changed from ${oldEndDate} to ${newEndDate} by ${req.user.id}`,
     );

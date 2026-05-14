@@ -1,5 +1,6 @@
 const cron = require("node-cron");
 const Policy = require("../models/Policy");
+const PolicyAssociate = require("../models/PolicyAssociate");
 const Vote = require("../models/Vote");
 const SmsSubscription = require("../models/SmsSubscription");
 const logger = require("../utils/logger");
@@ -39,13 +40,12 @@ const autoClosePolicies = async () => {
       const allVotes = await Vote.find({ policyId: policy._id });
       const totalVotes = allVotes.length;
       const totalRating = allVotes.reduce((sum, v) => {
-        // v.value may be numeric for rating/likert, otherwise ignore
         return sum + (typeof v.value === "number" ? v.value : 0);
       }, 0);
       const avgRating =
         totalVotes > 0 ? (totalRating / totalVotes).toFixed(2) : 0;
 
-      // --- In‑app notifications for app users ---
+      // --- In‑app notifications for app users (voters) ---
       const distinctUserIds = [
         ...new Set(allVotes.map((v) => v.userId).filter((id) => id)),
       ];
@@ -66,7 +66,7 @@ const autoClosePolicies = async () => {
         });
       }
 
-      // Notify policy owner (planner)
+      // Notify policy owner
       await createNotification({
         userId: policy.createdBy,
         type: "POLICY_CLOSED",
@@ -81,6 +81,29 @@ const autoClosePolicies = async () => {
         severity: "info",
         source: "system",
       });
+
+      // Notify associates with view_analytics permission
+      const associates = await PolicyAssociate.find({
+        policyId: policy._id,
+        revokedAt: null,
+        permissions: { $in: ["view_analytics"] },
+      }).select("plannerId");
+      for (const associate of associates) {
+        await createNotification({
+          userId: associate.plannerId,
+          type: "POLICY_CLOSED",
+          title: "Policy Closed",
+          message: `Policy "${policy.title}" has closed. Final average rating: ${avgRating} stars (${totalVotes} votes).`,
+          data: {
+            policyId: policy._id,
+            policyCode: policy.policyCode,
+            averageRating: avgRating,
+            totalVotes,
+          },
+          severity: "info",
+          source: "system",
+        });
+      }
 
       // --- SMS notifications for subscribed SMS voters ---
       const smsVoterPhoneHashes = [
