@@ -7,25 +7,19 @@ const {
   ErrorCodes,
 } = require("../utils/responseHelper");
 const redisClient = require("../config/redis");
+const { getOrSet } = require("../services/cacheService");
 const logger = require("../utils/logger");
 
 // Helper: compute demographic boost score based on relevanceFactors
 const computeDemographicScore = (policy, user) => {
   let score = 0;
   const factors = policy.relevanceFactors || {};
-  // women
   if (factors.women && user.gender === "female") score += 5;
-  // youth (age 18-34 considered youth)
   if (factors.youth && ["18-24", "25-34"].includes(user.ageRange)) score += 5;
-  // farmers
   if (factors.farmers && user.occupation === "farmer") score += 5;
-  // urban
-  if (factors.urban && user.region?.toLowerCase().includes("city")) score += 3; // simplistic
-  // rural
+  if (factors.urban && user.region?.toLowerCase().includes("city")) score += 3;
   if (factors.rural && !user.region?.toLowerCase().includes("city")) score += 3;
-  // private sector
   if (factors.privateSector && user.occupation === "private-sector") score += 4;
-  // government
   if (factors.government && user.occupation === "government-employee")
     score += 4;
   return score;
@@ -39,7 +33,6 @@ const computeContentScore = (policyTopics, userKeywordProfile) => {
   for (const topic of policyTopics) {
     if (userKeywordProfile[topic]) overlap += userKeywordProfile[topic];
   }
-  // normalize by maximum possible (sum of user weights) -> roughly cosine similarity but simple
   const totalUserWeight = Object.values(userKeywordProfile).reduce(
     (a, b) => a + b,
     0,
@@ -50,11 +43,6 @@ const computeContentScore = (policyTopics, userKeywordProfile) => {
 // GET /api/feed
 exports.getFeed = async (req, res) => {
   try {
-    console.log("=== FEED START ===");
-    console.log("User from auth:", JSON.stringify(req.user, null, 2));
-    const userId = req.user.id;
-    console.log("userId:", userId);
-
     if (req.user.role !== "citizen") {
       return sendError(
         res,
@@ -65,53 +53,44 @@ exports.getFeed = async (req, res) => {
       );
     }
 
-    const cacheKey = `feed:${userId}`;
-    const cached = await redisClient.get(cacheKey);
-    if (cached) {
-      return sendSuccess(res, JSON.parse(cached), "Feed (cached)");
-    }
+    const userId = req.user.id;
+    const cacheKey = `feed:user:${userId}`;
 
-    console.log("Fetching policies...");
-    const policies = await Policy.find({
-      status: "active",
-      targetRegions: req.user.region,
-    }).lean();
-    console.log(`Found ${policies.length} policies`);
+    const feed = await getOrSet(cacheKey, 3600, async () => {
+      const policies = await Policy.find({
+        status: "active",
+        targetRegions: req.user.region,
+      }).lean();
 
-    if (!policies.length) {
-      return sendSuccess(res, [], "No active policies");
-    }
+      if (!policies.length) return [];
 
-    console.log("Getting user keyword profile...");
-    const userKeywordProfile = await getUserKeywordProfile(userId);
-    console.log("Keyword profile:", userKeywordProfile);
+      const userKeywordProfile = await getUserKeywordProfile(userId);
 
-    const scored = policies.map((policy) => {
-      const demoScore = computeDemographicScore(policy, req.user);
-      const contentScore = computeContentScore(
-        policy.topics || [],
-        userKeywordProfile,
-      );
-      const totalScore = demoScore * 0.7 + contentScore * 10 * 0.3;
-      return { policy, score: totalScore };
+      const scored = policies.map((policy) => {
+        const demoScore = computeDemographicScore(policy, req.user);
+        const contentScore = computeContentScore(
+          policy.topics || [],
+          userKeywordProfile,
+        );
+        const totalScore = demoScore * 0.7 + contentScore * 10 * 0.3;
+        return { policy, score: totalScore };
+      });
+
+      scored.sort((a, b) => b.score - a.score);
+
+      return scored.map((item) => ({
+        id: item.policy._id,
+        title: item.policy.title,
+        description: item.policy.description,
+        policyCode: item.policy.policyCode,
+        pollType: item.policy.pollType,
+        startDate: item.policy.startDate,
+        endDate: item.policy.endDate,
+        targetRegions: item.policy.targetRegions,
+        relevanceScore: item.score.toFixed(2),
+      }));
     });
 
-    scored.sort((a, b) => b.score - a.score);
-
-    const feed = scored.map((item) => ({
-      id: item.policy._id,
-      title: item.policy.title,
-      description: item.policy.description,
-      policyCode: item.policy.policyCode,
-      pollType: item.policy.pollType,
-      startDate: item.policy.startDate,
-      endDate: item.policy.endDate,
-      targetRegions: item.policy.targetRegions,
-      relevanceScore: item.score.toFixed(2),
-    }));
-
-    await redisClient.setEx(cacheKey, 3600, JSON.stringify(feed));
-    console.log("Feed generated successfully");
     return sendSuccess(res, feed, "Personalized feed");
   } catch (err) {
     console.error("Feed error details:", err);
@@ -125,7 +104,8 @@ exports.getFeed = async (req, res) => {
     );
   }
 };
-// POST /api/feed/interact - record when user clicks/view a policy from feed
+
+// POST /api/feed/interact
 exports.recordInteraction = async (req, res) => {
   try {
     const { policyId, type } = req.body;
@@ -138,7 +118,7 @@ exports.recordInteraction = async (req, res) => {
         400,
       );
     }
-    // Check if already exists (to avoid duplicates for same interaction)
+
     const existing = await UserInteraction.findOne({
       userId: req.user.id,
       policyId,
@@ -147,8 +127,11 @@ exports.recordInteraction = async (req, res) => {
     if (!existing) {
       await UserInteraction.create({ userId: req.user.id, policyId, type });
     }
-    // Invalidate feed cache for user
-    await redisClient.del(`feed:${req.user.id}`);
+
+    // Invalidate feed cache for this user
+    const cacheKey = `feed:user:${req.user.id}`;
+    await redisClient.del(cacheKey);
+
     return sendSuccess(res, null, "Interaction recorded");
   } catch (err) {
     logger.error({ error: err.message }, "Record interaction error");

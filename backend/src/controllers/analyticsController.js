@@ -1,8 +1,10 @@
 const mongoose = require("mongoose");
+const crypto = require("crypto");
 const Vote = require("../models/Vote");
 const Comment = require("../models/Comment");
 const Policy = require("../models/Policy");
 const logger = require("../utils/logger");
+const { getOrSet } = require("../services/cacheService");
 const {
   sendSuccess,
   sendError,
@@ -152,6 +154,13 @@ const checkAnalyticsAccess = async (policy, user) => {
   };
 };
 
+// Helper to generate cache key from query parameters
+const generateCacheKey = (prefix, ...parts) => {
+  const str = parts.join(":");
+  const hash = crypto.createHash("md5").update(str).digest("hex");
+  return `${prefix}:${hash}`;
+};
+
 // ---------- Main analytics endpoint with optional demographic filters ----------
 exports.getAnalytics = async (req, res) => {
   try {
@@ -208,10 +217,28 @@ exports.getAnalytics = async (req, res) => {
     if (education) voteFilter["demographics.education"] = education;
     if (region) voteFilter.region = region;
 
-    const [voteAgg, comments] = await Promise.all([
-      getPollTypeAggregation(policy, voteFilter),
-      Comment.find({ policyId: policy._id, status: "approved" }).lean(),
-    ]);
+    const cacheKey = generateCacheKey(
+      "analytics:summary",
+      policyId,
+      JSON.stringify({
+        start,
+        end,
+        gender,
+        ageRange,
+        occupation,
+        education,
+        region,
+      }),
+    );
+
+    const [voteAgg, comments] = await getOrSet(cacheKey, 60, async () => {
+      const agg = await getPollTypeAggregation(policy, voteFilter);
+      const comms = await Comment.find({
+        policyId: policy._id,
+        status: "approved",
+      }).lean();
+      return [agg, comms];
+    });
 
     const sentimentCounts = { positive: 0, negative: 0, neutral: 0 };
     const keywordFreq = {};
@@ -414,7 +441,25 @@ exports.getTimeseries = async (req, res) => {
       );
     }
 
-    const voteTimeseries = await Vote.aggregate(votePipeline);
+    const cacheKey = generateCacheKey(
+      "analytics:timeseries",
+      policyId,
+      bucket,
+      JSON.stringify({
+        start,
+        end,
+        gender,
+        ageRange,
+        occupation,
+        education,
+        region,
+      }),
+    );
+
+    const voteTimeseries = await getOrSet(cacheKey, 60, async () => {
+      return await Vote.aggregate(votePipeline);
+    });
+
     const voteMap = new Map();
     for (const v of voteTimeseries) {
       const period = v._id;
@@ -441,16 +486,10 @@ exports.getTimeseries = async (req, res) => {
     }
 
     // ---------- COMMENT AGGREGATION (sentiment + keywords) ----------
-    // Build comment filter (same date range and demographic filters as votes)
     const commentFilter = { policyId: policy._id, status: "approved" };
     if (start) commentFilter.createdAt = { $gte: start };
     if (end)
       commentFilter.createdAt = { ...commentFilter.createdAt, $lte: end };
-    // Note: comments do not have demographics directly; we need to join with votes?
-    // For simplicity, we assume comments are from the same users as votes, but comments collection does not store demographics.
-    // To apply demographic filters, we would need to join comments with votes (expensive).
-    // For now, we omit demographic filters for comments and rely on the date range only.
-    // This is a simplification; we can improve later.
 
     const commentPipeline = [
       { $match: commentFilter },
@@ -470,17 +509,15 @@ exports.getTimeseries = async (req, res) => {
       const period = bucket._id;
       const sentiments = bucket.sentimentScores;
       const allKeywords = bucket.keywordsList.flat();
-      // Compute average sentiment score (positive=1, neutral=0, negative=-1)
       let totalScore = 0;
       let count = 0;
       for (const s of sentiments) {
         if (s === "positive") totalScore += 1;
         else if (s === "negative") totalScore -= 1;
-        else totalScore += 0; // neutral
+        else totalScore += 0;
         count++;
       }
       const avgSentiment = count ? (totalScore / count).toFixed(2) : 0;
-      // Compute top keywords
       const keywordFreq = {};
       for (const kw of allKeywords) {
         if (kw) keywordFreq[kw] = (keywordFreq[kw] || 0) + 1;
@@ -495,7 +532,6 @@ exports.getTimeseries = async (req, res) => {
       });
     }
 
-    // Merge voteMap and sentimentMap
     const allPeriods = new Set([...voteMap.keys(), ...sentimentMap.keys()]);
     const merged = Array.from(allPeriods)
       .sort()
@@ -528,6 +564,7 @@ exports.getTimeseries = async (req, res) => {
     );
   }
 };
+
 // ---------- Correlation for multipleChoice policies ----------
 exports.getCorrelation = async (req, res) => {
   try {
@@ -627,6 +664,7 @@ exports.getCorrelation = async (req, res) => {
   }
 };
 
+// ---------- Demographic breakdown (with sentiment) ----------
 exports.getDemographicBreakdown = async (req, res) => {
   try {
     const { policyId } = req.params;
@@ -751,7 +789,45 @@ exports.getDemographicBreakdown = async (req, res) => {
       );
     }
 
-    const voteBreakdown = await Vote.aggregate(votePipeline);
+    // ----- Comment aggregation (sentiment + keywords) -----
+    const commentFilter = { policyId: policy._id, status: "approved" };
+    if (start) commentFilter.createdAt = { $gte: start };
+    if (end)
+      commentFilter.createdAt = { ...commentFilter.createdAt, $lte: end };
+    if (dimension !== "region") {
+      commentFilter[`demographics.${dimension}`] = { $exists: true };
+    }
+
+    const commentPipeline = [
+      { $match: commentFilter },
+      {
+        $group: {
+          _id:
+            dimension === "region" ? "$region" : `$demographics.${dimension}`,
+          sentimentScores: { $push: "$sentiment.label" },
+          keywordList: { $push: "$keywords" },
+          commentCount: { $sum: 1 },
+        },
+      },
+    ];
+
+    const cacheKey = generateCacheKey(
+      "analytics:demographics",
+      policyId,
+      dimension,
+      JSON.stringify({ start, end, dimension }),
+    );
+
+    const [voteBreakdown, commentBreakdown] = await getOrSet(
+      cacheKey,
+      60,
+      async () => {
+        const votes = await Vote.aggregate(votePipeline);
+        const comments = await Comment.aggregate(commentPipeline);
+        return [votes, comments];
+      },
+    );
+
     const groupMap = new Map();
     for (const item of voteBreakdown) {
       const group = item._id || "unknown";
@@ -785,31 +861,6 @@ exports.getDemographicBreakdown = async (req, res) => {
       }
       groupMap.set(group, entry);
     }
-
-    // ----- Comment aggregation (sentiment + keywords) -----
-    // Build comment filter with same date range and demographics (using comment.demographics snapshot)
-    const commentFilter = { policyId: policy._id, status: "approved" };
-    if (start) commentFilter.createdAt = { $gte: start };
-    if (end)
-      commentFilter.createdAt = { ...commentFilter.createdAt, $lte: end };
-    // Add demographic filter based on dimension (if dimension is not region, we filter by comment.demographics field)
-    if (dimension !== "region") {
-      commentFilter[`demographics.${dimension}`] = { $exists: true };
-    }
-
-    const commentPipeline = [
-      { $match: commentFilter },
-      {
-        $group: {
-          _id:
-            dimension === "region" ? "$region" : `$demographics.${dimension}`,
-          sentimentScores: { $push: "$sentiment.label" },
-          keywordList: { $push: "$keywords" },
-          commentCount: { $sum: 1 },
-        },
-      },
-    ];
-    const commentBreakdown = await Comment.aggregate(commentPipeline);
 
     for (const item of commentBreakdown) {
       const group = item._id || "unknown";
@@ -868,6 +919,7 @@ exports.getDemographicBreakdown = async (req, res) => {
     );
   }
 };
+
 // ---------- CSV Export (enhanced) ----------
 exports.exportAnalytics = async (req, res) => {
   try {
@@ -1020,6 +1072,7 @@ exports.getComments = async (req, res) => {
   }
 };
 
+// ---------- Heatmap (with caching) ----------
 exports.getHeatmap = async (req, res) => {
   try {
     const {
@@ -1249,7 +1302,27 @@ exports.getHeatmap = async (req, res) => {
         },
       );
     }
-    const voteResults = await Vote.aggregate(votePipeline);
+
+    const cacheKey = generateCacheKey(
+      "analytics:heatmap",
+      policyId,
+      interval,
+      byRegionFlag,
+      JSON.stringify({
+        start,
+        end,
+        regions,
+        gender,
+        ageRange,
+        occupation,
+        education,
+      }),
+    );
+
+    const voteResults = await getOrSet(cacheKey, 60, async () => {
+      return await Vote.aggregate(votePipeline);
+    });
+
     const voteMap = new Map();
     for (const v of voteResults) {
       const key = byRegionFlag ? `${v._id.period}|${v._id.region}` : v._id;
@@ -1293,7 +1366,6 @@ exports.getHeatmap = async (req, res) => {
     };
     if (start) commentMatch.createdAt = { $gte: start };
     if (end) commentMatch.createdAt = { ...commentMatch.createdAt, $lte: end };
-    // Add demographic filters (if provided) using comment.demographics snapshot
     if (gender) commentMatch["demographics.gender"] = gender;
     if (ageRange) commentMatch["demographics.ageRange"] = ageRange;
     if (occupation) commentMatch["demographics.occupation"] = occupation;
@@ -1354,7 +1426,6 @@ exports.getHeatmap = async (req, res) => {
       });
     }
 
-    // Merge voteMap and commentMap
     const allKeys = new Set([...voteMap.keys(), ...commentMap.keys()]);
     const results = Array.from(allKeys)
       .sort()
