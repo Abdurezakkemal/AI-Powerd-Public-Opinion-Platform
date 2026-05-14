@@ -36,7 +36,7 @@ class AuthCubit extends Cubit<AuthState> {
       print('Cannot connect WebSocket: userId is null');
       return;
     }
-    
+
     print('Connecting WebSocket for user: ${session.userId}');
     _socketService.connect(session.userId!, session.token);
   }
@@ -123,7 +123,7 @@ class AuthCubit extends Cubit<AuthState> {
         token: token,
         newPassword: newPassword,
       );
-      emit(AuthState.message(message));
+      emit(AuthState.passwordResetSuccess(message: message));
     } on ApiException catch (error) {
       emit(AuthState.failure(error.message));
     }

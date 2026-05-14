@@ -17,7 +17,7 @@ class AuthPage extends StatefulWidget {
     this.onBack,
     super.key,
   });
-  
+
   final bool initialRegister;
   final VoidCallback? onBack;
 
@@ -78,7 +78,8 @@ class _AuthPageState extends State<AuthPage> {
       _regionController.text = '';
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('📱 Please enable location in settings, then return here and tap the location button again'),
+          content: Text(
+              '📱 Please enable location in settings, then return here and tap the location button again'),
           backgroundColor: Colors.orange,
           duration: Duration(seconds: 5),
         ),
@@ -96,6 +97,12 @@ class _AuthPageState extends State<AuthPage> {
         if (state.status == AuthStatus.otpPending) {
           _emailController.text = state.email ?? _emailController.text;
           setState(() => _mode = _AuthMode.verify);
+        }
+        if (state.status == AuthStatus.passwordResetSuccess) {
+          _resetTokenController.clear();
+          _newPasswordController.clear();
+          _passwordController.clear();
+          setState(() => _mode = _AuthMode.login);
         }
         if (state.message != null &&
             state.status != AuthStatus.authenticated &&
@@ -138,52 +145,52 @@ class _AuthPageState extends State<AuthPage> {
                       duration: const Duration(milliseconds: 180),
                       child: switch (_mode) {
                         _AuthMode.login => _LoginForm(
-                          key: const ValueKey('login'),
-                          emailController: _emailController,
-                          passwordController: _passwordController,
-                          loading: state.isBusy,
-                          onSubmit: _login,
-                        ),
+                            key: const ValueKey('login'),
+                            emailController: _emailController,
+                            passwordController: _passwordController,
+                            loading: state.isBusy,
+                            onSubmit: _login,
+                          ),
                         _AuthMode.register => _RegisterForm(
-                          key: const ValueKey('register'),
-                          emailController: _emailController,
-                          passwordController: _passwordController,
-                          phoneController: _phoneController,
-                          regionController: _regionController,
-                          selectedAgeRange: _selectedAgeRange,
-                          selectedGender: _selectedGender,
-                          selectedOccupation: _selectedOccupation,
-                          selectedEducation: _selectedEducation,
-                          onAgeRangeChanged: (value) =>
-                              setState(() => _selectedAgeRange = value),
-                          onGenderChanged: (value) =>
-                              setState(() => _selectedGender = value),
-                          onOccupationChanged: (value) =>
-                              setState(() => _selectedOccupation = value),
-                          onEducationChanged: (value) =>
-                              setState(() => _selectedEducation = value),
-                          loading: state.isBusy,
-                          isDetectingLocation: _isDetectingLocation,
-                          onSubmit: _register,
-                          onDetectLocation: _detectLocation,
-                        ),
+                            key: const ValueKey('register'),
+                            emailController: _emailController,
+                            passwordController: _passwordController,
+                            phoneController: _phoneController,
+                            regionController: _regionController,
+                            selectedAgeRange: _selectedAgeRange,
+                            selectedGender: _selectedGender,
+                            selectedOccupation: _selectedOccupation,
+                            selectedEducation: _selectedEducation,
+                            onAgeRangeChanged: (value) =>
+                                setState(() => _selectedAgeRange = value),
+                            onGenderChanged: (value) =>
+                                setState(() => _selectedGender = value),
+                            onOccupationChanged: (value) =>
+                                setState(() => _selectedOccupation = value),
+                            onEducationChanged: (value) =>
+                                setState(() => _selectedEducation = value),
+                            loading: state.isBusy,
+                            isDetectingLocation: _isDetectingLocation,
+                            onSubmit: _register,
+                            onDetectLocation: _detectLocation,
+                          ),
                         _AuthMode.verify => _VerifyForm(
-                          key: const ValueKey('verify'),
-                          emailController: _emailController,
-                          otpController: _otpController,
-                          loading: state.isBusy,
-                          onVerify: _verifyOtp,
-                          onResend: _sendOtp,
-                        ),
+                            key: const ValueKey('verify'),
+                            emailController: _emailController,
+                            otpController: _otpController,
+                            loading: state.isBusy,
+                            onVerify: _verifyOtp,
+                            onResend: _sendOtp,
+                          ),
                         _AuthMode.reset => _ResetForm(
-                          key: const ValueKey('reset'),
-                          emailController: _emailController,
-                          tokenController: _resetTokenController,
-                          newPasswordController: _newPasswordController,
-                          loading: state.isBusy,
-                          onRequest: _forgotPassword,
-                          onReset: _resetPassword,
-                        ),
+                            key: const ValueKey('reset'),
+                            emailController: _emailController,
+                            tokenController: _resetTokenController,
+                            newPasswordController: _newPasswordController,
+                            loading: state.isBusy,
+                            onRequest: _forgotPassword,
+                            onReset: _resetPassword,
+                          ),
                       },
                     ),
                   ),
@@ -202,9 +209,9 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
     context.read<AuthCubit>().login(
-      email: _emailController.text,
-      password: _passwordController.text,
-    );
+          email: _emailController.text,
+          password: _passwordController.text,
+        );
   }
 
   void _register() {
@@ -213,12 +220,13 @@ class _AuthPageState extends State<AuthPage> {
         !_ensure(_phoneController, 'Phone is required')) {
       return;
     }
-    
+
     // Strict region validation - must be detected via GPS
     if (_regionController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('📍 Location is required. Please enable GPS and tap the location button.'),
+          content: Text(
+              '📍 Location is required. Please enable GPS and tap the location button.'),
           backgroundColor: Colors.red,
           duration: Duration(seconds: 4),
         ),
@@ -243,19 +251,19 @@ class _AuthPageState extends State<AuthPage> {
       _showError('Please select your education level');
       return;
     }
-    
+
     context.read<AuthCubit>().register(
-      email: _emailController.text,
-      password: _passwordController.text,
-      phone: _phoneController.text,
-      region: _regionController.text,
-      demographics: UserDemographics(
-        ageRange: _selectedAgeRange!,
-        gender: _selectedGender!,
-        occupation: _selectedOccupation!,
-        education: _selectedEducation!,
-      ),
-    );
+          email: _emailController.text,
+          password: _passwordController.text,
+          phone: _phoneController.text,
+          region: _regionController.text,
+          demographics: UserDemographics(
+            ageRange: _selectedAgeRange!,
+            gender: _selectedGender!,
+            occupation: _selectedOccupation!,
+            education: _selectedEducation!,
+          ),
+        );
   }
 
   void _verifyOtp() {
@@ -264,9 +272,9 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
     context.read<AuthCubit>().verifyOtp(
-      email: _emailController.text,
-      code: _otpController.text,
-    );
+          email: _emailController.text,
+          code: _otpController.text,
+        );
   }
 
   void _sendOtp() {
@@ -285,9 +293,9 @@ class _AuthPageState extends State<AuthPage> {
       return;
     }
     context.read<AuthCubit>().resetPassword(
-      token: _resetTokenController.text,
-      newPassword: _newPasswordController.text,
-    );
+          token: _resetTokenController.text,
+          newPassword: _newPasswordController.text,
+        );
   }
 
   bool _ensure(TextEditingController controller, String message) {
@@ -340,16 +348,17 @@ class _AuthHeader extends StatelessWidget {
           'Civic Voice',
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-            fontWeight: FontWeight.w900,
-            color: AppTheme.text,
-            letterSpacing: -0.5,
-          ),
+                fontWeight: FontWeight.w900,
+                color: AppTheme.text,
+                letterSpacing: -0.5,
+              ),
         ),
         const SizedBox(height: 8),
         const Text(
           'Review active public policies, vote once, and track your feedback.',
           textAlign: TextAlign.center,
-          style: TextStyle(color: AppTheme.mutedText, fontSize: 16, height: 1.4),
+          style:
+              TextStyle(color: AppTheme.mutedText, fontSize: 16, height: 1.4),
         ),
       ],
     );
@@ -596,7 +605,8 @@ class _RegisterForm extends StatelessWidget {
             children: [
               Row(
                 children: [
-                  Icon(Icons.person_outline, color: Colors.blue.shade700, size: 20),
+                  Icon(Icons.person_outline,
+                      color: Colors.blue.shade700, size: 20),
                   const SizedBox(width: 8),
                   Text(
                     'Demographic Information',
@@ -808,7 +818,8 @@ class _DemographicDropdown extends StatelessWidget {
           labelText: label,
           prefixIcon: Icon(icon, color: AppTheme.primary),
           border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         ),
         items: items.map((item) {
           return DropdownMenuItem(

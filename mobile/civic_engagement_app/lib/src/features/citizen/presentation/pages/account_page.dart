@@ -25,8 +25,11 @@ class _AccountPageState extends State<AccountPage> {
   final _newPasswordController = TextEditingController();
   final _newEmailController = TextEditingController();
   final _emailCodeController = TextEditingController();
+  final _newPhoneController = TextEditingController();
+  final _phoneCodeController = TextEditingController();
   final _locationService = LocationService();
   bool _isDetectingLocation = false;
+  bool _logoutAfterPhoneVerify = false;
 
   @override
   void dispose() {
@@ -35,16 +38,17 @@ class _AccountPageState extends State<AccountPage> {
     _newPasswordController.dispose();
     _newEmailController.dispose();
     _emailCodeController.dispose();
+    _newPhoneController.dispose();
+    _phoneCodeController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return BlocConsumer<ProfileCubit, ProfileState>(
-      listenWhen:
-          (previous, current) =>
-              previous.actionStatus != current.actionStatus ||
-              previous.profile != current.profile,
+      listenWhen: (previous, current) =>
+          previous.actionStatus != current.actionStatus ||
+          previous.profile != current.profile,
       listener: (context, state) {
         if (state.profile != null &&
             _regionController.text != state.profile!.region) {
@@ -58,9 +62,15 @@ class _AccountPageState extends State<AccountPage> {
           _currentPasswordController.clear();
           _newPasswordController.clear();
           _emailCodeController.clear();
+          _phoneCodeController.clear();
+          if (_logoutAfterPhoneVerify) {
+            _logoutAfterPhoneVerify = false;
+            context.read<AuthCubit>().logout();
+          }
         }
         if (state.actionStatus == RequestStatus.failure &&
             state.message != null) {
+          _logoutAfterPhoneVerify = false;
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(content: Text(state.message!)));
@@ -130,7 +140,9 @@ class _AccountPageState extends State<AccountPage> {
                     children: [
                       Text(
                         profile.email,
-                        style: Theme.of(context).textTheme.titleMedium
+                        style: Theme.of(context)
+                            .textTheme
+                            .titleMedium
                             ?.copyWith(fontWeight: FontWeight.w900),
                       ),
                       const SizedBox(height: 4),
@@ -171,6 +183,73 @@ class _AccountPageState extends State<AccountPage> {
                   },
                   icon: const Icon(Icons.send_outlined),
                   label: const Text('Request Planner Status'),
+                ),
+              ],
+            ),
+          ),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionTitle(
+                  icon: Icons.phone_iphone_rounded,
+                  title: 'Phone change',
+                ),
+                const SizedBox(height: 12),
+                AppTextField(
+                  controller: _newPhoneController,
+                  label: 'New phone',
+                  hint: '+251912345678',
+                  icon: Icons.phone_iphone_rounded,
+                  keyboardType: TextInputType.phone,
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: busy ? null : _requestPhoneChange,
+                  icon: const Icon(Icons.sms_outlined),
+                  label: const Text('Send phone OTP'),
+                ),
+                const SizedBox(height: 12),
+                AppTextField(
+                  controller: _phoneCodeController,
+                  label: 'Phone OTP',
+                  icon: Icons.pin_outlined,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                ),
+                const SizedBox(height: 12),
+                AppButton(
+                  label: 'Verify phone',
+                  icon: Icons.verified_outlined,
+                  loading: busy,
+                  onPressed: _verifyPhoneChange,
+                ),
+              ],
+            ),
+          ),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _SectionTitle(
+                  icon: Icons.download_rounded,
+                  title: 'Data export',
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'Download your profile, votes, comments, notifications, messages, and planner requests as JSON.',
+                  style: TextStyle(
+                    fontSize: 14,
+                    color: AppTheme.mutedText,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(
+                  onPressed: busy
+                      ? null
+                      : () => context.read<ProfileCubit>().exportUserData(),
+                  icon: const Icon(Icons.file_download_outlined),
+                  label: const Text('Export my data'),
                 ),
               ],
             ),
@@ -239,7 +318,8 @@ class _AccountPageState extends State<AccountPage> {
                               borderRadius: BorderRadius.circular(12),
                             ),
                             child: IconButton(
-                              onPressed: _isDetectingLocation ? null : _detectLocation,
+                              onPressed:
+                                  _isDetectingLocation ? null : _detectLocation,
                               icon: _isDetectingLocation
                                   ? const SizedBox(
                                       width: 20,
@@ -249,7 +329,8 @@ class _AccountPageState extends State<AccountPage> {
                                         color: Colors.white,
                                       ),
                                     )
-                                  : const Icon(Icons.my_location, color: Colors.white),
+                                  : const Icon(Icons.my_location,
+                                      color: Colors.white),
                               tooltip: 'Detect my location',
                             ),
                           ),
@@ -367,9 +448,9 @@ class _AccountPageState extends State<AccountPage> {
       return;
     }
     context.read<ProfileCubit>().changePassword(
-      currentPassword: _currentPasswordController.text,
-      newPassword: _newPasswordController.text,
-    );
+          currentPassword: _currentPasswordController.text,
+          newPassword: _newPasswordController.text,
+        );
   }
 
   void _requestEmailChange() {
@@ -388,27 +469,47 @@ class _AccountPageState extends State<AccountPage> {
     context.read<ProfileCubit>().verifyEmailChange(_emailCodeController.text);
   }
 
+  void _requestPhoneChange() {
+    if (_newPhoneController.text.trim().isEmpty) {
+      _showMessage('New phone is required.');
+      return;
+    }
+    context.read<ProfileCubit>().requestPhoneChange(_newPhoneController.text);
+  }
+
+  void _verifyPhoneChange() {
+    if (_newPhoneController.text.trim().isEmpty ||
+        _phoneCodeController.text.trim().isEmpty) {
+      _showMessage('New phone and OTP are required.');
+      return;
+    }
+    _logoutAfterPhoneVerify = true;
+    context.read<ProfileCubit>().verifyPhoneChange(
+          newPhone: _newPhoneController.text,
+          code: _phoneCodeController.text,
+        );
+  }
+
   Future<void> _confirmDelete(BuildContext context) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder:
-          (dialogContext) => AlertDialog(
-            title: const Text('Delete account?'),
-            content: const Text(
-              'Your account will be anonymized and deactivated. This cannot be undone.',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-                child: const Text('Delete'),
-              ),
-            ],
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete account?'),
+        content: const Text(
+          'Your account will be anonymized and deactivated. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel'),
           ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
     );
 
     if (confirmed != true || !context.mounted) return;
@@ -429,7 +530,7 @@ class _AccountPageState extends State<AccountPage> {
     if (region != null && mounted) {
       final oldRegion = _regionController.text;
       _regionController.text = region;
-      
+
       // Automatically update region after detection
       if (oldRegion != region) {
         context.read<ProfileCubit>().updateRegion(region);
@@ -438,7 +539,8 @@ class _AccountPageState extends State<AccountPage> {
         _showMessage('✅ Location detected: $region (no change)');
       }
     } else if (mounted) {
-      _showMessage('📱 Please enable location in settings, then return and tap the location button again');
+      _showMessage(
+          '📱 Please enable location in settings, then return and tap the location button again');
     }
     if (mounted) {
       setState(() => _isDetectingLocation = false);

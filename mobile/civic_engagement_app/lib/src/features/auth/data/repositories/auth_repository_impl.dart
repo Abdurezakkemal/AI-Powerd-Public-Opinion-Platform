@@ -148,7 +148,7 @@ class AuthRepositoryImpl implements AuthRepository {
       authenticated: true,
       body: {
         'newPhone': newPhone.trim(),
-        'code': code.trim(),
+        'otp': code.trim(),
       },
     );
     // Phone change invalidates token, so clear session

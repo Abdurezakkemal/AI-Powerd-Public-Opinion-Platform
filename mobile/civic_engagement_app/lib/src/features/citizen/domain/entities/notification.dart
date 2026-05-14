@@ -6,6 +6,8 @@ enum NotificationType {
   policyClosed('POLICY_CLOSED'),
   policyExtended('POLICY_EXTENDED'),
   associateAssigned('ASSOCIATE_ASSIGNED'),
+  associatePermissionsUpdated('ASSOCIATE_PERMISSIONS_UPDATED'),
+  associateRevoked('ASSOCIATE_REVOKED'),
   messageReceived('MESSAGE_RECEIVED'),
   commentReply('COMMENT_REPLY'),
   commentFlagged('COMMENT_FLAGGED'),
@@ -13,7 +15,8 @@ enum NotificationType {
   appealResolved('APPEAL_RESOLVED'),
   voteSurge('VOTE_SURGE'),
   ratingDrop('RATING_DROP'),
-  emergingTopic('EMERGING_TOPIC');
+  emergingTopic('EMERGING_TOPIC'),
+  plannerApproved('PLANNER_APPROVED');
 
   final String value;
   const NotificationType(this.value);

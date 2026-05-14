@@ -26,7 +26,7 @@ class VoteCubit extends Cubit<VoteState> {
         value: value,
         comment: comment,
       );
-      
+
       // Record vote interaction for personalized feed
       try {
         await _repository.recordInteraction(
@@ -38,7 +38,7 @@ class VoteCubit extends Cubit<VoteState> {
       } catch (_) {
         // Silently fail - don't block vote success
       }
-      
+
       emit(
         VoteState(
           status: RequestStatus.success,
@@ -47,6 +47,16 @@ class VoteCubit extends Cubit<VoteState> {
         ),
       );
     } on ApiException catch (error) {
+      if (error.code == 'ALREADY_VOTED' || error.statusCode == 409) {
+        emit(
+          VoteState(
+            status: RequestStatus.success,
+            message: error.message,
+            alreadyVoted: true,
+          ),
+        );
+        return;
+      }
       emit(
         VoteState(
           status: RequestStatus.failure,
@@ -57,7 +67,8 @@ class VoteCubit extends Cubit<VoteState> {
       emit(
         const VoteState(
           status: RequestStatus.failure,
-          message: 'An unexpected error occurred. Please check your connection and try again.',
+          message:
+              'An unexpected error occurred. Please check your connection and try again.',
         ),
       );
     }

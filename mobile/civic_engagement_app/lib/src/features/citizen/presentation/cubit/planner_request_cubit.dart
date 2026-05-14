@@ -12,18 +12,27 @@ class PlannerRequestCubit extends Cubit<PlannerRequestState> {
   Future<void> submitRequest({
     String? organization,
     required String reason,
+    String? applicantType,
+    String? fullName,
+    String? email,
+    String? phone,
+    String? region,
   }) async {
     emit(const PlannerRequestLoading());
     try {
       final result = await _repository.requestPlannerStatus(
         organization: organization,
         reason: reason,
+        applicantType: applicantType,
+        fullName: fullName,
+        email: email,
+        phone: phone,
+        region: region,
       );
       emit(
         PlannerRequestSuccess(
           requestId: result.requestId,
-          message:
-              'Your request has been submitted. Admins will review it.',
+          message: 'Your request has been submitted. Admins will review it.',
         ),
       );
     } on ApiException catch (e) {

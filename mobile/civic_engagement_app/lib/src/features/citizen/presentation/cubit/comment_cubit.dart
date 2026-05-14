@@ -122,29 +122,35 @@ class CommentCubit extends Cubit<CommentState> {
   }
 
   Future<void> loadReplies(String commentId) async {
-    final commentIndex = _allComments.indexWhere((c) => c.comment.id == commentId);
+    final commentIndex =
+        _allComments.indexWhere((c) => c.comment.id == commentId);
     if (commentIndex == -1) return;
 
     final commentWithReplies = _allComments[commentIndex];
-    if (commentWithReplies.repliesLoaded || commentWithReplies.repliesLoading) return;
+    if (commentWithReplies.repliesLoaded || commentWithReplies.repliesLoading) {
+      return;
+    }
 
     // Update loading state
-    _allComments[commentIndex] = commentWithReplies.copyWith(repliesLoading: true);
+    _allComments[commentIndex] =
+        commentWithReplies.copyWith(repliesLoading: true);
     _emitCurrentState();
 
     try {
-      final repliesPage = await _repository.getCommentReplies(commentId: commentId);
-      
+      final repliesPage =
+          await _repository.getCommentReplies(commentId: commentId);
+
       _allComments[commentIndex] = commentWithReplies.copyWith(
         replies: repliesPage.comments,
         repliesLoaded: true,
         repliesLoading: false,
         hasMoreReplies: repliesPage.hasMore,
       );
-      
+
       _emitCurrentState();
     } catch (e) {
-      _allComments[commentIndex] = commentWithReplies.copyWith(repliesLoading: false);
+      _allComments[commentIndex] =
+          commentWithReplies.copyWith(repliesLoading: false);
       _emitCurrentState();
       emit(CommentError(e.toString()));
     }
@@ -202,13 +208,15 @@ class CommentCubit extends Cubit<CommentState> {
   }
 
   void _emitCurrentState() {
-    emit(
-      CommentLoaded(
-        comments: _allComments.map((c) => c.comment).toList(),
-        total: _total,
-        page: _currentPage,
-        hasMore: _allComments.length < _total,
-      ),
+    emit(_currentLoadedState());
+  }
+
+  CommentLoaded _currentLoadedState() {
+    return CommentLoaded(
+      comments: _allComments.map((c) => c.comment).toList(),
+      total: _total,
+      page: _currentPage,
+      hasMore: _allComments.length < _total,
     );
   }
 
@@ -217,7 +225,14 @@ class CommentCubit extends Cubit<CommentState> {
     required String text,
     String? parentCommentId,
   }) async {
-    emit(const CommentPosting());
+    emit(
+      CommentPosting(
+        comments: _currentLoadedState().comments,
+        total: _total,
+        page: _currentPage,
+        hasMore: _allComments.length < _total,
+      ),
+    );
 
     try {
       final message = await _repository.postComment(
@@ -225,7 +240,7 @@ class CommentCubit extends Cubit<CommentState> {
         text: text,
         parentCommentId: parentCommentId,
       );
-      
+
       // Record comment interaction for personalized feed (only for top-level comments)
       if (parentCommentId == null) {
         try {
@@ -239,16 +254,10 @@ class CommentCubit extends Cubit<CommentState> {
           // Silently fail - don't block comment success
         }
       }
-      
+
       emit(CommentPosted(message));
-      // Reset to initial state after a brief delay to allow UI to react
-      await Future.delayed(const Duration(milliseconds: 100));
-      emit(const CommentInitial());
     } catch (e) {
       emit(CommentError(e.toString()));
-      // Reset to initial state after error
-      await Future.delayed(const Duration(milliseconds: 100));
-      emit(const CommentInitial());
     }
   }
 
@@ -256,7 +265,14 @@ class CommentCubit extends Cubit<CommentState> {
     required String commentId,
     required String reason,
   }) async {
-    emit(const CommentReporting());
+    emit(
+      CommentReporting(
+        comments: _currentLoadedState().comments,
+        total: _total,
+        page: _currentPage,
+        hasMore: _allComments.length < _total,
+      ),
+    );
 
     try {
       final message = await _repository.reportComment(
@@ -264,12 +280,8 @@ class CommentCubit extends Cubit<CommentState> {
         reason: reason,
       );
       emit(CommentReported(message));
-      await Future.delayed(const Duration(milliseconds: 100));
-      emit(const CommentInitial());
     } catch (e) {
       emit(CommentError(e.toString()));
-      await Future.delayed(const Duration(milliseconds: 100));
-      emit(const CommentInitial());
     }
   }
 
@@ -277,7 +289,14 @@ class CommentCubit extends Cubit<CommentState> {
     required String commentId,
     required String text,
   }) async {
-    emit(const CommentEditing());
+    emit(
+      CommentEditing(
+        comments: _currentLoadedState().comments,
+        total: _total,
+        page: _currentPage,
+        hasMore: _allComments.length < _total,
+      ),
+    );
 
     try {
       final message = await _repository.editComment(
@@ -285,12 +304,8 @@ class CommentCubit extends Cubit<CommentState> {
         text: text,
       );
       emit(CommentEdited(message));
-      await Future.delayed(const Duration(milliseconds: 100));
-      emit(const CommentInitial());
     } catch (e) {
       emit(CommentError(e.toString()));
-      await Future.delayed(const Duration(milliseconds: 100));
-      emit(const CommentInitial());
     }
   }
 
@@ -298,7 +313,14 @@ class CommentCubit extends Cubit<CommentState> {
     required String commentId,
     required String reason,
   }) async {
-    emit(const CommentAppealing());
+    emit(
+      CommentAppealing(
+        comments: _currentLoadedState().comments,
+        total: _total,
+        page: _currentPage,
+        hasMore: _allComments.length < _total,
+      ),
+    );
 
     try {
       final message = await _repository.appealComment(
@@ -306,12 +328,8 @@ class CommentCubit extends Cubit<CommentState> {
         reason: reason,
       );
       emit(CommentAppealed(message));
-      await Future.delayed(const Duration(milliseconds: 100));
-      emit(const CommentInitial());
     } catch (e) {
       emit(CommentError(e.toString()));
-      await Future.delayed(const Duration(milliseconds: 100));
-      emit(const CommentInitial());
     }
   }
 }

@@ -28,7 +28,7 @@ class CommentModel extends Comment {
       policyId: json['policyId']?.toString() ?? '',
       parentCommentId: json['parentCommentId']?.toString(),
       text: json['text']?.toString() ?? '',
-      userId: json['userId']?.toString(),
+      userId: _parseId(json['userId']),
       userEmail: json['userEmail']?.toString(),
       visibility: json['visibility']?.toString() ?? 'visible',
       hiddenReason: json['hiddenReason']?.toString(),
@@ -47,6 +47,13 @@ class CommentModel extends Comment {
   }
 
   static CommentSentiment? _parseSentiment(dynamic value) {
+    if (value is String) {
+      final label = value.trim().toLowerCase();
+      if (label == 'positive' || label == 'negative' || label == 'neutral') {
+        return CommentSentiment(label: label, confidence: 0);
+      }
+      return null;
+    }
     if (value is! Map<String, dynamic>) return null;
     return CommentSentiment(
       label: value['label']?.toString() ?? 'neutral',
@@ -64,11 +71,13 @@ class CommentModel extends Comment {
     return CommentAppeal(
       reason: value['reason']?.toString() ?? '',
       status: value['status']?.toString() ?? 'pending',
-      submittedAt: DateTime.tryParse(value['submittedAt']?.toString() ?? '') ??
+      submittedAt: DateTime.tryParse(
+            (value['submittedAt'] ?? value['createdAt'])?.toString() ?? '',
+          ) ??
           DateTime.now(),
       resolvedAt: DateTime.tryParse(value['resolvedAt']?.toString() ?? ''),
       resolution: value['resolution']?.toString(),
-      note: value['note']?.toString(),
+      note: value['note']?.toString() ?? value['resolutionNote']?.toString(),
     );
   }
 
@@ -86,11 +95,21 @@ class CommentModel extends Comment {
     if (value is! Map<String, dynamic>) return null;
     return FlaggedSnapshot(
       text: value['text']?.toString() ?? '',
-      timestamp: DateTime.tryParse(value['timestamp']?.toString() ?? '') ??
+      timestamp: DateTime.tryParse(
+            (value['timestamp'] ?? value['capturedAt'])?.toString() ?? '',
+          ) ??
           DateTime.now(),
       reportCountAtCapture: _toInt(value['reportCountAtCapture']),
       sentiment: _parseSentiment(value['sentiment']),
       keywords: _parseKeywords(value['keywords']),
     );
+  }
+
+  static String? _parseId(dynamic value) {
+    if (value == null) return null;
+    if (value is Map<String, dynamic>) {
+      return (value['_id'] ?? value['id'])?.toString();
+    }
+    return value.toString();
   }
 }

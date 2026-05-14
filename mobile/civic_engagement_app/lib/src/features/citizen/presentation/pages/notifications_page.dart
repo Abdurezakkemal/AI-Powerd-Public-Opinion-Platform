@@ -16,10 +16,9 @@ class NotificationsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocListener<NotificationsCubit, NotificationsState>(
-      listenWhen:
-          (previous, current) =>
-              previous.actionStatus != current.actionStatus &&
-              current.message != null,
+      listenWhen: (previous, current) =>
+          previous.actionStatus != current.actionStatus &&
+          current.message != null,
       listener: (context, state) {
         ScaffoldMessenger.of(
           context,
@@ -36,8 +35,8 @@ class NotificationsPage extends StatelessWidget {
             ),
             IconButton(
               tooltip: 'Refresh',
-              onPressed:
-                  () => context.read<NotificationsCubit>().loadNotifications(),
+              onPressed: () =>
+                  context.read<NotificationsCubit>().loadNotifications(),
               icon: const Icon(Icons.refresh_rounded),
             ),
           ],
@@ -53,17 +52,16 @@ class NotificationsPage extends StatelessWidget {
                 state.notifications.isEmpty) {
               return ErrorView(
                 message: state.message ?? 'Failed to load notifications.',
-                onRetry:
-                    () =>
-                        context.read<NotificationsCubit>().loadNotifications(),
+                onRetry: () =>
+                    context.read<NotificationsCubit>().loadNotifications(),
               );
             }
 
             return RefreshIndicator(
-              onRefresh:
-                  () => context.read<NotificationsCubit>().loadNotifications(
-                    unreadOnly: state.unreadOnly,
-                  ),
+              onRefresh: () =>
+                  context.read<NotificationsCubit>().loadNotifications(
+                        unreadOnly: state.unreadOnly,
+                      ),
               child: CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
@@ -89,8 +87,8 @@ class NotificationsPage extends StatelessWidget {
                             onTap: () {
                               if (!item.read) {
                                 context.read<NotificationsCubit>().markRead(
-                                  item.id,
-                                );
+                                      item.id,
+                                    );
                               }
                             },
                           );
@@ -147,8 +145,7 @@ class _NotificationFilters extends StatelessWidget {
       label: Text(label),
       selected: selected,
       showCheckmark: false,
-      onSelected:
-          (_) => context.read<NotificationsCubit>().loadNotifications(
+      onSelected: (_) => context.read<NotificationsCubit>().loadNotifications(
             unreadOnly: unreadOnly,
           ),
       selectedColor: AppTheme.primary.withValues(alpha: 0.14),
@@ -180,17 +177,14 @@ class _NotificationCard extends StatelessWidget {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color:
-                  item.read
-                      ? const Color(0xFFF1F5F9)
-                      : AppTheme.primary.withValues(alpha: 0.1),
+              color: item.read
+                  ? const Color(0xFFF1F5F9)
+                  : _colorForItem(item).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(
-              item.read
-                  ? Icons.notifications_none_rounded
-                  : Icons.notifications_active_rounded,
-              color: item.read ? AppTheme.mutedText : AppTheme.primary,
+              _iconForType(item.type, item.read),
+              color: item.read ? AppTheme.mutedText : _colorForItem(item),
             ),
           ),
           const SizedBox(width: 12),
@@ -204,8 +198,8 @@ class _NotificationCard extends StatelessWidget {
                       child: Text(
                         item.title,
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w900,
-                        ),
+                              fontWeight: FontWeight.w900,
+                            ),
                       ),
                     ),
                     if (!item.read)
@@ -243,4 +237,33 @@ class _NotificationCard extends StatelessWidget {
       ),
     );
   }
+}
+
+IconData _iconForType(String type, bool read) {
+  switch (type) {
+    case 'POLICY_ACTIVATED':
+      return Icons.play_circle_outline_rounded;
+    case 'POLICY_CLOSED':
+      return Icons.lock_clock_rounded;
+    case 'POLICY_EXTENDED':
+      return Icons.event_repeat_rounded;
+    case 'COMMENT_REPLY':
+      return Icons.reply_rounded;
+    case 'COMMENT_FLAGGED':
+      return Icons.flag_outlined;
+    case 'APPEAL_RESOLVED':
+      return Icons.gavel_rounded;
+    case 'PLANNER_APPROVED':
+      return Icons.verified_user_outlined;
+    default:
+      return read
+          ? Icons.notifications_none_rounded
+          : Icons.notifications_active_rounded;
+  }
+}
+
+Color _colorForItem(CitizenNotification item) {
+  if (item.isCritical) return const Color(0xFFE53E3E);
+  if (item.isWarning) return const Color(0xFFB7791F);
+  return AppTheme.primary;
 }

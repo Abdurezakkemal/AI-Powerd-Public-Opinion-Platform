@@ -9,6 +9,7 @@ enum AuthStatus {
   emailChangePending,
   phoneChangePending,
   phoneChangeSuccess,
+  passwordResetSuccess,
   message,
   failure,
 }
@@ -30,10 +31,10 @@ class AuthState extends Equatable {
   const AuthState.loading() : this(status: AuthStatus.loading);
 
   const AuthState.authenticated(AuthSession session)
-    : this(status: AuthStatus.authenticated, session: session);
+      : this(status: AuthStatus.authenticated, session: session);
 
   const AuthState.otpPending({required String email, required String message})
-    : this(status: AuthStatus.otpPending, email: email, message: message);
+      : this(status: AuthStatus.otpPending, email: email, message: message);
 
   const AuthState.emailChangePending({
     required String newEmail,
@@ -54,13 +55,16 @@ class AuthState extends Equatable {
         );
 
   const AuthState.phoneChangeSuccess({required String message})
-    : this(status: AuthStatus.phoneChangeSuccess, message: message);
+      : this(status: AuthStatus.phoneChangeSuccess, message: message);
+
+  const AuthState.passwordResetSuccess({required String message})
+      : this(status: AuthStatus.passwordResetSuccess, message: message);
 
   const AuthState.message(String message)
-    : this(status: AuthStatus.message, message: message);
+      : this(status: AuthStatus.message, message: message);
 
   const AuthState.failure(String message)
-    : this(status: AuthStatus.failure, message: message);
+      : this(status: AuthStatus.failure, message: message);
 
   final AuthStatus status;
   final AuthSession? session;

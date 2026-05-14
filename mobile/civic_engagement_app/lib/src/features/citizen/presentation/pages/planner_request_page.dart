@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../domain/repositories/citizen_repository.dart';
 import '../cubit/planner_request_cubit.dart';
 import '../cubit/planner_request_state.dart';
@@ -31,11 +32,30 @@ class _PlannerRequestView extends StatefulWidget {
 
 class _PlannerRequestViewState extends State<_PlannerRequestView> {
   final _formKey = GlobalKey<FormState>();
+  final _fullNameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _phoneController = TextEditingController();
+  final _regionController = TextEditingController();
   final _organizationController = TextEditingController();
   final _reasonController = TextEditingController();
+  late final bool _hasSession;
+  String _applicantType = 'nonCitizen';
+
+  @override
+  void initState() {
+    super.initState();
+    _hasSession = serviceLocator<AuthRepository>().restoreSession() != null;
+    if (_hasSession) {
+      _applicantType = 'citizen';
+    }
+  }
 
   @override
   void dispose() {
+    _fullNameController.dispose();
+    _emailController.dispose();
+    _phoneController.dispose();
+    _regionController.dispose();
     _organizationController.dispose();
     _reasonController.dispose();
     super.dispose();
@@ -48,6 +68,13 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
                 ? null
                 : _organizationController.text.trim(),
             reason: _reasonController.text.trim(),
+            applicantType: _applicantType,
+            fullName: _hasSession ? null : _fullNameController.text.trim(),
+            email: _hasSession ? null : _emailController.text.trim(),
+            phone: _hasSession || _phoneController.text.trim().isEmpty
+                ? null
+                : _phoneController.text.trim(),
+            region: _hasSession ? null : _regionController.text.trim(),
           );
     }
   }
@@ -96,10 +123,101 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
                   ),
                   const SizedBox(height: 8),
                   const Text(
-                    'Planners can create and manage policy proposals. Your request will be reviewed by administrators.',
+                    'Planners can create and manage policy proposals. You can submit this request with or without a citizen login.',
                     style: TextStyle(color: Colors.grey),
                   ),
                   const SizedBox(height: 24),
+                  if (!_hasSession) ...[
+                    DropdownButtonFormField<String>(
+                      value: _applicantType,
+                      decoration: const InputDecoration(
+                        labelText: 'I am applying as',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'nonCitizen',
+                          child: Text('Not a registered citizen'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'citizen',
+                          child: Text('Registered citizen, not logged in'),
+                        ),
+                      ],
+                      onChanged: isLoading
+                          ? null
+                          : (value) {
+                              if (value != null) {
+                                setState(() => _applicantType = value);
+                              }
+                            },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _fullNameController,
+                      decoration: const InputDecoration(
+                        labelText: 'Full name *',
+                        border: OutlineInputBorder(),
+                      ),
+                      enabled: !isLoading,
+                      maxLength: 100,
+                      validator: (value) {
+                        if (_hasSession) return null;
+                        if ((value ?? '').trim().isEmpty) {
+                          return 'Full name is required';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _emailController,
+                      decoration: const InputDecoration(
+                        labelText: 'Email *',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.emailAddress,
+                      enabled: !isLoading,
+                      validator: (value) {
+                        if (_hasSession) return null;
+                        final trimmed = (value ?? '').trim();
+                        if (trimmed.isEmpty) return 'Email is required';
+                        if (!trimmed.contains('@')) {
+                          return 'Enter a valid email';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _phoneController,
+                      decoration: const InputDecoration(
+                        labelText: 'Phone (Optional)',
+                        hintText: '+251912345678',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.phone,
+                      enabled: !isLoading,
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: _regionController,
+                      decoration: const InputDecoration(
+                        labelText: 'Region *',
+                        border: OutlineInputBorder(),
+                      ),
+                      enabled: !isLoading,
+                      maxLength: 80,
+                      validator: (value) {
+                        if (_hasSession) return null;
+                        if ((value ?? '').trim().isEmpty) {
+                          return 'Region is required';
+                        }
+                        return null;
+                      },
+                    ),
+                    const SizedBox(height: 16),
+                  ],
                   TextFormField(
                     controller: _organizationController,
                     decoration: const InputDecoration(
@@ -117,8 +235,7 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
                     controller: _reasonController,
                     decoration: const InputDecoration(
                       labelText: 'Reason *',
-                      hintText:
-                          'Explain why you need planner privileges...',
+                      hintText: 'Explain why you need planner privileges...',
                       border: OutlineInputBorder(),
                       helperText: 'Minimum 50 characters required',
                     ),

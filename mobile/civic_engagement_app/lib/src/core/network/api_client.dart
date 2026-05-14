@@ -12,9 +12,9 @@ class ApiClient {
     required http.Client client,
     required SessionStore sessionStore,
     required List<String> baseUrls,
-  }) : _client = client,
-       _sessionStore = sessionStore,
-       _baseUrls = baseUrls;
+  })  : _client = client,
+        _sessionStore = sessionStore,
+        _baseUrls = baseUrls;
 
   final http.Client _client;
   final SessionStore _sessionStore;
@@ -207,8 +207,7 @@ class ApiClient {
         );
       }
       return ApiException(
-        message:
-            decoded['message']?.toString() ??
+        message: decoded['message']?.toString() ??
             decoded['detail']?.toString() ??
             'Request failed.',
         statusCode: statusCode,
@@ -220,16 +219,19 @@ class ApiClient {
   Uri _uri(String baseUrl, String path, Map<String, dynamic>? query) {
     final base = Uri.parse(baseUrl);
     final normalizedPath = path.startsWith('/') ? path.substring(1) : path;
-    final basePath =
-        base.path.endsWith('/')
-            ? base.path.substring(0, base.path.length - 1)
-            : base.path;
+    final basePath = base.path.endsWith('/')
+        ? base.path.substring(0, base.path.length - 1)
+        : base.path;
     final fullPath = '$basePath/$normalizedPath';
-    final queryParameters = <String, String>{};
+    final queryParameters = <String, dynamic>{};
 
     query?.forEach((key, value) {
       if (value != null) {
-        queryParameters[key] = value.toString();
+        if (value is Iterable) {
+          queryParameters[key] = value.map((item) => item.toString()).toList();
+        } else {
+          queryParameters[key] = value.toString();
+        }
       }
     });
 

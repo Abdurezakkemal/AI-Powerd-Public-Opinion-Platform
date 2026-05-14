@@ -5,12 +5,14 @@ class VoteState extends Equatable {
     this.status = RequestStatus.initial,
     this.receipt,
     this.message,
+    this.alreadyVoted = false,
   });
 
   final RequestStatus status;
   final VoteReceipt? receipt;
   final String? message;
+  final bool alreadyVoted;
 
   @override
-  List<Object?> get props => [status, receipt, message];
+  List<Object?> get props => [status, receipt, message, alreadyVoted];
 }

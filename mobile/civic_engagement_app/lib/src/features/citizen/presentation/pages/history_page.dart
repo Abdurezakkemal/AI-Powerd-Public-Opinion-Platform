@@ -61,10 +61,9 @@ class HistoryPage extends StatelessWidget {
                 final item = state.history[index];
                 return _HistoryCard(
                   item: item,
-                  onComment:
-                      item.hasComment
-                          ? null
-                          : () => _showCommentSheet(context, item),
+                  onComment: item.hasComment
+                      ? null
+                      : () => _showCommentSheet(context, item),
                 );
               },
             ),
@@ -80,11 +79,10 @@ class HistoryPage extends StatelessWidget {
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder:
-          (_) => BlocProvider.value(
-            value: context.read<VoteCubit>(),
-            child: _CommentSheet(item: item),
-          ),
+      builder: (_) => BlocProvider.value(
+        value: context.read<VoteCubit>(),
+        child: _CommentSheet(item: item),
+      ),
     );
 
     if (added == true && context.mounted) {
@@ -107,12 +105,12 @@ class _HistoryCard extends StatelessWidget {
 
   Widget _buildVoteDisplay() {
     final pollType = item.pollType ?? 'rating';
-    
+
     // For rating and likert with numeric values, show stars
     if ((pollType == 'rating' || pollType == 'likert') && item.value is int) {
       return RatingStars(rating: item.value as int, size: 22);
     }
-    
+
     // For all other types, show formatted text
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
@@ -144,12 +142,13 @@ class _HistoryCard extends StatelessWidget {
                 child: Text(
                   item.policyTitle ?? 'Deleted policy',
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
+                        fontWeight: FontWeight.w900,
+                      ),
                 ),
               ),
               const SizedBox(width: 8),
-              _SentimentPill(sentiment: item.sentiment),
+              if (item.hasComment || item.sentiment != null)
+                _SentimentPill(sentiment: item.sentiment),
             ],
           ),
           if (item.policyCode != null) ...[
@@ -281,14 +280,15 @@ class _CommentSheetState extends State<_CommentSheet> {
                   }
                   if (widget.item.policyId == null) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Policy information not available.')),
+                      const SnackBar(
+                          content: Text('Policy information not available.')),
                     );
                     return;
                   }
                   context.read<VoteCubit>().addComment(
-                    policyId: widget.item.policyId!,
-                    comment: _commentController.text,
-                  );
+                        policyId: widget.item.policyId!,
+                        comment: _commentController.text,
+                      );
                 },
               ),
             ],

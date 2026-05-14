@@ -145,6 +145,33 @@ class ProfileCubit extends Cubit<ProfileState> {
     }
   }
 
+  Future<void> exportUserData() async {
+    emit(state.copyWith(actionStatus: RequestStatus.loading));
+    try {
+      final path = await _repository.exportUserData();
+      emit(
+        state.copyWith(
+          actionStatus: RequestStatus.success,
+          message: 'User data exported to $path',
+        ),
+      );
+    } on ApiException catch (error) {
+      emit(
+        state.copyWith(
+          actionStatus: RequestStatus.failure,
+          message: error.message,
+        ),
+      );
+    } catch (error) {
+      emit(
+        state.copyWith(
+          actionStatus: RequestStatus.failure,
+          message: 'Failed to export user data. Please try again.',
+        ),
+      );
+    }
+  }
+
   Future<String?> deleteAccount() async {
     emit(state.copyWith(actionStatus: RequestStatus.loading));
     try {

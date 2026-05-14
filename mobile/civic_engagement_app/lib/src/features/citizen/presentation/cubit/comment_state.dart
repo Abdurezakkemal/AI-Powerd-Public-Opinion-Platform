@@ -32,8 +32,13 @@ class CommentError extends CommentState {
   final String message;
 }
 
-class CommentPosting extends CommentState {
-  const CommentPosting();
+class CommentPosting extends CommentLoaded {
+  const CommentPosting({
+    required super.comments,
+    required super.total,
+    required super.page,
+    required super.hasMore,
+  });
 }
 
 class CommentPosted extends CommentState {
@@ -42,8 +47,13 @@ class CommentPosted extends CommentState {
   final String message;
 }
 
-class CommentReporting extends CommentState {
-  const CommentReporting();
+class CommentReporting extends CommentLoaded {
+  const CommentReporting({
+    required super.comments,
+    required super.total,
+    required super.page,
+    required super.hasMore,
+  });
 }
 
 class CommentReported extends CommentState {
@@ -52,8 +62,13 @@ class CommentReported extends CommentState {
   final String message;
 }
 
-class CommentEditing extends CommentState {
-  const CommentEditing();
+class CommentEditing extends CommentLoaded {
+  const CommentEditing({
+    required super.comments,
+    required super.total,
+    required super.page,
+    required super.hasMore,
+  });
 }
 
 class CommentEdited extends CommentState {
@@ -62,8 +77,13 @@ class CommentEdited extends CommentState {
   final String message;
 }
 
-class CommentAppealing extends CommentState {
-  const CommentAppealing();
+class CommentAppealing extends CommentLoaded {
+  const CommentAppealing({
+    required super.comments,
+    required super.total,
+    required super.page,
+    required super.hasMore,
+  });
 }
 
 class CommentAppealed extends CommentState {

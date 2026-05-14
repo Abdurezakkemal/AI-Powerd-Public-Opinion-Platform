@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/di/service_locator.dart';
 import '../../domain/entities/policy.dart';
 import '../../domain/entities/user_interaction.dart';
-import '../../domain/repositories/citizen_repository.dart';
 import '../cubit/comment_cubit.dart';
 import '../cubit/feed_cubit.dart';
 import '../cubit/feed_state.dart';
@@ -90,7 +89,8 @@ class _FeedPageState extends State<FeedPage> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.inbox_outlined, size: 64, color: Colors.grey),
+                    const Icon(Icons.inbox_outlined,
+                        size: 64, color: Colors.grey),
                     const SizedBox(height: 16),
                     Text(
                       'No policies available',
@@ -123,7 +123,7 @@ class _FeedPageState extends State<FeedPage> {
                             policyId: feedPolicy.id,
                             type: InteractionType.view,
                           );
-                      
+
                       // Convert FeedPolicy to minimal Policy for initial display
                       final initialPolicy = Policy(
                         id: feedPolicy.id,
@@ -137,7 +137,7 @@ class _FeedPageState extends State<FeedPage> {
                         pollType: feedPolicy.pollType,
                         totalVotes: 0,
                       );
-                      
+
                       // Navigate to policy detail
                       Navigator.of(context).push(
                         MaterialPageRoute<void>(

@@ -32,6 +32,11 @@ abstract class CitizenRepository {
 
   Future<String> deleteAccount();
 
+  Future<String> exportUserData({
+    DateTime? startDate,
+    DateTime? endDate,
+  });
+
   // Policy endpoints (Section 3)
   Future<PolicyPage> getPolicies({
     String? status,
@@ -47,11 +52,13 @@ abstract class CitizenRepository {
   // Voting endpoint (Section 4.1)
   Future<VoteReceipt> submitVote({
     required String policyId,
-    required dynamic value, // Can be int, String, or List<String> based on poll type
+    required dynamic
+        value, // Can be int, String, or List<String> based on poll type
     String? comment,
   });
 
-  Future<String> addComment({required String policyId, required String comment});
+  Future<String> addComment(
+      {required String policyId, required String comment});
 
   // Comment endpoints (Section 4.2-4.8)
   Future<String> postComment({
@@ -108,6 +115,11 @@ abstract class CitizenRepository {
   Future<PlannerRequest> requestPlannerStatus({
     String? organization,
     required String reason,
+    String? applicantType,
+    String? fullName,
+    String? email,
+    String? phone,
+    String? region,
   });
 
   // Personalized Feed (Section 13)

@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import '../../../../core/network/api_client.dart';
+import '../../../../core/services/json_export_saver.dart';
 import '../../../../core/session/session_store.dart';
 import '../../domain/entities/comment.dart';
 import '../../domain/entities/notification_page.dart';
@@ -88,7 +91,7 @@ class CitizenRepositoryImpl implements CitizenRepository {
       '/users/me/phone/verify',
       body: {
         'newPhone': newPhone.trim(),
-        'code': code.trim(),
+        'otp': code.trim(),
       },
     );
     // Phone change invalidates token, so clear session
@@ -101,6 +104,29 @@ class CitizenRepositoryImpl implements CitizenRepository {
     final response = await _apiClient.delete('/users/me');
     await _sessionStore.clear();
     return response.message;
+  }
+
+  @override
+  Future<String> exportUserData({
+    DateTime? startDate,
+    DateTime? endDate,
+  }) async {
+    final response = await _apiClient.get(
+      '/users/me/export',
+      query: {
+        if (startDate != null) 'startDate': _dateOnly(startDate),
+        if (endDate != null) 'endDate': _dateOnly(endDate),
+      },
+    );
+    final jsonText = const JsonEncoder.withIndent('  ').convert(response.data);
+    final timestamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .replaceAll('.', '-');
+    return saveJsonExport(
+      fileName: 'civic-voice-user-data-$timestamp.json',
+      jsonText: jsonText,
+    );
   }
 
   @override
@@ -117,9 +143,7 @@ class CitizenRepositoryImpl implements CitizenRepository {
       query: {
         if (status != null && status != 'all') 'status': status,
         if (topic != null && topic.isNotEmpty) 'topic': topic,
-        // Support multiple topics (repeatable query param)
-        if (topics != null && topics.isNotEmpty)
-          for (var t in topics) 'topic': t,
+        if (topics != null && topics.isNotEmpty) 'topic': topics,
         if (includeArchived) 'includeArchived': true,
         'page': page,
         'limit': limit,
@@ -127,16 +151,19 @@ class CitizenRepositoryImpl implements CitizenRepository {
     );
     final data = response.data as Map<String, dynamic>;
     final rawPolicies = data['policies'];
-    final policies =
-        rawPolicies is List
-            ? rawPolicies
-                .whereType<Map<String, dynamic>>()
-                .map(PolicyModel.fromJson)
-                .toList()
-            : <Policy>[];
+    final allowedStatuses = status == null || status == 'all'
+        ? const {'active', 'paused'}
+        : {status};
+    final policies = rawPolicies is List
+        ? rawPolicies
+            .whereType<Map<String, dynamic>>()
+            .map(PolicyModel.fromJson)
+            .where((policy) => allowedStatuses.contains(policy.status))
+            .toList()
+        : <Policy>[];
     return PolicyPage(
       policies: policies,
-      total: _toInt(data['total']),
+      total: _toInt(data['total'], fallback: policies.length),
       page: _toInt(data['page'], fallback: page),
     );
   }
@@ -252,13 +279,12 @@ class CitizenRepositoryImpl implements CitizenRepository {
     );
     final data = response.data as Map<String, dynamic>;
     final rawComments = data['comments'];
-    final comments =
-        rawComments is List
-            ? rawComments
-                .whereType<Map<String, dynamic>>()
-                .map(CommentModel.fromJson)
-                .toList()
-            : <CommentModel>[];
+    final comments = rawComments is List
+        ? rawComments
+            .whereType<Map<String, dynamic>>()
+            .map(CommentModel.fromJson)
+            .toList()
+        : <CommentModel>[];
     return CommentPage(
       comments: comments,
       total: _toInt(data['total']),
@@ -287,13 +313,12 @@ class CitizenRepositoryImpl implements CitizenRepository {
     );
     final data = response.data as Map<String, dynamic>;
     final rawReplies = data['replies'];
-    final replies =
-        rawReplies is List
-            ? rawReplies
-                .whereType<Map<String, dynamic>>()
-                .map(CommentModel.fromJson)
-                .toList()
-            : <CommentModel>[];
+    final replies = rawReplies is List
+        ? rawReplies
+            .whereType<Map<String, dynamic>>()
+            .map(CommentModel.fromJson)
+            .toList()
+        : <CommentModel>[];
     return CommentPage(
       comments: replies,
       total: _toInt(data['total']),
@@ -325,13 +350,12 @@ class CitizenRepositoryImpl implements CitizenRepository {
     );
     final data = response.data as Map<String, dynamic>;
     final rawNotifications = data['notifications'];
-    final notifications =
-        rawNotifications is List
-            ? rawNotifications
-                .whereType<Map<String, dynamic>>()
-                .map(CitizenNotificationModel.fromJson)
-                .toList()
-            : <CitizenNotificationModel>[];
+    final notifications = rawNotifications is List
+        ? rawNotifications
+            .whereType<Map<String, dynamic>>()
+            .map(CitizenNotificationModel.fromJson)
+            .toList()
+        : <CitizenNotificationModel>[];
 
     return NotificationPage(
       notifications: notifications,
@@ -356,6 +380,11 @@ class CitizenRepositoryImpl implements CitizenRepository {
   Future<PlannerRequest> requestPlannerStatus({
     String? organization,
     required String reason,
+    String? applicantType,
+    String? fullName,
+    String? email,
+    String? phone,
+    String? region,
   }) async {
     final body = <String, dynamic>{
       'reason': reason.trim(),
@@ -364,19 +393,37 @@ class CitizenRepositoryImpl implements CitizenRepository {
     if (trimmedOrg != null && trimmedOrg.isNotEmpty) {
       body['organization'] = trimmedOrg;
     }
-    final response = await _apiClient.post('/planners/request', body: body);
-    return PlannerRequestModel.fromJson(response.data as Map<String, dynamic>);
+    final fields = <String, String?>{
+      'applicantType': applicantType,
+      'fullName': fullName,
+      'email': email,
+      'phone': phone,
+      'region': region,
+    };
+    fields.forEach((key, value) {
+      final trimmed = value?.trim();
+      if (trimmed != null && trimmed.isNotEmpty) {
+        body[key] = trimmed;
+      }
+    });
+    final response = await _apiClient.post(
+      '/planners/request',
+      body: body,
+      authenticated: _sessionStore.token != null,
+    );
+    final data = response.data as Map<String, dynamic>? ?? {};
+    return PlannerRequestModel.fromJson(data);
   }
 
   @override
   Future<List<FeedPolicy>> getPersonalizedFeed() async {
     final response = await _apiClient.get('/feed');
     final data = response.data;
-    
+
     if (data is! List) {
       return [];
     }
-    
+
     return data
         .whereType<Map<String, dynamic>>()
         .map(FeedPolicyModel.fromJson)
@@ -394,5 +441,12 @@ class CitizenRepositoryImpl implements CitizenRepository {
   static int _toInt(dynamic value, {int fallback = 0}) {
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+
+  static String _dateOnly(DateTime value) {
+    final year = value.year.toString().padLeft(4, '0');
+    final month = value.month.toString().padLeft(2, '0');
+    final day = value.day.toString().padLeft(2, '0');
+    return '$year-$month-$day';
   }
 }

@@ -59,10 +59,9 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
   Widget build(BuildContext context) {
     return BlocBuilder<PolicyCubit, PolicyState>(
       builder: (context, state) {
-        final selected =
-            state.selectedPolicy?.id == widget.policyId
-                ? state.selectedPolicy
-                : null;
+        final selected = state.selectedPolicy?.id == widget.policyId
+            ? state.selectedPolicy
+            : null;
         final policy = selected ?? widget.initialPolicy;
         final failed =
             state.detailStatus == RequestStatus.failure && selected == null;
@@ -79,44 +78,41 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                 ],
               ),
             ),
-            body:
-                failed
-                    ? ErrorView(
-                      message: state.message ?? 'Policy could not be loaded.',
-                      onRetry:
-                          () => context.read<PolicyCubit>().loadPolicy(
-                            widget.policyId,
-                          ),
-                    )
-                    : TabBarView(
-                      children: [
-                        // Tab 1: Policy Details
-                        RefreshIndicator(
-                          onRefresh:
-                              () => context.read<PolicyCubit>().loadPolicy(
-                                widget.policyId,
-                              ),
-                          child: ListView(
-                            padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                            children: [
-                              if (state.detailStatus == RequestStatus.loading)
-                                const LinearProgressIndicator(minHeight: 2),
-                              const SizedBox(height: 12),
-                              _DetailHeader(policy: policy),
-                              const SizedBox(height: 12),
-                              _DescriptionCard(policy: policy),
-                              const SizedBox(height: 12),
-                              _VotingCard(
-                                policy: policy,
-                                onVote: () => _showVoteSheet(context, policy),
-                              ),
-                            ],
-                          ),
+            body: failed
+                ? ErrorView(
+                    message: state.message ?? 'Policy could not be loaded.',
+                    onRetry: () => context.read<PolicyCubit>().loadPolicy(
+                          widget.policyId,
                         ),
-                        // Tab 2: Comments
-                        _CommentsTab(policy: policy),
-                      ],
-                    ),
+                  )
+                : TabBarView(
+                    children: [
+                      // Tab 1: Policy Details
+                      RefreshIndicator(
+                        onRefresh: () => context.read<PolicyCubit>().loadPolicy(
+                              widget.policyId,
+                            ),
+                        child: ListView(
+                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                          children: [
+                            if (state.detailStatus == RequestStatus.loading)
+                              const LinearProgressIndicator(minHeight: 2),
+                            const SizedBox(height: 12),
+                            _DetailHeader(policy: policy),
+                            const SizedBox(height: 12),
+                            _DescriptionCard(policy: policy),
+                            const SizedBox(height: 12),
+                            _VotingCard(
+                              policy: policy,
+                              onVote: () => _showVoteSheet(context, policy),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Tab 2: Comments
+                      _CommentsTab(policy: policy),
+                    ],
+                  ),
           ),
         );
       },
@@ -131,11 +127,10 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
       isScrollControlled: true,
       useSafeArea: true,
       backgroundColor: Colors.transparent,
-      builder:
-          (_) => BlocProvider.value(
-            value: context.read<VoteCubit>(),
-            child: _VoteSheet(policy: policy),
-          ),
+      builder: (_) => BlocProvider.value(
+        value: context.read<VoteCubit>(),
+        child: _VoteSheet(policy: policy),
+      ),
     );
 
     if (!mounted || voted != true) return;
@@ -164,8 +159,8 @@ class _DetailHeader extends StatelessWidget {
                 child: Text(
                   policy.title,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w900,
-                  ),
+                        fontWeight: FontWeight.w900,
+                      ),
                 ),
               ),
               const SizedBox(width: 8),
@@ -236,10 +231,9 @@ class _DescriptionCard extends StatelessWidget {
           _DetailRow(
             icon: Icons.map_outlined,
             label: 'Regions',
-            value:
-                policy.targetRegions.isEmpty
-                    ? 'Not specified'
-                    : policy.targetRegions.join(', '),
+            value: policy.targetRegions.isEmpty
+                ? 'Not specified'
+                : policy.targetRegions.join(', '),
           ),
           _DetailRow(
             icon: Icons.event_available_outlined,
@@ -266,10 +260,9 @@ class _VotingCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final title = policy.canVote ? 'Ready for your feedback' : 'Voting paused';
-    final message =
-        policy.canVote
-            ? 'Submit one rating for this policy. A comment is optional.'
-            : 'This policy is visible, but voting is temporarily paused.';
+    final message = policy.canVote
+        ? 'Submit one rating for this policy. A comment is optional.'
+        : 'This policy is visible, but voting is temporarily paused.';
 
     return AppCard(
       margin: EdgeInsets.zero,
@@ -373,17 +366,22 @@ class _VoteSheetState extends State<_VoteSheet> {
     return BlocConsumer<VoteCubit, VoteState>(
       listener: (context, state) {
         if (state.status == RequestStatus.success) {
-          final message = state.message ?? 'Vote submitted successfully!';
+          final message = state.message ??
+              (state.alreadyVoted
+                  ? 'You have already voted on this policy.'
+                  : 'Vote submitted successfully!');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(message),
-              backgroundColor: Colors.green,
+              backgroundColor:
+                  state.alreadyVoted ? Colors.orange : Colors.green,
               duration: const Duration(seconds: 3),
             ),
           );
           Navigator.of(context).pop(true);
         } else if (state.status == RequestStatus.failure) {
-          final errorMessage = state.message ?? 'Failed to submit vote. Please try again.';
+          final errorMessage =
+              state.message ?? 'Failed to submit vote. Please try again.';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(errorMessage),

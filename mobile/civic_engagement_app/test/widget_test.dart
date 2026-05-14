@@ -15,8 +15,9 @@ void main() {
     await tester.pumpWidget(const CivicApp());
     await tester.pumpAndSettle();
 
-    expect(find.text('Civic Voice'), findsOneWidget);
-    expect(find.text('Login'), findsWidgets);
-    expect(find.text('Register'), findsOneWidget);
+    expect(find.text('Your Voice in\nAction'), findsOneWidget);
+    expect(find.text('Get Started'), findsOneWidget);
+    expect(find.text('Log In'), findsOneWidget);
+    expect(find.text('Request planner access'), findsOneWidget);
   });
 }

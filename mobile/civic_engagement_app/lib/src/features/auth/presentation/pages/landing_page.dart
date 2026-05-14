@@ -7,11 +7,13 @@ class LandingPage extends StatelessWidget {
   const LandingPage({
     required this.onLogin,
     required this.onRegister,
+    required this.onPlannerRequest,
     super.key,
   });
 
   final VoidCallback onLogin;
   final VoidCallback onRegister;
+  final VoidCallback onPlannerRequest;
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +64,8 @@ class LandingPage extends StatelessWidget {
                       ),
                       child: ClipRRect(
                         borderRadius: BorderRadius.circular(30),
-                        child: Image.asset('assets/logo.png', fit: BoxFit.cover),
+                        child:
+                            Image.asset('assets/logo.png', fit: BoxFit.cover),
                       ),
                     ),
                   ),
@@ -116,6 +119,12 @@ class LandingPage extends StatelessWidget {
                         fontSize: 16,
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 12),
+                  TextButton.icon(
+                    onPressed: onPlannerRequest,
+                    icon: const Icon(Icons.work_outline_rounded),
+                    label: const Text('Request planner access'),
                   ),
                   const SizedBox(height: 24),
                 ],

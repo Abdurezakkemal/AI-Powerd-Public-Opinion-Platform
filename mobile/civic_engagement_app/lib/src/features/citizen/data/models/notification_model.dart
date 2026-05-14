@@ -17,18 +17,24 @@ class NotificationModel extends NotificationEntity {
 
   /// Create from JSON (backend API response format)
   factory NotificationModel.fromJson(Map<String, dynamic> json) {
+    final data = json['data'];
     return NotificationModel(
-      id: json['_id'] as String,
-      userId: json['userId'] as String,
-      userRole: json['userRole'] as String,
-      type: NotificationType.fromString(json['type'] as String),
-      title: json['title'] as String,
-      message: json['message'] as String,
-      data: json['data'] as Map<String, dynamic>?,
-      read: json['read'] as bool,
-      severity: NotificationSeverity.fromString(json['severity'] as String),
-      source: NotificationSource.fromString(json['source'] as String),
-      createdAt: DateTime.parse(json['createdAt'] as String),
+      id: (json['_id'] ?? json['id'] ?? '').toString(),
+      userId: json['userId']?.toString() ?? '',
+      userRole: json['userRole']?.toString() ?? '',
+      type: NotificationType.fromString(json['type']?.toString() ?? ''),
+      title: json['title']?.toString() ?? 'Notification',
+      message: json['message']?.toString() ?? '',
+      data: data is Map<String, dynamic> ? data : null,
+      read: json['read'] == true,
+      severity: NotificationSeverity.fromString(
+        json['severity']?.toString() ?? 'info',
+      ),
+      source: NotificationSource.fromString(
+        json['source']?.toString() ?? 'system',
+      ),
+      createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? '') ??
+          DateTime.now(),
     );
   }
 

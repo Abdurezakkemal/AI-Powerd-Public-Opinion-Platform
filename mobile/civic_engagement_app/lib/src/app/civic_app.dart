@@ -12,6 +12,7 @@ import '../features/citizen/presentation/cubit/policy_cubit.dart';
 import '../features/citizen/presentation/cubit/profile_cubit.dart';
 import '../features/citizen/presentation/cubit/vote_cubit.dart';
 import '../features/citizen/presentation/pages/citizen_home_shell.dart';
+import '../features/citizen/presentation/pages/planner_request_page.dart';
 
 class CivicApp extends StatelessWidget {
   const CivicApp({super.key});
@@ -34,22 +35,20 @@ class CivicApp extends StatelessWidget {
               return MultiBlocProvider(
                 providers: [
                   BlocProvider(
-                    create:
-                        (_) => serviceLocator<ProfileCubit>()..loadProfile(),
+                    create: (_) =>
+                        serviceLocator<ProfileCubit>()..loadProfile(),
                   ),
                   BlocProvider(
-                    create:
-                        (_) => serviceLocator<PolicyCubit>()..loadPolicies(),
+                    create: (_) =>
+                        serviceLocator<PolicyCubit>()..loadPolicies(),
                   ),
                   BlocProvider(
-                    create:
-                        (_) => serviceLocator<HistoryCubit>()..loadHistory(),
+                    create: (_) =>
+                        serviceLocator<HistoryCubit>()..loadHistory(),
                   ),
                   BlocProvider(
-                    create:
-                        (_) =>
-                            serviceLocator<NotificationsCubit>()
-                              ..loadNotifications(),
+                    create: (_) => serviceLocator<NotificationsCubit>()
+                      ..loadNotifications(),
                   ),
                   BlocProvider(create: (_) => serviceLocator<VoteCubit>()),
                 ],
@@ -89,8 +88,21 @@ class _UnauthenticatedShellState extends State<_UnauthenticatedShell> {
   Widget build(BuildContext context) {
     if (_showLanding) {
       return LandingPage(
-        onLogin: () => setState(() { _showLanding = false; _initialRegister = false; }),
-        onRegister: () => setState(() { _showLanding = false; _initialRegister = true; }),
+        onLogin: () => setState(() {
+          _showLanding = false;
+          _initialRegister = false;
+        }),
+        onRegister: () => setState(() {
+          _showLanding = false;
+          _initialRegister = true;
+        }),
+        onPlannerRequest: () {
+          Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => const PlannerRequestPage(),
+            ),
+          );
+        },
       );
     }
     return AuthPage(

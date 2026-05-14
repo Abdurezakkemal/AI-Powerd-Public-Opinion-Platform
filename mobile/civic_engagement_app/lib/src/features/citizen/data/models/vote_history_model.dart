@@ -22,12 +22,41 @@ class VoteHistoryModel extends VoteHistory {
       policyId: policyMap?['id']?.toString() ?? policyMap?['_id']?.toString(),
       policyTitle: policyMap?['title']?.toString(),
       policyCode: policyMap?['policyCode']?.toString(),
-      pollType: policyMap?['pollType']?.toString(),
+      pollType:
+          policyMap?['pollType']?.toString() ?? json['pollType']?.toString(),
       value: json['value'] ?? json['rating'], // Support both old and new format
-      comment: json['comment']?.toString(),
+      comment: _parseComment(json['comment']),
       channel: json['channel']?.toString() ?? 'app',
-      sentiment: json['sentiment']?.toString(),
+      sentiment: _parseSentiment(json['sentiment']),
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
     );
+  }
+
+  static String? _parseComment(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return value;
+    if (value is Map<String, dynamic>) {
+      return value['text']?.toString() ?? value['comment']?.toString();
+    }
+    return value.toString();
+  }
+
+  static String? _parseSentiment(dynamic value) {
+    if (value == null) return null;
+    if (value is String) return _normalizeSentiment(value);
+    if (value is Map<String, dynamic>) {
+      return _normalizeSentiment(value['label']?.toString());
+    }
+    return _normalizeSentiment(value.toString());
+  }
+
+  static String? _normalizeSentiment(String? value) {
+    final normalized = value?.trim().toLowerCase();
+    if (normalized == 'positive' ||
+        normalized == 'negative' ||
+        normalized == 'neutral') {
+      return normalized;
+    }
+    return null;
   }
 }
