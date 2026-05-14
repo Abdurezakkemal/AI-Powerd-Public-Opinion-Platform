@@ -6,8 +6,8 @@ const limiters = require("../config/rateLimits");
 const {
   hasAssociatePermission,
 } = require("../middleware/permissionMiddleware");
+const validateObjectId = require("../middleware/validateObjectId");
 
-// Post comment
 router.post(
   "/",
   auth(["citizen", "planner", "admin"]),
@@ -15,63 +15,63 @@ router.post(
   commentController.postComment,
 );
 
-// Get comments for a policy (citizens & moderators)
 router.get(
   "/policy/:policyId",
   auth(["citizen", "planner", "admin"]),
+  validateObjectId("policyId"),
   commentController.getPolicyComments,
 );
 
-// Get single comment by ID (citizens & moderators)
 router.get(
   "/:id",
   auth(["citizen", "planner", "admin"]),
+  validateObjectId("id"),
   commentController.getCommentById,
 );
 
-// Report comment
 router.post(
   "/:commentId/report",
   auth(["citizen", "planner", "admin"]),
+  validateObjectId("commentId"),
   limiters.reportComment,
   commentController.reportComment,
 );
 
-// Edit comment – author only
 router.put(
   "/:id",
   auth(["citizen", "planner", "admin"]),
+  validateObjectId("id"),
   commentController.editComment,
 );
 
-// Moderate comment – only with permission and rate limited
 router.put(
   "/:commentId/moderate",
   auth(["planner", "admin"]),
+  validateObjectId("commentId"),
   limiters.moderateComment,
   hasAssociatePermission("moderate_comments"),
   commentController.moderateComment,
 );
 
-// Appeal comment – citizen only
 router.post(
   "/:commentId/appeal",
   auth(["citizen"]),
+  validateObjectId("commentId"),
   limiters.appealComment,
   commentController.appealComment,
 );
 
-// Resolve appeal – planner or admin
 router.post(
   "/:commentId/resolve-appeal",
   auth(["planner", "admin"]),
+  validateObjectId("commentId"),
   commentController.resolveAppeal,
 );
 
-// View edit history – planners/admins only
 router.get(
   "/:id/history",
   auth(["planner", "admin"]),
+  validateObjectId("id"),
   commentController.getCommentHistory,
 );
 

@@ -3,19 +3,24 @@ const router = express.Router();
 const adminController = require("../controllers/adminController");
 const auth = require("../middleware/authMiddleware");
 const reportController = require("../controllers/reportController");
-const limiters = require("../config/rateLimits"); // uncommented
+const limiters = require("../config/rateLimits");
+const validateObjectId = require("../middleware/validateObjectId");
 
-// Planner management
 router.get("/planners", auth(["admin"]), adminController.listPlanners);
 router.post("/planners", auth(["admin"]), adminController.createPlanner);
-router.put("/planners/:id", auth(["admin"]), adminController.updatePlanner);
+router.put(
+  "/planners/:id",
+  auth(["admin"]),
+  validateObjectId("id"),
+  adminController.updatePlanner,
+);
 router.put(
   "/planners/:id/status",
   auth(["admin"]),
+  validateObjectId("id"),
   adminController.updatePlannerStatus,
 );
 
-// Comment management
 router.get(
   "/comments/pending",
   auth(["admin"]),
@@ -26,42 +31,46 @@ router.get(
   auth(["admin"]),
   adminController.getFlaggedComments,
 );
-router.put("/comments/:id", auth(["admin"]), adminController.updateComment);
+router.put(
+  "/comments/:id",
+  auth(["admin"]),
+  validateObjectId("id"),
+  adminController.updateComment,
+);
 
-// Normal retry
 router.post(
   "/comments/:id/retry",
   auth(["admin"]),
+  validateObjectId("id"),
   adminController.retryComment,
 );
-
-// Force retry
 router.post(
   "/comments/:id/force-retry",
   auth(["admin"]),
+  validateObjectId("id"),
   adminController.forceRetryComment,
 );
-
-// Bulk retry by IDs – with rate limiter
 router.post(
   "/comments/bulk/retry-by-ids",
   auth(["admin"]),
   limiters.bulkAdmin,
   adminController.bulkRetryCommentsByIds,
 );
+router.delete(
+  "/comments/:id",
+  auth(["admin"]),
+  validateObjectId("id"),
+  adminController.deleteComment,
+);
 
-// Delete comment
-router.delete("/comments/:id", auth(["admin"]), adminController.deleteComment);
-
-// Citizen management
 router.get("/users/citizens", auth(["admin"]), adminController.listCitizens);
 router.put(
   "/users/:id/status",
   auth(["admin"]),
+  validateObjectId("id"),
   adminController.updateCitizenStatus,
 );
 
-// Dashboard & reports
 router.get(
   "/dashboard/stats",
   auth(["admin"]),
@@ -76,10 +85,10 @@ router.get(
 );
 router.get("/ai/health", auth(["admin"]), reportController.getAIHealth);
 
-// Password reset
 router.post(
   "/users/:id/initiate-password-reset",
   auth(["admin"]),
+  validateObjectId("id"),
   adminController.initiatePasswordReset,
 );
 

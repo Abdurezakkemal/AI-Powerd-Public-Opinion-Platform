@@ -13,12 +13,13 @@
   "dependencies": {
     "@faker-js/faker": "^9.9.0",
     "argon2": "^0.44.0",
-    "axios": "^1.16.0",
+    "axios": "^1.16.1",
     "bcryptjs": "^3.0.3",
     "bull": "^4.16.5",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
+    "express-mongo-sanitize": "^2.2.0",
     "express-rate-limit": "^8.5.1",
     "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.3",
@@ -32,6 +33,7 @@
     "redis": "^5.11.0",
     "socket.io": "^4.8.3",
     "winston": "^3.19.0",
+    "xss": "^1.0.15",
     "xss-clean": "^0.1.4"
   },
   "devDependencies": {

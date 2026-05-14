@@ -2,11 +2,17 @@ const express = require("express");
 const router = express.Router();
 const authController = require("../controllers/authController");
 const limiters = require("../config/rateLimits");
+const captchaMiddleware = require("../middleware/captcha");
 
-router.post("/register", limiters.auth, authController.register);
+router.post(
+  "/register",
+  captchaMiddleware,
+  limiters.auth,
+  authController.register,
+);
 router.post("/send-otp", limiters.otpRequest, authController.sendOtp);
 router.post("/verify-otp", limiters.otpVerify, authController.verifyOtp);
-router.post("/login", limiters.auth, authController.login);
+router.post("/login", captchaMiddleware, limiters.auth, authController.login);
 router.post(
   "/forgot-password",
   limiters.passwordResetRequest,

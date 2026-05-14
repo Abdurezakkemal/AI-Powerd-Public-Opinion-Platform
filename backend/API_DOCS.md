@@ -18,10 +18,18 @@ Most endpoints require a Bearer token obtained after successful login or OTP ver
 Include the token in the Authorization header:
 
 ```http
-Authorization: Bearer <your-jwt-token>
+    Authorization: Bearer <your-jwt-token>
 ```
 
-Tokens expire after 7 days. After expiry, the user must log in again.
+**Token expiry depends on the user role**:
+
+| Role    | Expiry time |
+| ------- | ----------- |
+| Citizen | 7 days      |
+| Planner | 12 hours    |
+| Admin   | 6 hours     |
+
+After expiry, the user must log in again.
 
 ### 1.3. Uniform Response Format
 
@@ -119,6 +127,16 @@ Request body:
 | occupation | string | yes      | `student`, `farmer`, `merchant`, `government-employee`, `private-sector`, `unemployed`, `other` |
 | education  | string | yes      | `no-formal`, `primary`, `secondary`, `diploma`, `bachelors`, `postgraduate`                     |
 
+**CAPTCHA:**  
+In production, the request must include a `captchaToken` field (obtained from Google reCAPTCHA v2).  
+For local development, you can disable CAPTCHA by setting `DISABLE_CAPTCHA=true` in the environment.
+
+**Input validation rules:**
+
+- `email` – must be a valid email format (`name@domain.com`).
+- `phone` – must be a valid Ethiopian phone number (e.g., `+251912345678`, `0912345678`, or `912345678`).
+- `password` – at least 8 characters.
+
 **Response (201 Created):**
 
 ```json
@@ -214,12 +232,19 @@ Error responses:
 
 **`POST /auth/login`**
 
-Authenticates a user with email and password. Returns a JWT token valid for 7 days.
+Authenticates a user with email and password. Returns a JWT token valid for 7 days (citizen), 12 hours (planner), or 6 hours (admin).
+
+**CAPTCHA:**  
+In production, the request must include a `captchaToken` field (obtained from Google reCAPTCHA v2).  
+For local development, you can disable CAPTCHA by setting `DISABLE_CAPTCHA=true` in the environment.
+
+**Request body:**
 
 ```json
 {
   "email": "user@example.com",
-  "password": "strongPass123"
+  "password": "strongPass123",
+  "captchaToken": "optional_in_development"
 }
 ```
 
@@ -980,6 +1005,8 @@ All endpoints in this section require authentication with a valid JWT token (cit
 | `rating`         | Integer 1‑5                                                                     | `5`                        |
 | `rankedChoice`   | Array of option IDs in order of preference (max length = `rankedChoiceMaxRank`) | `["opt2", "opt1", "opt3"]` |
 
+**Note:** `policyId` must be a valid MongoDB ObjectId. Invalid IDs return `400 VALIDATION_ERROR`.
+
 **Response (201 Created):**
 
 ```json
@@ -1038,6 +1065,8 @@ All endpoints in this section require authentication with a valid JWT token (cit
   - Created with `visibility = "visible"`, `moderationStatus = "none"`, `moderationReason = null`. No AI processing.
   - Parent comment author receives in‑app notification (`type: "COMMENT_REPLY"`).
 - Profanity filter: if blocked, `visibility = "hidden"`, `hiddenReason = "profanity"`, `moderationStatus = "needs_review"`, `moderationReason = "moderator_flag"`.
+
+**Note:** `policyId` and `parentCommentId` (if provided) must be valid MongoDB ObjectIds. Invalid IDs return `400 VALIDATION_ERROR`.
 
 **Response (201 Created):**
 
@@ -2764,6 +2793,8 @@ Downloads a JSON file containing all personal data associated with the user, inc
 | ----------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
 | `startDate` | string | ISO date (e.g., `2026-05-01`). Filters votes, comments, notifications, and messages created on or after this date. |
 | `endDate`   | string | ISO date. Filters votes, comments, notifications, and messages created on or before this date.                     |
+
+**Note:** The export includes only data that belongs to the user. Planner requests are included regardless of date filters.
 
 If `startDate` and `endDate` are omitted, all data is exported.
 

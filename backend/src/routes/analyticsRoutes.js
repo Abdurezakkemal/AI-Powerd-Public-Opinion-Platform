@@ -7,8 +7,8 @@ const {
   hasAssociatePermission,
 } = require("../middleware/permissionMiddleware");
 const limiters = require("../config/rateLimits");
+const validateObjectId = require("../middleware/validateObjectId");
 
-// All analytics endpoints require planner or admin role and share a read rate limiter
 const analyticsReadLimiter = limiters.analyticsRead;
 
 router.get(
@@ -28,6 +28,7 @@ router.get(
 router.get(
   "/:policyId/timeseries",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getTimeseries,
 );
@@ -35,6 +36,7 @@ router.get(
 router.get(
   "/:policyId/correlation",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getCorrelation,
 );
@@ -42,6 +44,7 @@ router.get(
 router.get(
   "/:policyId/demographics",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getDemographicBreakdown,
 );
@@ -49,6 +52,7 @@ router.get(
 router.get(
   "/:policyId",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
   analyticsReadLimiter,
   hasAssociatePermission("view_analytics"),
   analyticsController.getAnalytics,
@@ -57,6 +61,7 @@ router.get(
 router.get(
   "/:policyId/export",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
   analyticsReadLimiter,
   hasAssociatePermission("export_data"),
   analyticsController.exportAnalytics,
@@ -65,6 +70,7 @@ router.get(
 router.get(
   "/:policyId/comments",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
   analyticsReadLimiter,
   hasAssociatePermission("moderate_comments"),
   analyticsController.getComments,

@@ -3,11 +3,10 @@ const router = express.Router();
 const userController = require("../controllers/userController");
 const authMiddleware = require("../middleware/authMiddleware");
 const limiters = require("../config/rateLimits");
+const validateObjectId = require("../middleware/validateObjectId");
 
-// All routes require authentication
 router.use(authMiddleware(["citizen", "planner", "admin"]));
 
-// Profile
 router.get("/me", userController.getMe);
 router.put("/me", limiters.userProfileUpdate, userController.updateMe);
 router.put(
@@ -18,10 +17,8 @@ router.put(
 router.delete("/me", limiters.userProfileUpdate, userController.deleteMe);
 router.get("/me/export", limiters.dataExport, userController.exportMe);
 
-// History
 router.get("/me/history", userController.getHistory);
 
-// Email change
 router.post(
   "/me/email/request",
   limiters.userProfileUpdate,
@@ -33,15 +30,17 @@ router.post(
   userController.verifyEmailChange,
 );
 
-// Notifications
 router.get("/me/notifications", userController.getNotifications);
-router.patch("/me/notifications/:id/read", userController.markNotificationRead);
+router.patch(
+  "/me/notifications/:id/read",
+  validateObjectId("id"),
+  userController.markNotificationRead,
+);
 router.patch(
   "/me/notifications/read-all",
   userController.markAllNotificationsRead,
 );
 
-// Phone change
 router.post(
   "/me/phone/request",
   limiters.phoneChangeRequest,

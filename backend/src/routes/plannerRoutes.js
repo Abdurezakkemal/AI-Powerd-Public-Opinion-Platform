@@ -3,23 +3,20 @@ const router = express.Router();
 const plannerController = require("../controllers/plannerController");
 const auth = require("../middleware/authMiddleware");
 const limiters = require("../config/rateLimits");
+const validateObjectId = require("../middleware/validateObjectId");
 
-// Citizen submits a request to become planner (rate limited to 1 per day per user)
 router.post(
   "/request",
   auth(["citizen"]),
   limiters.plannerRequest,
   plannerController.requestPlanner,
 );
-
-// Planner completes mandatory training
 router.post(
   "/training/complete",
   auth(["planner"]),
   plannerController.completeTraining,
 );
 
-// Admin endpoints for managing requests
 router.get(
   "/requests/pending",
   auth(["admin"]),
@@ -28,11 +25,13 @@ router.get(
 router.post(
   "/requests/:id/approve",
   auth(["admin"]),
+  validateObjectId("id"),
   plannerController.approveRequest,
 );
 router.post(
   "/requests/:id/reject",
   auth(["admin"]),
+  validateObjectId("id"),
   plannerController.rejectRequest,
 );
 
@@ -42,25 +41,30 @@ router.get(
   plannerController.searchPlannersByLanguage,
 );
 
-// Associates management
 router.post(
   "/policies/:policyId/associates",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
   plannerController.addAssociate,
 );
 router.get(
   "/policies/:policyId/associates",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
   plannerController.listAssociates,
 );
 router.patch(
   "/policies/:policyId/associates/:associateId",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
+  validateObjectId("associateId"),
   plannerController.updateAssociatePermissions,
 );
 router.delete(
   "/policies/:policyId/associates/:associateId",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
+  validateObjectId("associateId"),
   plannerController.revokeAssociate,
 );
 
