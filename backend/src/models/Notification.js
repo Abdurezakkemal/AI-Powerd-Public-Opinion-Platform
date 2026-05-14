@@ -16,6 +16,8 @@ const notificationSchema = new mongoose.Schema({
       "POLICY_EXTENDED",
       // Delegation
       "ASSOCIATE_ASSIGNED",
+      "ASSOCIATE_PERMISSIONS_UPDATED", // new
+      "ASSOCIATE_REVOKED", // new
       // Messaging
       "MESSAGE_RECEIVED",
       // Comments

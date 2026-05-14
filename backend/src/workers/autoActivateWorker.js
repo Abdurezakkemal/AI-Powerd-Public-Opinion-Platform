@@ -1,5 +1,6 @@
 const cron = require("node-cron");
 const Policy = require("../models/Policy");
+const PolicyAssociate = require("../models/PolicyAssociate");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
 const { createNotification } = require("../services/notificationService");
@@ -17,6 +18,7 @@ const autoActivatePolicies = async () => {
       policy.status = "active";
       await policy.save();
 
+      // Audit log
       await createAuditLog({
         userId: policy.createdBy,
         userRole: "system",
@@ -31,6 +33,7 @@ const autoActivatePolicies = async () => {
         req: null,
       });
 
+      // Notify policy owner
       await createNotification({
         userId: policy.createdBy,
         type: "POLICY_ACTIVATED",
@@ -40,6 +43,26 @@ const autoActivatePolicies = async () => {
         severity: "info",
         source: "system",
       });
+
+      // Find associates with view_analytics permission
+      const associates = await PolicyAssociate.find({
+        policyId: policy._id,
+        revokedAt: null,
+        permissions: { $in: ["view_analytics"] },
+      }).select("plannerId");
+
+      // Notify each associate
+      for (const associate of associates) {
+        await createNotification({
+          userId: associate.plannerId,
+          type: "POLICY_ACTIVATED",
+          title: "Policy Activated",
+          message: `Policy "${policy.title}" has been automatically activated and is now accepting votes.`,
+          data: { policyId: policy._id, policyCode: policy.policyCode },
+          severity: "info",
+          source: "system",
+        });
+      }
 
       logger.info(
         `Auto-activated policy ${policy._id} (${policy.policyCode}) - startDate ${policy.startDate.toISOString()}`,

@@ -46,19 +46,13 @@ exports.sendMessage = async (req, res) => {
     });
     await message.save();
 
-    // Create in-app notification
+    // In‑app notification only (no email)
     await createNotification({
       userId: recipientId,
       type: "MESSAGE_RECEIVED",
       title: "New Message from " + req.user.id,
       message: subject,
       data: { messageId: message._id },
-    });
-    // Send email if recipient allows (we assume all planners want emails)
-    await sendEmail({
-      to: recipient.email,
-      subject: `New message: ${subject}`,
-      html: `<p>You have a new message from a planner.</p><p><strong>${subject}</strong></p><p>${body.substring(0, 200)}...</p>`,
     });
 
     await createAuditLog({

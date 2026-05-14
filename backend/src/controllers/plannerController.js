@@ -134,6 +134,16 @@ exports.approveRequest = async (req, res) => {
       subject: "Planner Request Approved",
       html: `<p>Congratulations! You are now a planner. Please log in and complete the mandatory training before creating policies.</p>`,
     });
+    // In‑app notification
+    await createNotification({
+      userId: user._id,
+      type: "PLANNER_APPROVED",
+      title: "Planner Request Approved",
+      message: `Congratulations! You are now a planner. Please log in and complete the mandatory training.`,
+      data: {},
+      severity: "info",
+      source: "system",
+    });
     return sendSuccess(
       res,
       null,
@@ -267,14 +277,18 @@ exports.completeTraining = async (req, res) => {
 exports.searchPlannersByLanguage = async (req, res) => {
   try {
     const { language } = req.query;
-    
+
     let query = { role: "planner", active: true, deletedAt: null };
-    
+
     // If language is specified and not "all", filter by language
-    if (language && language !== "all" && ["am", "om", "ti", "en"].includes(language)) {
+    if (
+      language &&
+      language !== "all" &&
+      ["am", "om", "ti", "en"].includes(language)
+    ) {
       query.languagesSpoken = language;
     }
-    
+
     const planners = await User.find(query)
       .select("email region languagesSpoken trainingCompletedAt")
       .limit(50);
@@ -516,6 +530,18 @@ exports.updateAssociatePermissions = async (req, res) => {
       details: { permissions },
       req,
     });
+
+    // In‑app notification to associate
+    await createNotification({
+      userId: associate.plannerId,
+      type: "ASSOCIATE_PERMISSIONS_UPDATED",
+      title: "Permissions Updated",
+      message: `Your permissions for policy "${policy.title}" have been updated to: ${permissions.join(", ")}.`,
+      data: { policyId, permissions },
+      severity: "info",
+      source: "system",
+    });
+
     return sendSuccess(res, associate, "Permissions updated");
   } catch (err) {
     console.error(err);
@@ -576,6 +602,18 @@ exports.revokeAssociate = async (req, res) => {
       details: { policyId, plannerId: associate.plannerId },
       req,
     });
+
+    // In‑app notification to associate
+    await createNotification({
+      userId: associate.plannerId,
+      type: "ASSOCIATE_REVOKED",
+      title: "Associate Role Revoked",
+      message: `You have been removed as an associate from policy "${policy.title}".`,
+      data: { policyId },
+      severity: "info",
+      source: "system",
+    });
+
     return sendSuccess(res, null, "Associate revoked");
   } catch (err) {
     console.error(err);

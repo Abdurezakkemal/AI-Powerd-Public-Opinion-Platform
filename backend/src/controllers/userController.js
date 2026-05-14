@@ -250,6 +250,14 @@ exports.deleteMe = async (req, res) => {
       req,
     });
 
+    // Send deletion confirmation email
+    await sendEmail({
+      to: originalEmail,
+      subject: "Account Deleted – Civic Engagement Platform",
+      html: `<p>Your account has been successfully deleted and all personal data anonymised.</p>
+             <p>If you did not request this, please contact support immediately.</p>`,
+    });
+
     logger.info(`User ${userId} (${originalEmail}) deleted their account`);
     return sendSuccess(
       res,
@@ -272,7 +280,6 @@ exports.deleteMe = async (req, res) => {
     );
   }
 };
-
 // GET /users/me/export – GDPR data portability
 exports.exportMe = async (req, res) => {
   try {
