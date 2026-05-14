@@ -7,7 +7,6 @@ const client = require("../config/redis");
 const {
   hashPassword,
   comparePassword,
-  hashPhone,
   generateOTP,
   hashPhone,
 } = require("../utils/helpers");
