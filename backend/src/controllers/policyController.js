@@ -52,8 +52,12 @@ exports.getAll = async (req, res) => {
 
     // Role‑specific filters
     if (req.user.role === "citizen") {
-      // Citizens always only active/paused/closed in their region
-      filter.status = { $in: ["active", "paused", "closed"] };
+      // Citizens see only active/paused policies in their region.
+      const citizenStatuses = ["active", "paused"];
+      filter.status =
+        status && citizenStatuses.includes(status)
+          ? status
+          : { $in: citizenStatuses };
       filter.targetRegions = req.user.region;
     } else if (req.user.role === "planner") {
       // If owner=me, only policies created by this planner
@@ -155,7 +159,7 @@ exports.getOne = async (req, res) => {
       );
     }
     if (req.user.role === "citizen") {
-      const allowedStatuses = ["active", "paused", "closed"];
+      const allowedStatuses = ["active", "paused"];
       if (
         !allowedStatuses.includes(policy.status) ||
         !policy.targetRegions.includes(req.user.region)

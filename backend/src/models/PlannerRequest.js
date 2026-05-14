@@ -4,8 +4,17 @@ const plannerRequestSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: "User",
-    required: true,
+    default: null,
   },
+  applicantType: {
+    type: String,
+    enum: ["citizen", "nonCitizen"],
+    default: "citizen",
+  },
+  fullName: { type: String, default: "" },
+  email: { type: String, default: "" },
+  phone: { type: String, default: "" },
+  region: { type: String, default: "" },
   organization: { type: String, default: "" },
   reason: { type: String, required: true, minlength: 50 },
   proofFile: { type: String, default: null },

@@ -160,7 +160,7 @@ exports.changePassword = async (req, res) => {
 exports.getHistory = async (req, res) => {
   try {
     const votes = await Vote.find({ userId: req.user.id })
-      .populate("policyId", "title policyCode")
+      .populate("policyId", "title policyCode pollType")
       .sort({ createdAt: -1 })
       .lean();
 
@@ -174,10 +174,11 @@ exports.getHistory = async (req, res) => {
               id: vote.policyId._id,
               title: vote.policyId.title,
               policyCode: vote.policyId.policyCode,
+              pollType: vote.policyId.pollType,
             }
           : null,
         value: vote.value,
-        comment: comment?.comment || null,
+        comment: comment?.text || null,
         channel: vote.channel,
         sentiment: comment?.sentiment?.label || null,
         createdAt: vote.createdAt,
