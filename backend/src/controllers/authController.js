@@ -147,6 +147,7 @@ exports.sendOtp = async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) {
       logger.warn(`OTP requested for non-existent email: ${email}`);
+      // Do not audit log for non-existent users (to prevent enumeration)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -162,6 +163,15 @@ exports.sendOtp = async (req, res) => {
     await client.setEx(otpKey, 300, otp);
 
     await sendOtpEmail(email, otp);
+
+    // Audit log for OTP send
+    await createAuditLog({
+      userId: user._id,
+      userRole: user.role,
+      action: "SEND_OTP",
+      details: { email: user.email },
+      req,
+    });
 
     logger.info(`OTP sent to email: ${email}`);
     if (process.env.NODE_ENV !== "production") {
@@ -410,6 +420,15 @@ exports.forgotPassword = async (req, res) => {
 
     await sendPasswordResetEmail(email, token);
     logger.info(`Password reset email sent to ${email}`);
+
+    // Audit log for password reset request
+    await createAuditLog({
+      userId: user._id,
+      userRole: user.role,
+      action: "REQUEST_PASSWORD_RESET",
+      details: { email: user.email },
+      req,
+    });
 
     return sendSuccess(
       res,

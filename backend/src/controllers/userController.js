@@ -3,6 +3,7 @@ const Vote = require("../models/Vote");
 const Comment = require("../models/Comment");
 const Notification = require("../models/Notification");
 const Message = require("../models/Message");
+const PlannerRequest = require("../models/PlannerRequest");
 const client = require("../config/redis");
 const {
   hashPassword,
@@ -42,7 +43,7 @@ exports.getMe = async (req, res) => {
   }
 };
 
-// PUT /users/me – only region can be updated (email removed for security)
+// PUT /users/me – only region can be updated
 exports.updateMe = async (req, res) => {
   try {
     const { region } = req.body;
@@ -214,16 +215,16 @@ exports.deleteMe = async (req, res) => {
 
     const originalEmail = user.email;
 
-    // Anonymise profile – use valid placeholder values from enums
+    // Anonymise profile
     user.email = `deleted_${Date.now()}_${user._id}@anonymised.com`;
-    user.region = "Addis Ababa"; // valid region
-    user.ageRange = "18-24"; // valid age range
-    user.gender = "prefer-not-to-say"; // valid gender
-    user.occupation = "other"; // valid occupation
-    user.education = "no-formal"; // valid education
-    user.phoneHash = null; // allows re‑registration with same phone
+    user.region = "Addis Ababa";
+    user.ageRange = "18-24";
+    user.gender = "prefer-not-to-say";
+    user.occupation = "other";
+    user.education = "no-formal";
+    user.phoneHash = null;
     user.active = false;
-    user.tokenVersion += 1; // invalidate any existing JWTs
+    user.tokenVersion += 1;
     await user.save();
 
     // Unlink votes and comments
@@ -232,14 +233,12 @@ exports.deleteMe = async (req, res) => {
 
     // Delete notifications and messages
     await Notification.deleteMany({ userId: userId });
-    // Only delete messages if the Message model exists
     try {
       const Message = require("../models/Message");
       await Message.deleteMany({
         $or: [{ senderId: userId }, { recipientId: userId }],
       });
     } catch (msgErr) {
-      // Message model not defined – ignore
       logger.info("Message model not loaded; skipping message deletion");
     }
 
@@ -274,13 +273,12 @@ exports.deleteMe = async (req, res) => {
   }
 };
 
-// GET /users/me/export – GDPR data portability with filters
+// GET /users/me/export – GDPR data portability
 exports.exportMe = async (req, res) => {
   try {
     const userId = req.user.id;
     const { startDate, endDate } = req.query;
 
-    // Parse date filters
     let start = startDate ? new Date(startDate) : null;
     let end = endDate ? new Date(endDate) : null;
     if (start && isNaN(start.getTime())) start = null;
@@ -295,7 +293,6 @@ exports.exportMe = async (req, res) => {
       );
     }
 
-    // Build date filter for votes, comments, notifications, messages
     const dateFilter = {};
     if (start) dateFilter.$gte = start;
     if (end) dateFilter.$lte = end;
@@ -313,7 +310,6 @@ exports.exportMe = async (req, res) => {
       messageFilter.createdAt = dateFilter;
     }
 
-    // Fetch user profile
     const user = await User.findById(userId).select(
       "-passwordHash -phoneHash -tokenVersion",
     );
@@ -321,7 +317,6 @@ exports.exportMe = async (req, res) => {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
     }
 
-    // Fetch votes, comments, notifications, messages
     const [votes, comments, notifications, messages, plannerRequests] =
       await Promise.all([
         Vote.find(voteFilter).populate("policyId", "title policyCode").lean(),
@@ -379,6 +374,15 @@ exports.exportMe = async (req, res) => {
       })),
     };
 
+    // Audit log for data export
+    await createAuditLog({
+      userId: user._id,
+      userRole: user.role,
+      action: "EXPORT_DATA",
+      details: { startDate, endDate },
+      req,
+    });
+
     logger.info(
       `User ${userId} exported their data with filters start=${startDate} end=${endDate}`,
     );
@@ -403,9 +407,8 @@ exports.exportMe = async (req, res) => {
   }
 };
 
-// ==================== EMAIL CHANGE (with verification) ====================
+// ==================== EMAIL CHANGE ====================
 
-// POST /users/me/email/request
 exports.requestEmailChange = async (req, res) => {
   try {
     const { newEmail } = req.body;
@@ -421,14 +424,12 @@ exports.requestEmailChange = async (req, res) => {
       );
     }
 
-    // Fetch current user to get old email
     const user = await User.findById(userId);
     if (!user) {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
     }
     const oldEmail = user.email;
 
-    // Check if new email already used by another account
     const existing = await User.findOne({ email: newEmail });
     if (existing && existing._id.toString() !== userId) {
       return sendError(
@@ -440,7 +441,7 @@ exports.requestEmailChange = async (req, res) => {
       );
     }
 
-    // Rate limit (3 requests per hour)
+    // Rate limit (3 per hour)
     const rateKey = `email_change:rate:${userId}`;
     const rateAttempts = await client.incr(rateKey);
     if (rateAttempts === 1) await client.expire(rateKey, 3600);
@@ -459,10 +460,9 @@ exports.requestEmailChange = async (req, res) => {
     const otpKey = `email_change:otp:${userId}`;
     await client.setEx(otpKey, 300, JSON.stringify({ otp, newEmail }));
 
-    // Send OTP to the new email address
     await sendOtpEmail(newEmail, otp);
 
-    // Security: Send alert to the OLD email address
+    // Send security alert to old email
     await sendEmail(
       oldEmail,
       "Security Alert: Email change requested",
@@ -471,6 +471,15 @@ exports.requestEmailChange = async (req, res) => {
        <p>If you did not make this request, please contact support immediately.</p>
        <p>No changes have been made yet.</p>`,
     );
+
+    // Audit log for request
+    await createAuditLog({
+      userId: user._id,
+      userRole: user.role,
+      action: "REQUEST_EMAIL_CHANGE",
+      details: { oldEmail, newEmail },
+      req,
+    });
 
     logger.info(`Email change OTP sent to ${newEmail} for user ${userId}`);
     return sendSuccess(
@@ -493,7 +502,7 @@ exports.requestEmailChange = async (req, res) => {
     );
   }
 };
-// POST /users/me/email/verify
+
 exports.verifyEmailChange = async (req, res) => {
   try {
     const { code } = req.body;
@@ -509,10 +518,10 @@ exports.verifyEmailChange = async (req, res) => {
       );
     }
 
-    // Rate limiting for verification attempts (max 5 per 15 minutes)
+    // Rate limit for verification attempts (5 per 15 minutes)
     const verifyRateKey = `email_change:verify_rate:${userId}`;
     const verifyAttempts = await client.incr(verifyRateKey);
-    if (verifyAttempts === 1) await client.expire(verifyRateKey, 900); // 15 minutes
+    if (verifyAttempts === 1) await client.expire(verifyRateKey, 900);
     if (verifyAttempts > 5) {
       logger.warn(`Email change OTP brute force attempt for user ${userId}`);
       return sendError(
@@ -557,7 +566,6 @@ exports.verifyEmailChange = async (req, res) => {
     user.email = newEmail;
     await user.save();
 
-    // Clean up Redis keys
     await client.del(otpKey);
     await client.del(verifyRateKey);
 
@@ -586,11 +594,12 @@ exports.verifyEmailChange = async (req, res) => {
   }
 };
 
-// ==================== PHONE NUMBER CHANGE (with verification) ====================
+// ==================== PHONE NUMBER CHANGE ====================
+
 exports.requestPhoneChange = async (req, res) => {
   try {
     const { newPhone } = req.body;
-    if (!newPhone)
+    if (!newPhone) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -598,12 +607,28 @@ exports.requestPhoneChange = async (req, res) => {
         null,
         400,
       );
+    }
 
     const user = await User.findById(req.user.id);
-    if (!user)
+    if (!user) {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+    }
 
-    // Check if phone already in use
+    // Rate limit (3 per hour)
+    const rateKey = `phone_change:rate:${req.user.id}`;
+    const attempts = await client.incr(rateKey);
+    if (attempts === 1) await client.expire(rateKey, 3600);
+    if (attempts > 3) {
+      logger.warn(`Phone change rate limit exceeded for user ${req.user.id}`);
+      return sendError(
+        res,
+        ErrorCodes.RATE_LIMIT,
+        "Too many phone change requests. Please try again later.",
+        null,
+        429,
+      );
+    }
+
     const existing = await User.findOne({ phoneHash: hashPhone(newPhone) });
     if (existing && existing._id.toString() !== user._id.toString()) {
       return sendError(
@@ -619,10 +644,23 @@ exports.requestPhoneChange = async (req, res) => {
     const key = `phone_change:otp:${req.user.id}:${newPhone}`;
     await client.setEx(key, 300, otp);
 
-    // Send OTP via SMS (mock: console.log)
+    // Mock SMS
     logger.info(`[MOCK SMS] Phone change OTP for ${newPhone}: ${otp}`);
 
-    return sendSuccess(res, null, "OTP sent to new phone number");
+    // Audit log for request
+    await createAuditLog({
+      userId: user._id,
+      userRole: user.role,
+      action: "REQUEST_PHONE_CHANGE",
+      details: { newPhone },
+      req,
+    });
+
+    return sendSuccess(
+      res,
+      null,
+      "OTP sent to new phone number. It expires in 5 minutes.",
+    );
   } catch (err) {
     logger.error(err);
     return sendError(
@@ -638,7 +676,7 @@ exports.requestPhoneChange = async (req, res) => {
 exports.verifyPhoneChange = async (req, res) => {
   try {
     const { newPhone, otp } = req.body;
-    if (!newPhone || !otp)
+    if (!newPhone || !otp) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -646,6 +684,24 @@ exports.verifyPhoneChange = async (req, res) => {
         null,
         400,
       );
+    }
+
+    // Rate limit for verification attempts (5 per 15 minutes)
+    const verifyRateKey = `phone_change:verify_rate:${req.user.id}`;
+    const verifyAttempts = await client.incr(verifyRateKey);
+    if (verifyAttempts === 1) await client.expire(verifyRateKey, 900);
+    if (verifyAttempts > 5) {
+      logger.warn(
+        `Phone change OTP brute force attempt for user ${req.user.id}`,
+      );
+      return sendError(
+        res,
+        ErrorCodes.RATE_LIMIT,
+        "Too many verification attempts. Please request a new OTP.",
+        null,
+        429,
+      );
+    }
 
     const key = `phone_change:otp:${req.user.id}:${newPhone}`;
     const stored = await client.get(key);
@@ -660,25 +716,31 @@ exports.verifyPhoneChange = async (req, res) => {
     }
 
     const user = await User.findById(req.user.id);
-    if (!user)
+    if (!user) {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+    }
 
     const newPhoneHash = hashPhone(newPhone);
     user.phoneHash = newPhoneHash;
-    user.tokenVersion += 1; // invalidate existing JWTs
+    user.tokenVersion += 1;
     await user.save();
 
     await client.del(key);
+    await client.del(verifyRateKey);
 
     await createAuditLog({
       userId: user._id,
       userRole: user.role,
       action: "PHONE_CHANGE",
-      details: { oldPhoneHash: user.phoneHash, newPhoneHash },
+      details: { newPhoneHash },
       req,
     });
 
-    return sendSuccess(res, null, "Phone number updated successfully");
+    return sendSuccess(
+      res,
+      null,
+      "Phone number updated successfully. Please log in again.",
+    );
   } catch (err) {
     logger.error(err);
     return sendError(
@@ -693,7 +755,6 @@ exports.verifyPhoneChange = async (req, res) => {
 
 // ==================== NOTIFICATIONS ====================
 
-// GET /users/me/notifications
 exports.getNotifications = async (req, res) => {
   try {
     const { page = 1, limit = 20, unreadOnly = false } = req.query;
@@ -733,7 +794,6 @@ exports.getNotifications = async (req, res) => {
   }
 };
 
-// PATCH /users/me/notifications/:id/read
 exports.markNotificationRead = async (req, res) => {
   try {
     const notification = await Notification.findOneAndUpdate(
@@ -770,7 +830,6 @@ exports.markNotificationRead = async (req, res) => {
   }
 };
 
-// PATCH /users/me/notifications/read-all
 exports.markAllNotificationsRead = async (req, res) => {
   try {
     const result = await Notification.updateMany(
