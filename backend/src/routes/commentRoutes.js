@@ -44,10 +44,11 @@ router.put(
   commentController.editComment,
 );
 
-// Moderate comment – only with permission
+// Moderate comment – only with permission and rate limited
 router.put(
   "/:commentId/moderate",
   auth(["planner", "admin"]),
+  limiters.moderateComment,
   hasAssociatePermission("moderate_comments"),
   commentController.moderateComment,
 );

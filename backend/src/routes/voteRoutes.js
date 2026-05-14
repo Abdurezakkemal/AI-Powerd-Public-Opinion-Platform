@@ -2,8 +2,13 @@ const express = require("express");
 const router = express.Router();
 const voteController = require("../controllers/voteController");
 const auth = require("../middleware/authMiddleware");
+const limiters = require("../config/rateLimits");
 
-// Submit a vote (rating required, comment optional)
-router.post("/", auth(["citizen"]), voteController.submitAppVote);
+router.post(
+  "/",
+  auth(["citizen"]),
+  limiters.vote,
+  voteController.submitAppVote,
+);
 
 module.exports = router;

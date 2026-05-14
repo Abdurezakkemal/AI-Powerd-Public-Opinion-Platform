@@ -3,7 +3,7 @@ const router = express.Router();
 const adminController = require("../controllers/adminController");
 const auth = require("../middleware/authMiddleware");
 const reportController = require("../controllers/reportController");
-// const limiters = require("../config/rateLimits"); // comment out if not needed
+const limiters = require("../config/rateLimits"); // uncommented
 
 // Planner management
 router.get("/planners", auth(["admin"]), adminController.listPlanners);
@@ -42,10 +42,11 @@ router.post(
   adminController.forceRetryComment,
 );
 
-// Bulk retry by IDs – no rate limiter for now
+// Bulk retry by IDs – with rate limiter
 router.post(
   "/comments/bulk/retry-by-ids",
   auth(["admin"]),
+  limiters.bulkAdmin,
   adminController.bulkRetryCommentsByIds,
 );
 
