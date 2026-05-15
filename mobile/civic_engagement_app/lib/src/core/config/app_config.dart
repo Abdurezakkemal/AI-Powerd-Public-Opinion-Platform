@@ -3,7 +3,7 @@ class AppConfig {
 
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://192.168.137.215:5002/api',
+    defaultValue: 'http://192.168.137.142:5002/api',
   );
 
   static const apiFallbackBaseUrl = String.fromEnvironment(
