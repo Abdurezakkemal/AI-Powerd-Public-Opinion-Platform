@@ -235,7 +235,7 @@ exports.getAnalytics = async (req, res) => {
       const agg = await getPollTypeAggregation(policy, voteFilter);
       const comms = await Comment.find({
         policyId: policy._id,
-        status: "approved",
+        moderationStatus: "none",
       }).lean();
       return [agg, comms];
     });
@@ -486,7 +486,7 @@ exports.getTimeseries = async (req, res) => {
     }
 
     // ---------- COMMENT AGGREGATION (sentiment + keywords) ----------
-    const commentFilter = { policyId: policy._id, status: "approved" };
+    const commentFilter = { policyId: policy._id, moderationStatus: "none" };
     if (start) commentFilter.createdAt = { $gte: start };
     if (end)
       commentFilter.createdAt = { ...commentFilter.createdAt, $lte: end };
@@ -790,7 +790,7 @@ exports.getDemographicBreakdown = async (req, res) => {
     }
 
     // ----- Comment aggregation (sentiment + keywords) -----
-    const commentFilter = { policyId: policy._id, status: "approved" };
+    const commentFilter = { policyId: policy._id, moderationStatus: "none" };
     if (start) commentFilter.createdAt = { $gte: start };
     if (end)
       commentFilter.createdAt = { ...commentFilter.createdAt, $lte: end };
@@ -1030,7 +1030,7 @@ exports.getComments = async (req, res) => {
     if (parentCommentId === "null") filter.parentCommentId = null;
     else if (parentCommentId) filter.parentCommentId = parentCommentId;
     if (sentiment) filter["sentiment.label"] = sentiment;
-    if (status) filter.status = status;
+    if (status) filter.moderationStatus = status; // map frontend "status" query to moderationStatus
     if (language) filter.language = language;
 
     const comments = await Comment.find(filter)
@@ -1048,7 +1048,8 @@ exports.getComments = async (req, res) => {
       sentiment: c.sentiment?.label,
       confidence: c.sentiment?.confidence,
       keywords: c.keywords,
-      status: c.status,
+      moderationStatus: c.moderationStatus, // replaced status with moderationStatus
+      visibility: c.visibility,
       isOfficialReply: c.isOfficialReply,
       createdAt: c.createdAt,
       userEmail: c.userId?.email,
@@ -1362,7 +1363,7 @@ exports.getHeatmap = async (req, res) => {
     // ----- COMMENT AGGREGATION (sentiment + keywords) -----
     const commentMatch = {
       policyId: policy._id,
-      status: "approved",
+      moderationStatus: "none",
     };
     if (start) commentMatch.createdAt = { $gte: start };
     if (end) commentMatch.createdAt = { ...commentMatch.createdAt, $lte: end };

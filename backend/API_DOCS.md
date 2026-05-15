@@ -1051,7 +1051,7 @@ All endpoints in this section require authentication with a valid JWT token (cit
 ```json
 {
   "policyId": "67f1a2b3c4d5e6f7a8b9c0d1",
-  "parentCommentId": null,
+  "parentCommentId": null, // or an existing comment ID to reply to
   "text": "This is a comment (1‑2000 characters)"
 }
 ```
@@ -1130,8 +1130,6 @@ Returns top‑level comments that are visible to citizens (i.e., `visibility = "
 ```
 
 **Note:** Reported or hidden comments are excluded.
-
----
 
 ### 4.4 Get a single comment by ID
 
@@ -1267,8 +1265,6 @@ Returns a comment by its ID. Citizens can see only comments with `visibility = "
 }
 ```
 
----
-
 ### 4.7 Appeal a moderation decision (citizen)
 
 **`POST /comments/:commentId/appeal`**
@@ -1300,8 +1296,6 @@ Returns a comment by its ID. Citizens can see only comments with `visibility = "
   "timestamp": "..."
 }
 ```
-
----
 
 ### 4.8 Resolve an appeal
 
@@ -1337,8 +1331,6 @@ Returns a comment by its ID. Citizens can see only comments with `visibility = "
 }
 ```
 
----
-
 ### 4.9 Edit a comment (author only)
 
 **`PUT /comments/:id`**
@@ -1373,8 +1365,6 @@ Returns a comment by its ID. Citizens can see only comments with `visibility = "
   "timestamp": "..."
 }
 ```
-
----
 
 ### 4.10 Get comment edit history
 
@@ -1569,7 +1559,7 @@ Downloads raw vote data as CSV with demographic columns. Supports same filters a
 
 **`GET /analytics/:policyId/comments`**
 
-Returns comments belonging to a policy, with moderator filters and the `isEdited` flag.
+**Roles:** planner, admin
 
 **Query parameters (all optional):**
 
@@ -1921,251 +1911,6 @@ Aggregates shared metrics (total votes, comments, sentiment counts, top keywords
 | 403    | `FORBIDDEN`             | `"Only planners and admins can access cross‑policy analytics"` |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve cross‑policy analytics"`                  |
 
-## 6. Admin Endpoints
-
-Role required: **`admin`** (all endpoints in this section)
-
-### 6.1 Planner Management
-
-#### 6.1.1 List planners
-
-**`GET /admin/planners`**
-
-Query parameters (all optional):
-
-| Parameter | Type    | Default | Description                                    |
-| --------- | ------- | ------- | ---------------------------------------------- |
-| active    | boolean | none    | Filter by true (active) or false (deactivated) |
-| page      | integer | 1       | Page number (1‑based)                          |
-| limit     | integer | 10      | Items per page (max 100)                       |
-
-Response (200 OK):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "total": 5,
-    "page": 1,
-    "pages": 1,
-    "planners": [
-      {
-        "_id": "...",
-        "email": "planner@example.com",
-        "region": "",
-        "role": "planner",
-        "verified": true,
-        "active": true,
-        "createdAt": "..."
-      }
-    ]
-  },
-  "message": "Planners retrieved successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                                                |
-| ------ | --------------------- | ------------------------------------------------------ |
-| 403    | FORBIDDEN             | "Access denied. Insufficient permissions."             |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to retrieve planners. Please try again later." |
-
-#### 6.1.2 Create planner
-
-**`POST /admin/planners`**
-
-Request body:
-
-| Field    | Type   | Required | Description                          |
-| -------- | ------ | -------- | ------------------------------------ |
-| email    | string | yes      | Valid email address (must be unique) |
-| password | string | yes      | Min 6 characters                     |
-
-Response (201 Created):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "id": "...",
-    "email": "newplanner@example.com"
-  },
-  "message": "Planner account created successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                                       |
-| ------ | --------------------- | --------------------------------------------- |
-| 400    | VALIDATION_ERROR      | "Email and password are required"             |
-| 409    | DUPLICATE_ENTRY       | "A user with this email already exists"       |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to create planner. Please try again." |
-
-#### 6.1.3 Update planner
-
-**`PUT /admin/planners/:id`**
-
-Path parameter:
-
-| Parameter | Type   | Description     |
-| --------- | ------ | --------------- |
-| id        | string | Planner user ID |
-
-Request body (fields optional):
-
-| Field    | Type    | Description                                  |
-| -------- | ------- | -------------------------------------------- |
-| password | string  | New password (min 6 chars)                   |
-| active   | boolean | Set to false to deactivate, true to activate |
-
-Response (200 OK):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "id": "...",
-    "email": "planner@example.com",
-    "active": true
-  },
-  "message": "Planner updated successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                                       |
-| ------ | --------------------- | --------------------------------------------- |
-| 404    | NOT_FOUND             | "Planner not found"                           |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to update planner. Please try again." |
-
-#### 6.1.4 Toggle planner status
-
-**`PUT /admin/planners/:id/status`**
-
-Path parameter:
-
-| Parameter | Type   | Description     |
-| --------- | ------ | --------------- |
-| id        | string | Planner user ID |
-
-Request body:
-
-| Field  | Type    | Required | Description                           |
-| ------ | ------- | -------- | ------------------------------------- |
-| active | boolean | yes      | true to activate, false to deactivate |
-
-Response (200 OK):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "plannerId": "...",
-    "active": false
-  },
-  "message": "Planner account deactivated successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                                 |
-| ------ | --------------------- | --------------------------------------- |
-| 400    | VALIDATION_ERROR      | "active field is required (true/false)" |
-| 404    | NOT_FOUND             | "Planner not found"                     |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to update planner status"       |
-
-### 6.2 Citizen Management
-
-#### 6.2.1 List citizens
-
-**`GET /admin/users/citizens`**
-
-Query parameters (all optional):
-
-| Parameter | Type    | Default | Description                                    |
-| --------- | ------- | ------- | ---------------------------------------------- |
-| active    | boolean | none    | Filter by true (active) or false (deactivated) |
-| page      | integer | 1       | Page number (1‑based)                          |
-| limit     | integer | 10      | Items per page (max 100)                       |
-
-Response (200 OK):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "total": 25,
-    "page": 1,
-    "pages": 3,
-    "citizens": [
-      {
-        "_id": "...",
-        "email": "citizen@example.com",
-        "region": "Addis Ababa",
-        "role": "citizen",
-        "verified": true,
-        "active": true,
-        "createdAt": "..."
-      }
-    ]
-  },
-  "message": "Citizens retrieved successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                       |
-| ------ | --------------------- | ----------------------------- |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to retrieve citizens" |
-
-#### 6.2.2 Toggle citizen status
-
-**`PUT /admin/users/:id/status`**
-
-Path parameter:
-
-| Parameter | Type   | Description     |
-| --------- | ------ | --------------- |
-| id        | string | Citizen user ID |
-
-Request body:
-
-| Field  | Type    | Required | Description                           |
-| ------ | ------- | -------- | ------------------------------------- |
-| active | boolean | yes      | true to activate, false to deactivate |
-
-Response (200 OK):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "userId": "...",
-    "active": false
-  },
-  "message": "Citizen account deactivated successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                                 |
-| ------ | --------------------- | --------------------------------------- |
-| 400    | VALIDATION_ERROR      | "active field is required (true/false)" |
-| 404    | NOT_FOUND             | "Citizen not found"                     |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to update citizen status"       |
-
 ### 6.3 Comment Moderation
 
 All endpoints in this section require the **Admin** role.
@@ -2276,7 +2021,7 @@ Manually updates sentiment, keywords, or moderation flags of a comment. Cannot c
 
 ---
 
-### 6.3.4 Retry a single comment (strict)
+#### 6.3.4 Retry a single comment (strict)
 
 **`POST /admin/comments/:id/retry`**
 
@@ -2317,7 +2062,7 @@ Resets a comment to `pending_ai` status so the AI worker will re‑process it.
 
 ---
 
-### 6.3.5 Force retry a comment (any comment)
+#### 6.3.5 Force retry a comment (any comment)
 
 **`POST /admin/comments/:id/force-retry`**
 
@@ -2336,12 +2081,14 @@ Forces a comment to be re‑processed by the AI worker regardless of its current
 
 **Response (200 OK):**
 
-    {
-      "status": "success",
-      "data": { "commentId": "..." },
-      "message": "Comment force‑queued for AI reprocessing.",
-      "timestamp": "..."
-    }
+```json
+{
+  "status": "success",
+  "data": { "commentId": "..." },
+  "message": "Comment force‑queued for AI reprocessing.",
+  "timestamp": "..."
+}
+```
 
 **Error responses:**
 
@@ -2351,7 +2098,9 @@ Forces a comment to be re‑processed by the AI worker regardless of its current
 | 403    | `FORBIDDEN`             | `"Access denied"`                 |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Failed to force‑retry comment"` |
 
-### 6.3.6 Bulk retry comments by IDs
+---
+
+#### 6.3.6 Bulk retry comments by IDs
 
 **`POST /admin/comments/bulk/retry-by-ids`**
 
@@ -2411,9 +2160,9 @@ Retries multiple comments at once. Only comments that are `low_confidence`, `vis
 | 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many bulk requests. Please wait."`   |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Failed to process bulk retry"`           |
 
-## 6.4 Admin Dashboard & Monitoring
+### 6.4 Admin Dashboard & Monitoring
 
-### 6.4.1 Dashboard statistics
+#### 6.4.1 Dashboard statistics
 
 **`GET /admin/dashboard/stats`**
 
@@ -2446,7 +2195,7 @@ Returns platform‑wide counts and AI health.
 - `aiHealth.pendingComments` – same as `comments.pendingReview` (cached from database).
 - `aiHealth.failedComments` – number of `needs_review` comments that have failed AI retries more than 5 times.
 
-### 6.4.2 Platform trends
+#### 6.4.2 Platform trends
 
 **`GET /admin/trends`**
 
@@ -2479,7 +2228,7 @@ Query parameters (all optional):
 - `week`: `YYYY-Www` (e.g., `2026-W17`)
 - `month`: `YYYY-MM`
 
-## 6.4.3 View audit logs
+#### 6.4.3 View audit logs
 
 **`GET /admin/audit-logs`**
 
@@ -2523,7 +2272,7 @@ Query parameters (all optional):
 }
 ```
 
-### 6.4.4 Export audit logs (CSV)
+#### 6.4.4 Export audit logs (CSV)
 
 **`GET /admin/audit-logs/export`**
 
@@ -2534,7 +2283,7 @@ Same query parameters as `GET /admin/audit-logs` (page/limit ignored – exports
 - Content‑Type: `text/csv`
 - Content‑Disposition: `attachment; filename="audit-logs-<timestamp>.csv"`
 
-### 6.4.5 AI service health
+#### 6.4.5 AI service health
 
 **`GET /admin/ai/health`**
 
@@ -2557,9 +2306,9 @@ Returns the health status of the AI service plus comment queue statistics.
 
 If the AI service is unreachable, `status` is `"unreachable"` and an `error` field may be present (e.g., `"Request failed with status code 404"`).
 
-## 6.5 Password Reset (Admin) – Admin‑initiated
+### 6.5 Password Reset (Admin) – Admin‑initiated
 
-### 6.5.1 Initiate password reset for a user
+#### 6.5.1 Initiate password reset for a user
 
 **`POST /admin/users/:id/initiate-password-reset`**
 
