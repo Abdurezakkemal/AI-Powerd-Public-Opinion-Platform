@@ -100,7 +100,7 @@ async def suggest_topics_remote(text: str, retries: int = 2):
     async with aiohttp.ClientSession() as session:
         for attempt in range(retries + 1):
             try:
-                async with session.post(TOPIC_URL, json={"text": text}, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                async with session.post(TOPIC_URL, json={"text": text}, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                     if resp.status != 200:
                         error_text = await resp.text()
                         logger.error(f"Topic space error: status {resp.status}, body: {error_text}")
