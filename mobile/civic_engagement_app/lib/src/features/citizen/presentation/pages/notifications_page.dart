@@ -45,7 +45,7 @@ class NotificationsPage extends StatelessWidget {
           builder: (context, state) {
             if (state.status == RequestStatus.loading &&
                 state.notifications.isEmpty) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
             }
 
             if (state.status == RequestStatus.failure &&

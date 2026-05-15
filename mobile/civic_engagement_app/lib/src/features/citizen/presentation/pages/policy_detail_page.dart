@@ -46,7 +46,6 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
   @override
   void initState() {
     super.initState();
-    // Load policy immediately without waiting for post frame callback
     Future.microtask(() {
       if (mounted && !_initialLoadAttempted) {
         _initialLoadAttempted = true;
@@ -70,11 +69,19 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
           length: 2,
           child: Scaffold(
             appBar: AppBar(
-              title: const Text('Policy details'),
-              bottom: const TabBar(
-                tabs: [
-                  Tab(text: 'Details', icon: Icon(Icons.info_outline)),
-                  Tab(text: 'Comments', icon: Icon(Icons.comment_outlined)),
+              title: const Text('Policy Details'),
+              elevation: 0,
+              bottom: TabBar(
+                indicatorColor: AppTheme.primary,
+                indicatorWeight: 3,
+                indicatorSize: TabBarIndicatorSize.tab,
+                labelColor: AppTheme.primary,
+                unselectedLabelColor: AppTheme.mutedText,
+                labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                tabs: const [
+                  Tab(text: 'Overview', icon: Icon(Icons.info_outline_rounded)),
+                  Tab(text: 'Discussion', icon: Icon(Icons.forum_outlined)),
                 ],
               ),
             ),
@@ -87,21 +94,24 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                   )
                 : TabBarView(
                     children: [
-                      // Tab 1: Policy Details
                       RefreshIndicator(
                         onRefresh: () => context.read<PolicyCubit>().loadPolicy(
                               widget.policyId,
                             ),
+                        color: AppTheme.primary,
+                        backgroundColor: Colors.white,
                         child: ListView(
-                          padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
                           children: [
                             if (state.detailStatus == RequestStatus.loading)
-                              const LinearProgressIndicator(minHeight: 2),
-                            const SizedBox(height: 12),
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 16),
+                                child: LinearProgressIndicator(minHeight: 3, borderRadius: BorderRadius.all(Radius.circular(2))),
+                              ),
                             _DetailHeader(policy: policy),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 16),
                             _DescriptionCard(policy: policy),
-                            const SizedBox(height: 12),
+                            const SizedBox(height: 16),
                             _VotingCard(
                               policy: policy,
                               onVote: () => _showVoteSheet(context, policy),
@@ -109,7 +119,6 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                           ],
                         ),
                       ),
-                      // Tab 2: Comments
                       _CommentsTab(policy: policy),
                     ],
                   ),
@@ -149,6 +158,7 @@ class _DetailHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCard(
       margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -159,36 +169,43 @@ class _DetailHeader extends StatelessWidget {
                 child: Text(
                   policy.title,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                      ),
+                    fontWeight: FontWeight.w900,
+                    height: 1.25,
+                    letterSpacing: -0.5,
+                  ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 16),
               StatusPill(status: policy.status),
             ],
           ),
+          const SizedBox(height: 20),
+          const Divider(height: 1),
           const SizedBox(height: 16),
           Wrap(
-            spacing: 10,
-            runSpacing: 10,
+            spacing: 12,
+            runSpacing: 12,
             children: [
               _InfoChip(
-                icon: Icons.qr_code_2_rounded,
+                icon: Icons.tag_rounded,
                 label: policy.policyCode,
               ),
               if (policy.averageRating != null)
                 _InfoChip(
                   icon: Icons.star_rounded,
-                  label: '${policy.averageRating!.toStringAsFixed(1)} average',
+                  label: '${policy.averageRating!.toStringAsFixed(1)} avg',
+                  iconColor: Colors.amber.shade600,
+                  backgroundColor: Colors.amber.shade50,
+                  textColor: Colors.amber.shade900,
                 ),
               _InfoChip(
-                icon: Icons.how_to_vote_outlined,
+                icon: Icons.how_to_vote_rounded,
                 label: '${policy.totalVotes} votes',
               ),
               if (policy.topics != null && policy.topics!.isNotEmpty)
                 ...policy.topics!.take(2).map(
                       (topic) => _InfoChip(
-                        icon: Icons.label_outline,
+                        icon: Icons.label_outline_rounded,
                         label: topic,
                       ),
                     ),
@@ -209,41 +226,56 @@ class _DescriptionCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCard(
       margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'About this policy',
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.3,
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 12),
           Text(
             policy.description,
             style: const TextStyle(
-              color: AppTheme.mutedText,
-              height: 1.45,
+              color: AppTheme.text,
+              height: 1.6,
               fontSize: 15,
             ),
           ),
-          const SizedBox(height: 16),
-          _DetailRow(
-            icon: Icons.map_outlined,
-            label: 'Regions',
-            value: policy.targetRegions.isEmpty
-                ? 'Not specified'
-                : policy.targetRegions.join(', '),
-          ),
-          _DetailRow(
-            icon: Icons.event_available_outlined,
-            label: 'Starts',
-            value: DateFormatters.short(policy.startDate),
-          ),
-          _DetailRow(
-            icon: Icons.event_busy_outlined,
-            label: 'Ends',
-            value: DateFormatters.short(policy.endDate),
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.background,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Column(
+              children: [
+                _DetailRow(
+                  icon: Icons.map_outlined,
+                  label: 'Regions',
+                  value: policy.targetRegions.isEmpty
+                      ? 'Not specified'
+                      : policy.targetRegions.join(', '),
+                ),
+                const SizedBox(height: 12),
+                _DetailRow(
+                  icon: Icons.event_available_outlined,
+                  label: 'Starts',
+                  value: DateFormatters.short(policy.startDate),
+                ),
+                const SizedBox(height: 12),
+                _DetailRow(
+                  icon: Icons.event_busy_outlined,
+                  label: 'Ends',
+                  value: DateFormatters.short(policy.endDate),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -266,20 +298,42 @@ class _VotingCard extends StatelessWidget {
 
     return AppCard(
       margin: EdgeInsets.zero,
+      padding: const EdgeInsets.all(24),
+      color: policy.canVote ? AppTheme.primary.withValues(alpha: 0.03) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: Theme.of(
-              context,
-            ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900),
+          Row(
+            children: [
+              Icon(
+                policy.canVote ? Icons.feedback_rounded : Icons.pause_circle_filled_rounded,
+                color: policy.canVote ? AppTheme.primary : AppTheme.mutedText,
+                size: 24,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 6),
-          Text(message, style: const TextStyle(color: AppTheme.mutedText)),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
+          Text(
+            message, 
+            style: TextStyle(
+              color: AppTheme.text.withValues(alpha: 0.7),
+              height: 1.5,
+              fontSize: 14,
+            ),
+          ),
+          const SizedBox(height: 20),
           AppButton(
-            label: 'Vote on policy',
+            label: 'Vote on Policy',
             icon: Icons.how_to_vote_rounded,
             onPressed: policy.canVote ? onVote : null,
           ),
@@ -305,20 +359,16 @@ class _VoteSheetState extends State<_VoteSheet> {
   @override
   void initState() {
     super.initState();
-    // Initialize default values based on poll type
     switch (widget.policy.pollType) {
       case 'rating':
       case 'likert':
         _voteValue = 5;
         break;
       case 'binary':
-        _voteValue = null;
-        break;
       case 'approval':
-        _voteValue = null;
-        break;
       case 'multipleChoice':
-        _voteValue = <String>[];
+        if (widget.policy.pollType == 'multipleChoice') _voteValue = <String>[];
+        else _voteValue = null;
         break;
       case 'rankedChoice':
         _voteValue = <String>[];
@@ -343,20 +393,13 @@ class _VoteSheetState extends State<_VoteSheet> {
 
   String get _pollTypeLabel {
     switch (widget.policy.pollType) {
-      case 'binary':
-        return 'Vote Yes or No';
-      case 'multipleChoice':
-        return 'Select options';
-      case 'likert':
-        return 'Rate on scale';
-      case 'approval':
-        return 'Approve or reject';
-      case 'rating':
-        return 'Rate policy';
-      case 'rankedChoice':
-        return 'Rank your choices';
-      default:
-        return 'Vote on policy';
+      case 'binary': return 'Vote Yes or No';
+      case 'multipleChoice': return 'Select Options';
+      case 'likert': return 'Rate on Scale';
+      case 'approval': return 'Approve or Reject';
+      case 'rating': return 'Rate Policy';
+      case 'rankedChoice': return 'Rank Choices';
+      default: return 'Vote on Policy';
     }
   }
 
@@ -373,20 +416,16 @@ class _VoteSheetState extends State<_VoteSheet> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(message),
-              backgroundColor:
-                  state.alreadyVoted ? Colors.orange : Colors.green,
-              duration: const Duration(seconds: 3),
+              backgroundColor: state.alreadyVoted ? Colors.orange.shade700 : Colors.green.shade600,
             ),
           );
           Navigator.of(context).pop(true);
         } else if (state.status == RequestStatus.failure) {
-          final errorMessage =
-              state.message ?? 'Failed to submit vote. Please try again.';
+          final errorMessage = state.message ?? 'Failed to submit vote. Please try again.';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(errorMessage),
-              backgroundColor: Colors.red,
-              duration: const Duration(seconds: 4),
+              backgroundColor: Colors.redAccent,
             ),
           );
         }
@@ -394,50 +433,58 @@ class _VoteSheetState extends State<_VoteSheet> {
       builder: (context, state) {
         return Container(
           margin: EdgeInsets.only(bottom: bottom),
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
+          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
           decoration: const BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Center(
                 child: Container(
-                  width: 44,
-                  height: 5,
+                  width: 48,
+                  height: 6,
                   decoration: BoxDecoration(
-                    color: const Color(0xFFD8E2EA),
+                    color: AppTheme.border,
                     borderRadius: BorderRadius.circular(99),
                   ),
                 ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 24),
               Text(
                 _pollTypeLabel,
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
+                textAlign: TextAlign.center,
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.5,
+                ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 6),
               Text(
                 widget.policy.title,
-                style: const TextStyle(color: AppTheme.mutedText),
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: AppTheme.mutedText,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
-              const SizedBox(height: 18),
+              const SizedBox(height: 32),
               _buildVoteWidget(),
-              const SizedBox(height: 16),
+              const SizedBox(height: 24),
               AppTextField(
                 controller: _commentController,
-                label: 'Comment (optional)',
+                label: 'Add a comment (optional)',
+                hint: 'Share your thoughts on this policy...',
                 icon: Icons.chat_bubble_outline_rounded,
                 maxLines: 4,
                 maxLength: 2000,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 24),
               AppButton(
-                label: 'Submit vote',
+                label: 'Submit Vote',
                 icon: Icons.send_rounded,
                 loading: state.status == RequestStatus.loading,
                 onPressed: _canSubmit
@@ -493,7 +540,7 @@ class _VoteSheetState extends State<_VoteSheet> {
           child: RatingStars(
             rating: _voteValue as int? ?? 5,
             onChanged: (value) => setState(() => _voteValue = value),
-            size: 34,
+            size: 40,
           ),
         );
     }
@@ -501,29 +548,39 @@ class _VoteSheetState extends State<_VoteSheet> {
 }
 
 class _InfoChip extends StatelessWidget {
-  const _InfoChip({required this.icon, required this.label});
+  const _InfoChip({
+    required this.icon, 
+    required this.label,
+    this.iconColor,
+    this.backgroundColor,
+    this.textColor,
+  });
 
   final IconData icon;
   final String label;
+  final Color? iconColor;
+  final Color? backgroundColor;
+  final Color? textColor;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: AppTheme.primary.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(12),
+        color: backgroundColor ?? AppTheme.primary.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, size: 17, color: AppTheme.primary),
-          const SizedBox(width: 6),
+          Icon(icon, size: 16, color: iconColor ?? AppTheme.primary),
+          const SizedBox(width: 8),
           Text(
             label,
-            style: const TextStyle(
-              color: AppTheme.primary,
-              fontWeight: FontWeight.w800,
+            style: TextStyle(
+              color: textColor ?? AppTheme.primary,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
             ),
           ),
         ],
@@ -545,31 +602,33 @@ class _DetailRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 10),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, size: 19, color: AppTheme.primary),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 72,
-            child: Text(
-              label,
-              style: const TextStyle(
-                color: AppTheme.mutedText,
-                fontWeight: FontWeight.w700,
-              ),
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 20, color: AppTheme.mutedText),
+        const SizedBox(width: 12),
+        SizedBox(
+          width: 80,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: AppTheme.mutedText,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
             ),
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: const TextStyle(fontWeight: FontWeight.w800),
+        ),
+        Expanded(
+          child: Text(
+            value,
+            style: const TextStyle(
+              color: AppTheme.text,
+              fontWeight: FontWeight.w700,
+              fontSize: 14,
             ),
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }

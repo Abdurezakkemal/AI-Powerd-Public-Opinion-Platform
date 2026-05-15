@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/widgets/app_button.dart';
+import '../../../../core/widgets/app_card.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../domain/repositories/citizen_repository.dart';
 import '../cubit/planner_request_cubit.dart';
@@ -81,6 +83,8 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    
     return Scaffold(
       appBar: AppBar(
         title: const Text('Request Planner Status'),
@@ -91,7 +95,7 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),
-                backgroundColor: Colors.green,
+                backgroundColor: Colors.green.shade600,
               ),
             );
             Navigator.of(context).pop();
@@ -99,7 +103,7 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
             ScaffoldMessenger.of(context).showSnackBar(
               SnackBar(
                 content: Text(state.message),
-                backgroundColor: Colors.red,
+                backgroundColor: Colors.redAccent,
               ),
             );
           }
@@ -108,32 +112,35 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
           final isLoading = state is PlannerRequestLoading;
 
           return SingleChildScrollView(
-            padding: const EdgeInsets.all(16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
             child: Form(
               key: _formKey,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  const Text(
+                  Text(
                     'Apply to become a policy planner',
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.bold,
+                    style: theme.textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
                     ),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Planners can create and manage policy proposals. You can submit this request with or without a citizen login.',
-                    style: TextStyle(color: Colors.grey),
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
+                      height: 1.5,
+                    ),
                   ),
-                  const SizedBox(height: 24),
+                  const SizedBox(height: 32),
                   if (!_hasSession) ...[
                     DropdownButtonFormField<String>(
                       value: _applicantType,
                       decoration: const InputDecoration(
                         labelText: 'I am applying as',
-                        border: OutlineInputBorder(),
                       ),
+                      icon: const Icon(Icons.keyboard_arrow_down_rounded),
                       items: const [
                         DropdownMenuItem(
                           value: 'nonCitizen',
@@ -152,12 +159,12 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
                               }
                             },
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     TextFormField(
                       controller: _fullNameController,
                       decoration: const InputDecoration(
                         labelText: 'Full name *',
-                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.person_outline_rounded),
                       ),
                       enabled: !isLoading,
                       maxLength: 100,
@@ -169,12 +176,12 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
                         return null;
                       },
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
                     TextFormField(
                       controller: _emailController,
                       decoration: const InputDecoration(
                         labelText: 'Email *',
-                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.email_outlined),
                       ),
                       keyboardType: TextInputType.emailAddress,
                       enabled: !isLoading,
@@ -188,23 +195,23 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
                         return null;
                       },
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     TextFormField(
                       controller: _phoneController,
                       decoration: const InputDecoration(
                         labelText: 'Phone (Optional)',
                         hintText: '+251912345678',
-                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.phone_outlined),
                       ),
                       keyboardType: TextInputType.phone,
                       enabled: !isLoading,
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
                     TextFormField(
                       controller: _regionController,
                       decoration: const InputDecoration(
                         labelText: 'Region *',
-                        border: OutlineInputBorder(),
+                        prefixIcon: Icon(Icons.map_outlined),
                       ),
                       enabled: !isLoading,
                       maxLength: 80,
@@ -216,27 +223,26 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
                         return null;
                       },
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 8),
                   ],
                   TextFormField(
                     controller: _organizationController,
                     decoration: const InputDecoration(
                       labelText: 'Organization (Optional)',
                       hintText: 'e.g., Ministry of Education',
-                      border: OutlineInputBorder(),
-                      helperText:
-                          'Name of your affiliated organization, if any',
+                      prefixIcon: Icon(Icons.business_outlined),
+                      helperText: 'Name of your affiliated organization, if any',
                     ),
                     enabled: !isLoading,
                     maxLength: 100,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 8),
                   TextFormField(
                     controller: _reasonController,
                     decoration: const InputDecoration(
                       labelText: 'Reason *',
                       hintText: 'Explain why you need planner privileges...',
-                      border: OutlineInputBorder(),
+                      alignLabelWithHint: true,
                       helperText: 'Minimum 50 characters required',
                     ),
                     maxLines: 5,
@@ -253,71 +259,64 @@ class _PlannerRequestViewState extends State<_PlannerRequestView> {
                       return null;
                     },
                   ),
-                  const SizedBox(height: 24),
-                  ElevatedButton(
-                    onPressed: isLoading ? null : _submitRequest,
-                    style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                    ),
-                    child: isLoading
-                        ? const SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                            ),
-                          )
-                        : const Text('Submit Request'),
+                  const SizedBox(height: 32),
+                  AppButton(
+                    label: 'Submit Request',
+                    icon: Icons.send_rounded,
+                    loading: isLoading,
+                    onPressed: _submitRequest,
                   ),
-                  const SizedBox(height: 16),
+                  const SizedBox(height: 24),
                   if (state is PlannerRequestError &&
                       state.code == 'DUPLICATE_ENTRY')
-                    Card(
+                    AppCard(
                       color: Colors.orange.shade50,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              color: Colors.orange.shade700,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'You already have a pending request. Please wait for admin review.',
-                                style: TextStyle(
-                                  color: Colors.orange.shade900,
-                                ),
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.info_outline_rounded,
+                            color: Colors.orange.shade800,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              'You already have a pending request. Please wait for admin review.',
+                              style: TextStyle(
+                                color: Colors.orange.shade900,
+                                fontWeight: FontWeight.w600,
+                                height: 1.4,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                   if (state is PlannerRequestError &&
                       state.code == 'RATE_LIMIT_EXCEEDED')
-                    Card(
+                    AppCard(
                       color: Colors.red.shade50,
-                      child: Padding(
-                        padding: const EdgeInsets.all(12.0),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.timer_outlined,
-                              color: Colors.red.shade700,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'You can only submit one request per day. Please try again later.',
-                                style: TextStyle(
-                                  color: Colors.red.shade900,
-                                ),
+                      padding: const EdgeInsets.all(16.0),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.timer_outlined,
+                            color: Colors.red.shade800,
+                            size: 28,
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            child: Text(
+                              'You can only submit one request per day. Please try again later.',
+                              style: TextStyle(
+                                color: Colors.red.shade900,
+                                fontWeight: FontWeight.w600,
+                                height: 1.4,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ),
                 ],

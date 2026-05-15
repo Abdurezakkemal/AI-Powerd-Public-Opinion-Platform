@@ -34,7 +34,7 @@ class HistoryPage extends StatelessWidget {
       body: BlocBuilder<HistoryCubit, HistoryState>(
         builder: (context, state) {
           if (state.status == RequestStatus.loading && state.history.isEmpty) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
           }
 
           if (state.status == RequestStatus.failure && state.history.isEmpty) {
@@ -192,6 +192,11 @@ class _HistoryCard extends StatelessWidget {
               onPressed: onComment,
               icon: const Icon(Icons.add_comment_outlined),
               label: const Text('Add comment'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppTheme.primary,
+                side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
             ),
           ],
         ],

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../domain/entities/comment.dart';
 import '../cubit/comment_cubit.dart';
@@ -56,7 +57,7 @@ class _CommentListWidgetState extends State<CommentListWidget> {
     return BlocBuilder<CommentCubit, CommentState>(
       builder: (context, state) {
         if (state is CommentLoading && state is! CommentLoaded) {
-          return const Center(child: CircularProgressIndicator());
+          return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
         }
 
         if (state is CommentError) {
@@ -64,21 +65,28 @@ class _CommentListWidgetState extends State<CommentListWidget> {
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
+                Icon(Icons.error_outline_rounded, size: 48, color: Colors.red.shade300),
+                const SizedBox(height: 16),
                 Text(
                   'Error loading comments',
-                  style: Theme.of(context).textTheme.titleMedium,
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
                 ),
                 const SizedBox(height: 8),
-                Text(state.message),
+                Text(state.message, style: const TextStyle(color: AppTheme.mutedText)),
                 const SizedBox(height: 16),
-                ElevatedButton(
+                OutlinedButton.icon(
                   onPressed: () {
                     context.read<CommentCubit>().loadComments(
                           policyId: widget.policyId,
                           refresh: true,
                         );
                   },
-                  child: const Text('Retry'),
+                  icon: const Icon(Icons.refresh_rounded),
+                  label: const Text('Retry'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppTheme.primary,
+                    side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
+                  ),
                 ),
               ],
             ),
@@ -87,12 +95,29 @@ class _CommentListWidgetState extends State<CommentListWidget> {
 
         if (state is CommentLoaded) {
           if (state.comments.isEmpty) {
-            return const Center(
-              child: Text('No comments yet. Be the first to comment!'),
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.forum_outlined, size: 64, color: AppTheme.border),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'No comments yet.',
+                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                  ),
+                  const SizedBox(height: 6),
+                  const Text(
+                    'Be the first to share your thoughts!',
+                    style: TextStyle(color: AppTheme.mutedText),
+                  ),
+                ],
+              ),
             );
           }
 
           return RefreshIndicator(
+            color: AppTheme.primary,
+            backgroundColor: Colors.white,
             onRefresh: () async {
               await context.read<CommentCubit>().loadComments(
                     policyId: widget.policyId,
@@ -101,13 +126,14 @@ class _CommentListWidgetState extends State<CommentListWidget> {
             },
             child: ListView.builder(
               controller: _scrollController,
+              padding: const EdgeInsets.only(bottom: 32),
               itemCount: state.comments.length + (state.hasMore ? 1 : 0),
               itemBuilder: (context, index) {
                 if (index >= state.comments.length) {
                   return const Center(
                     child: Padding(
                       padding: EdgeInsets.all(16),
-                      child: CircularProgressIndicator(),
+                      child: CircularProgressIndicator(color: AppTheme.primary),
                     ),
                   );
                 }
@@ -122,9 +148,8 @@ class _CommentListWidgetState extends State<CommentListWidget> {
           );
         }
 
-        // Handle CommentInitial and other states - show empty state
         return const Center(
-          child: Text('No comments yet. Be the first to comment!'),
+          child: Text('No comments yet. Be the first to comment!', style: TextStyle(color: AppTheme.mutedText)),
         );
       },
     );
@@ -189,111 +214,191 @@ class _CommentCard extends StatelessWidget {
     
     return Column(
       children: [
-        Card(
+        Container(
           margin: EdgeInsets.only(
-            left: isReply ? 32 : 16,  // Indent replies
-            right: 16,
+            left: isReply ? 40 : 20, 
+            right: 20,
             top: 8,
             bottom: 8,
           ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: AppTheme.border),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.02),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
           child: Padding(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                // Reply indicator
                 if (isReply) ...[
                   Row(
                     children: [
                       Icon(
-                        Icons.subdirectory_arrow_right,
+                        Icons.reply_rounded,
                         size: 16,
-                        color: Colors.grey.shade600,
+                        color: AppTheme.mutedText.withValues(alpha: 0.7),
                       ),
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 6),
                       Text(
                         'Reply',
                         style: TextStyle(
                           fontSize: 12,
-                          color: Colors.grey.shade600,
-                          fontStyle: FontStyle.italic,
+                          fontWeight: FontWeight.w700,
+                          color: AppTheme.mutedText.withValues(alpha: 0.7),
+                          letterSpacing: 0.5,
                         ),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                 ],
                 Row(
                   children: [
-                    Expanded(
+                    CircleAvatar(
+                      radius: 18,
+                      backgroundColor: AppTheme.primary.withValues(alpha: 0.1),
                       child: Text(
-                        comment.userEmail ?? 'Anonymous',
-                        style: Theme.of(context).textTheme.titleSmall,
+                        (comment.userEmail ?? 'A').substring(0, 1).toUpperCase(),
+                        style: const TextStyle(
+                          color: AppTheme.primary,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            comment.userEmail ?? 'Anonymous Citizen',
+                            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w800,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            _formatDate(comment.createdAt),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppTheme.mutedText,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                     _StatusChip(comment: comment),
                     IconButton(
-                      icon: const Icon(Icons.more_vert, size: 20),
+                      icon: const Icon(Icons.more_horiz_rounded, size: 22, color: AppTheme.mutedText),
                       onPressed: () => _showCommentMenu(context),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                Text(comment.text),
-                const SizedBox(height: 8),
-                Row(
+                const SizedBox(height: 16),
+                Text(
+                  comment.text,
+                  style: const TextStyle(
+                    height: 1.5,
+                    fontSize: 15,
+                    color: AppTheme.text,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    if (comment.sentiment != null) ...[
+                    if (comment.sentiment != null)
                       _SentimentChip(sentiment: comment.sentiment!),
-                      const SizedBox(width: 8),
-                    ],
-                    if (comment.isEdited) ...[
-                      const Icon(Icons.edit, size: 16, color: Colors.grey),
-                      const SizedBox(width: 4),
-                      const Text('Edited', style: TextStyle(color: Colors.grey)),
-                      const SizedBox(width: 8),
-                    ],
-                    if (comment.isOfficialReply) ...[
-                      const Icon(Icons.verified, size: 16, color: Colors.blue),
-                      const SizedBox(width: 4),
-                      const Text('Official', style: TextStyle(color: Colors.blue)),
-                    ],
+                    
+                    if (comment.isEdited)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.edit_rounded, size: 12, color: Colors.grey.shade600),
+                            const SizedBox(width: 4),
+                            Text('Edited', style: TextStyle(color: Colors.grey.shade600, fontSize: 11, fontWeight: FontWeight.w600)),
+                          ],
+                        ),
+                      ),
+                      
+                    if (comment.isOfficialReply)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue.shade100),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.verified_rounded, size: 12, color: Colors.blue.shade700),
+                            const SizedBox(width: 4),
+                            Text('Official', style: TextStyle(color: Colors.blue.shade700, fontSize: 11, fontWeight: FontWeight.w700)),
+                          ],
+                        ),
+                      ),
                   ],
                 ),
                 if (comment.keywords != null && comment.keywords!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 12),
                   Wrap(
-                    spacing: 4,
+                    spacing: 6,
+                    runSpacing: 6,
                     children: comment.keywords!
                         .take(3)
                         .map(
-                          (keyword) => Chip(
-                            label: Text(keyword),
-                            visualDensity: VisualDensity.compact,
+                          (keyword) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppTheme.background,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppTheme.border),
+                            ),
+                            child: Text(
+                              '#$keyword',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.mutedText,
+                              ),
+                            ),
                           ),
                         )
                         .toList(),
                   ),
                 ],
-                const SizedBox(height: 4),
-                Text(
-                  _formatDate(comment.createdAt),
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: Colors.grey,
-                      ),
-                ),
-                // Show replies button for top-level comments only
+                
                 if (!isReply) ...[
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 12),
                   _RepliesSection(comment: comment, policyId: policyId),
                 ],
               ],
             ),
           ),
         ),
-        // Show replies if loaded
         if (!isReply) _RepliesList(comment: comment, policyId: policyId),
       ],
     );
@@ -320,53 +425,67 @@ class _CommentCard extends StatelessWidget {
 
     showModalBottomSheet<void>(
       context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
       builder: (bottomSheetContext) => BlocProvider.value(
         value: cubit,
         child: SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              // Reply option - available to everyone
-              ListTile(
-                leading: const Icon(Icons.reply),
-                title: const Text('Reply'),
-                onTap: () {
-                  Navigator.pop(bottomSheetContext);
-                  _showReplyDialog(context);
-                },
-              ),
-              // Edit option - only for comment author and visible comments
-              if (isAuthor && comment.isVisible) ...[
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 5,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: AppTheme.border,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
                 ListTile(
-                  leading: const Icon(Icons.edit),
-                  title: const Text('Edit Comment'),
+                  leading: const Icon(Icons.reply_rounded, color: AppTheme.primary),
+                  title: const Text('Reply', style: TextStyle(fontWeight: FontWeight.w600)),
                   onTap: () {
                     Navigator.pop(bottomSheetContext);
-                    _showEditDialog(context);
+                    _showReplyDialog(context);
                   },
                 ),
+                if (isAuthor && comment.isVisible) ...[
+                  ListTile(
+                    leading: const Icon(Icons.edit_rounded, color: AppTheme.text),
+                    title: const Text('Edit Comment', style: TextStyle(fontWeight: FontWeight.w600)),
+                    onTap: () {
+                      Navigator.pop(bottomSheetContext);
+                      _showEditDialog(context);
+                    },
+                  ),
+                ],
+                if (!isAuthor)
+                  ListTile(
+                    leading: const Icon(Icons.flag_rounded, color: Colors.orange),
+                    title: const Text('Report Comment', style: TextStyle(fontWeight: FontWeight.w600)),
+                    onTap: () {
+                      Navigator.pop(bottomSheetContext);
+                      _showReportDialog(context);
+                    },
+                  ),
+                if (isAuthor && comment.canAppeal)
+                  ListTile(
+                    leading: const Icon(Icons.gavel_rounded, color: Colors.blue),
+                    title: const Text('Appeal Decision', style: TextStyle(fontWeight: FontWeight.w600)),
+                    onTap: () {
+                      Navigator.pop(bottomSheetContext);
+                      _showAppealDialog(context);
+                    },
+                  ),
               ],
-              // Report option - only for non-authors
-              if (!isAuthor)
-                ListTile(
-                  leading: const Icon(Icons.flag),
-                  title: const Text('Report Comment'),
-                  onTap: () {
-                    Navigator.pop(bottomSheetContext);
-                    _showReportDialog(context);
-                  },
-                ),
-              // Appeal option - only for authors of hidden comments that need review
-              if (isAuthor && comment.canAppeal)
-                ListTile(
-                  leading: const Icon(Icons.gavel),
-                  title: const Text('Appeal Decision'),
-                  onTap: () {
-                    Navigator.pop(bottomSheetContext);
-                    _showAppealDialog(context);
-                  },
-                ),
-            ],
+            ),
           ),
         ),
       ),
@@ -380,12 +499,21 @@ class _CommentCard extends StatelessWidget {
     showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Appeal Moderation'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Appeal Moderation', style: TextStyle(fontWeight: FontWeight.w800)),
         content: TextField(
           controller: reasonController,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             hintText: 'Explain why this decision should be reconsidered...',
-            border: OutlineInputBorder(),
+            hintStyle: const TextStyle(color: AppTheme.mutedText),
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: BorderSide(color: AppTheme.border),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(16),
+              borderSide: const BorderSide(color: AppTheme.primary, width: 2),
+            ),
           ),
           maxLines: 4,
           maxLength: 500,
@@ -393,7 +521,7 @@ class _CommentCard extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
+            child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w700)),
           ),
           ElevatedButton(
             onPressed: () {
@@ -405,7 +533,13 @@ class _CommentCard extends StatelessWidget {
                 Navigator.pop(dialogContext);
               }
             },
-            child: const Text('Submit Appeal'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppTheme.primary,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              elevation: 0,
+            ),
+            child: const Text('Submit Appeal', style: TextStyle(fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -423,9 +557,7 @@ class _StatusChip extends StatelessWidget {
     Color color;
     String label;
 
-    // Determine status based on visibility and moderation status
     if (comment.isHidden) {
-      // Hidden comments
       switch (comment.hiddenReason) {
         case 'profanity':
           color = Colors.red;
@@ -441,7 +573,6 @@ class _StatusChip extends StatelessWidget {
           label = 'Hidden';
       }
     } else {
-      // Visible comments - show moderation status
       switch (comment.moderationStatus) {
         case 'pending_ai':
           color = Colors.blue;
@@ -453,7 +584,6 @@ class _StatusChip extends StatelessWidget {
           color = Colors.green;
           label = 'Reviewed';
         case 'none':
-          // No chip for normal visible comments
           return const SizedBox.shrink();
         default:
           color = Colors.grey;
@@ -461,11 +591,18 @@ class _StatusChip extends StatelessWidget {
       }
     }
 
-    return Chip(
-      label: Text(label),
-      backgroundColor: color.withValues(alpha: 0.2),
-      labelStyle: TextStyle(color: color, fontSize: 12),
-      visualDensity: VisualDensity.compact,
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+      ),
     );
   }
 }
@@ -479,29 +616,41 @@ class _SentimentChip extends StatelessWidget {
   Widget build(BuildContext context) {
     Color color;
     IconData icon;
+    Color bgColor;
 
     switch (sentiment.label) {
       case 'positive':
-        color = Colors.green;
-        icon = Icons.sentiment_satisfied;
+        color = Colors.green.shade700;
+        bgColor = Colors.green.shade50;
+        icon = Icons.sentiment_satisfied_rounded;
       case 'negative':
-        color = Colors.red;
-        icon = Icons.sentiment_dissatisfied;
+        color = Colors.red.shade700;
+        bgColor = Colors.red.shade50;
+        icon = Icons.sentiment_dissatisfied_rounded;
       default:
-        color = Colors.grey;
-        icon = Icons.sentiment_neutral;
+        color = Colors.grey.shade700;
+        bgColor = Colors.grey.shade100;
+        icon = Icons.sentiment_neutral_rounded;
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16, color: color),
-        const SizedBox(width: 4),
-        Text(
-          sentiment.label,
-          style: TextStyle(color: color, fontSize: 12),
-        ),
-      ],
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: color),
+          const SizedBox(width: 4),
+          Text(
+            sentiment.label.toUpperCase(),
+            style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w800, letterSpacing: 0.5),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -528,16 +677,17 @@ class _RepliesSection extends StatelessWidget {
           return Row(
             children: [
               const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2),
+                width: 14,
+                height: 14,
+                child: CircularProgressIndicator(strokeWidth: 2, color: AppTheme.primary),
               ),
               const SizedBox(width: 8),
               Text(
                 'Loading replies...',
                 style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontSize: 12,
+                  color: AppTheme.primary.withValues(alpha: 0.7),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -547,35 +697,41 @@ class _RepliesSection extends StatelessWidget {
         if (!repliesLoaded) {
           return TextButton.icon(
             onPressed: () => cubit.loadReplies(comment.id),
-            icon: const Icon(Icons.comment, size: 16),
-            label: const Text('Show replies'),
+            icon: const Icon(Icons.forum_outlined, size: 16),
+            label: const Text('View replies'),
             style: TextButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              foregroundColor: AppTheme.primary,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               minimumSize: Size.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
           );
         }
 
         if (replies.isEmpty) {
-          return Text(
+          return const Text(
             'No replies yet',
             style: TextStyle(
-              color: Colors.grey.shade600,
-              fontSize: 12,
+              color: AppTheme.mutedText,
+              fontSize: 13,
               fontStyle: FontStyle.italic,
+              fontWeight: FontWeight.w500,
             ),
           );
         }
 
         return TextButton.icon(
-          onPressed: () => cubit.loadReplies(comment.id), // Refresh replies
-          icon: const Icon(Icons.refresh, size: 16),
+          onPressed: () => cubit.loadReplies(comment.id),
+          icon: const Icon(Icons.refresh_rounded, size: 16),
           label: Text('${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}'),
           style: TextButton.styleFrom(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            foregroundColor: AppTheme.primary,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             minimumSize: Size.zero,
             tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            backgroundColor: AppTheme.primary.withValues(alpha: 0.05),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
         );
       },
