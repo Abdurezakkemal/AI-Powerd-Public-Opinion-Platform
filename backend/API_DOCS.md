@@ -2607,9 +2607,10 @@ Response (200 OK):
 {
   "status": "success",
   "data": {
-    "\_id": "...",
+    "_id": "...",
     "email": "user@example.com",
     "region": "Addis Ababa",
+    "preferredLanguage": "en",
     "role": "citizen",
     "verified": true,
     "active": true,
@@ -2620,64 +2621,59 @@ Response (200 OK):
 }
 ```
 
-Notes:
+**Notes:**
 
--passwordHash and phoneHash are never returned.
--verified indicates if OTP verification is complete.
--active indicates if account is enabled (deactivated users cannot log in).
+- `passwordHash` and `phoneHash` are never returned.
+- `verified` indicates if OTP verification is complete.
+- `active` indicates if account is enabled (deactivated users cannot log in).
+- `preferredLanguage` is the user's chosen language for automatic translation (default `"en"`).
 
-Error responses:
+**Error responses:**
 
-| Status | Code                  | Message                             |
-| ------ | --------------------- | ----------------------------------- |
-| 401    | UNAUTHORIZED          | "Access denied. No token provided." |
-| 404    | NOT_FOUND             | "User not found"                    |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to retrieve user profile"   |
+| Status | Code                    | Message                               |
+| ------ | ----------------------- | ------------------------------------- |
+| 401    | `UNAUTHORIZED`          | `"Access denied. No token provided."` |
+| 404    | `NOT_FOUND`             | `"User not found"`                    |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve user profile"`   |
 
 ### 7.2 Update profile
 
 **`PUT /users/me`**
 
-Request body (only `region` allowed):
+**Request body** (only `region` and `preferredLanguage` are allowed):
 
 ```json
 {
-  "region": "Oromia"
+  "region": "Oromia",
+  "preferredLanguage": "am"
 }
 ```
 
-Response (200 OK): returns the updated user object (same shape as GET /users/me).
+- `region` – string, any region name.
+- `preferredLanguage` – one of `"am"`, `"om"`, `"ti"`, `"en"` (default `"en"`).
 
-**Error if `email` is provided:**
+**Response (200 OK):** returns the updated user object (same shape as `GET /users/me`).
 
-```json
-{
-  "status": "error",
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "No valid fields provided for update (only region is allowed)"
-  }
-}
-```
-
-**Error if `email` is provided:**
+**Error if an invalid field (e.g., `email`) is provided:**
 
 ```json
 {
   "status": "error",
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "No valid fields provided for update (only region is allowed)"
-  }
+    "message": "No valid fields provided for update (only region and preferredLanguage are allowed)"
+  },
+  "timestamp": "..."
 }
 ```
 
-**Error responses (other):**
-| Status | Code | Message |
-| ------ | --------------------- | ------------------------------------- |
-| 400 | VALIDATION_ERROR | "No valid fields provided for update" |
-| 404 | NOT_FOUND | "User not found" |
-| 500 | INTERNAL_SERVER_ERROR | "Failed to update user profile" |
+**Error responses:**
+
+| Status | Code                    | Message                                 |
+| ------ | ----------------------- | --------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"No valid fields provided for update"` |
+| 404    | `NOT_FOUND`             | `"User not found"`                      |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to update user profile"`       |
 
 ### 7.3 Change password
 
@@ -4013,19 +4009,71 @@ Error responses:
 | 403    | FORBIDDEN             | "Feed only for citizens"           |
 | 500    | INTERNAL_SERVER_ERROR | "Failed to record interaction"     |
 
+## 14. Translation (On‑Demand)
+
+These endpoints allow authenticated users (citizens, planners, admins) to translate text between Amharic, Oromo, Tigrinya, and English. Translations are cached in Redis for 24 hours to improve performance.
+
+### 14.1 Translate text
+
+**`POST /api/translate`**
+
+**Authentication required:** yes (any role: citizen, planner, admin)  
+**Rate limit:** 30 requests per minute per user (shared with analytics read limit)
+
+**Request body:**
+
+```json
+{
+  "text": "ሰላም ውድ",
+  "sourceLang": "am", // optional – auto‑detected if omitted
+  "targetLang": "en" // optional, defaults to "en"
+}
+```
+
+**Supported language codes:** `am` (Amharic), `om` (Oromo), `ti` (Tigrinya), `en` (English).
+
+**Behaviour:**
+
+- If `sourceLang` is omitted, the backend calls the AI service to detect the language automatically.
+- The translated text is cached in Redis for 24 hours. Subsequent identical requests return the cached result.
+- The endpoint uses a remote Hugging Face Space running the `facebook/nllb-200-distilled-1.3B` model.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "translatedText": "Hello dear"
+  },
+  "message": "Translation successful",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                                      |
+| ------ | ----------------------- | ------------------------------------------------------------ |
+| 400    | `VALIDATION_ERROR`      | `"text is required"` or `"Invalid language code"`            |
+| 503    | `INTERNAL_SERVER_ERROR` | `"Translation service unavailable. Please try again later."` |
+| 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many requests. Please wait a moment."`                 |
+
 ## Appendix: Rate Limiting Summary
 
-| Endpoint group                               | Limit        | Time window | Scope             |
-| -------------------------------------------- | ------------ | ----------- | ----------------- |
-| `/auth/login`, `/auth/verify-otp`            | 10 requests  | 15 minutes  | Per IP            |
-| `/auth/send-otp`                             | 3 requests   | 1 hour      | Per IP            |
-| `/auth/forgot-password`                      | 3 requests   | 1 hour      | Per IP            |
-| `/auth/reset-password`                       | 5 requests   | 15 minutes  | Per IP            |
-| `/votes` (POST)                              | 30 requests  | 1 hour      | Per user (by JWT) |
-| `/comments` (POST)                           | 10 requests  | 1 minute    | Per user (by JWT) |
-| `POST /comments/:commentId/report`           | 5 requests   | 1 minute    | Per user (by JWT) |
-| `POST /comments/:commentId/appeal`           | 3 requests   | 24 hours    | Per user (by JWT) |
-| `PUT /comments/:commentId/moderate`          | 30 requests  | 1 minute    | Per user (by JWT) |
-| `GET /analytics/*` (all analytics endpoints) | 30 requests  | 1 minute    | Per user (by JWT) |
-| All other `/api` endpoints                   | 100 requests | 15 minutes  | Per IP            |
-| `/sms/receive`                               | 3 votes      | 24 hours    | Per phone number  |
+| Endpoint group                               | Limit        | Time window | Scope                  |
+| -------------------------------------------- | ------------ | ----------- | ---------------------- |
+| `/auth/login`, `/auth/verify-otp`            | 10 requests  | 15 minutes  | Per IP                 |
+| `/auth/send-otp`                             | 3 requests   | 1 hour      | Per IP                 |
+| `/auth/forgot-password`                      | 3 requests   | 1 hour      | Per IP                 |
+| `/auth/reset-password`                       | 5 requests   | 15 minutes  | Per IP                 |
+| `/votes` (POST)                              | 30 requests  | 1 hour      | Per user (by JWT)      |
+| `/comments` (POST)                           | 10 requests  | 1 minute    | Per user (by JWT)      |
+| `POST /comments/:commentId/report`           | 5 requests   | 1 minute    | Per user (by JWT)      |
+| `POST /comments/:commentId/appeal`           | 3 requests   | 24 hours    | Per user (by JWT)      |
+| `PUT /comments/:commentId/moderate`          | 30 requests  | 1 minute    | Per user (by JWT)      |
+| `GET /analytics/*` (all analytics endpoints) | 30 requests  | 1 minute    | Per user (by JWT)      |
+| `POST /api/translate`                        | 30 requests  | 1 minute    | Per user (by JWT)      |
+| `POST /admin/comments/bulk/retry-by-ids`     | 10 requests  | 1 minute    | Per admin (by user ID) |
+| All other `/api` endpoints                   | 100 requests | 15 minutes  | Per IP                 |
+| `/sms/receive`                               | 3 votes      | 24 hours    | Per phone number       |
