@@ -97,22 +97,60 @@ exports.register = async (req, res) => {
       );
     }
 
-    const existing = await User.findOne({
-      $or: [{ email }, { phoneHash: hashPhone(phone) }],
-    });
+    // Check for existing user by email
+    const existing = await User.findOne({ email });
     if (existing) {
-      const field = existing.email === email ? "Email" : "Phone number";
+      // If unverified, reset the timer and send a new OTP
+      if (!existing.verified) {
+        existing.createdAt = new Date();
+        await existing.save();
+
+        const otp = generateOTP();
+        const otpKey = `otp:email:${email}`;
+        await client.setEx(otpKey, 300, otp);
+        await sendOtpEmail(email, otp);
+
+        await createAuditLog({
+          userId: existing._id,
+          userRole: "citizen",
+          action: "RESEND_OTP_ON_RE_REGISTER",
+          details: { email, phone: normalizePhone(phone) },
+          req,
+        });
+
+        logger.info(`Re‑registered existing unverified user: ${email}`);
+        return sendSuccess(
+          res,
+          { userId: existing._id },
+          "A new OTP has been sent to your email. Please verify within 5 minutes.",
+          200,
+        );
+      } else {
+        // Verified user – duplicate
+        return sendError(
+          res,
+          ErrorCodes.DUPLICATE,
+          "Email already registered. Please use a different email or log in.",
+          null,
+          409,
+        );
+      }
+    }
+
+    // Check phone duplicate
+    const phoneHash = hashPhone(phone);
+    const existingPhone = await User.findOne({ phoneHash });
+    if (existingPhone) {
       return sendError(
         res,
         ErrorCodes.DUPLICATE,
-        `${field} already registered. Please use a different ${field.toLowerCase()}.`,
+        "Phone number already registered. Please use a different number.",
         null,
         409,
       );
     }
 
     const passwordHash = await hashPassword(password);
-    const phoneHash = hashPhone(phone);
 
     const user = new User({
       email,
@@ -133,7 +171,6 @@ exports.register = async (req, res) => {
     console.log(`[DEV] OTP for ${email}: ${otp}`);
     const otpKey = `otp:email:${email}`;
     await client.setEx(otpKey, 300, otp);
-
     await sendOtpEmail(email, otp);
 
     await createAuditLog({

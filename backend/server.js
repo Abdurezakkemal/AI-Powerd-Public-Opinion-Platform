@@ -100,12 +100,14 @@ const { startWorker, stopWorker } = require("./src/workers/aiWorker");
 const { startAutoCloseWorker } = require("./src/workers/autoCloseWorker");
 const { startAutoActivateWorker } = require("./src/workers/autoActivateWorker");
 const { startAutoRetryWorker } = require("./src/workers/autoRetryWorker");
+const { startCleanupWorker } = require("./src/workers/cleanupUnverifiedUsers");
 
 startWorker();
 startAutoCloseWorker();
 startAutoActivateWorker();
 startEmergingTopicsWorker();
 startAutoRetryWorker();
+startCleanupWorker();
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

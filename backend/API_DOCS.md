@@ -99,9 +99,9 @@ These endpoints are public (no token required).
 
 **`POST /auth/register`**
 
-Creates a new citizen account. An OTP is sent to the provided email address (not phone). The phone number is stored for channel exclusivity (to prevent app users from voting via SMS).
+Creates a new citizen account. An OTP is sent to the provided email address. The phone number is stored for channel exclusivity (to prevent app users from voting via SMS).
 
-Request body:
+**Request body:**
 
 ```json
 {
@@ -137,7 +137,13 @@ For local development, you can disable CAPTCHA by setting `DISABLE_CAPTCHA=true`
 - `phone` – must be a valid Ethiopian phone number (e.g., `+251912345678`, `0912345678`, or `912345678`).
 - `password` – at least 8 characters.
 
-**Response (201 Created):**
+**Behaviour:**
+
+- If the email is already registered and **verified**, the API returns `409 DUPLICATE_ENTRY`.
+- If the email is already registered but **unverified** (the user never completed OTP verification), the system **resets the 24‑hour verification timer** and sends a fresh OTP to the email. The existing user record is reused, and the API returns `200 OK` with a message indicating a new OTP has been sent.
+- New users have **24 hours** to verify their email. After 24 hours, unverified accounts are automatically deleted by a daily cleanup job (runs at 2 AM). This prevents email addresses from being held hostage.
+
+**Response (201 Created) – for a completely new user:**
 
 ```json
 {
@@ -148,12 +154,26 @@ For local development, you can disable CAPTCHA by setting `DISABLE_CAPTCHA=true`
 }
 ```
 
+**Response (200 OK) – for an existing unverified user (re‑registration):**
+
+```json
+{
+  "status": "success",
+  "data": { "userId": "67f1a2b3c4d5e6f7a8b9c0d1" },
+  "message": "A new OTP has been sent to your email. Please verify within 5 minutes.",
+  "timestamp": "..."
+}
+```
+
 **Error responses:**
 
-| Status | Code                    | Message example                                                                                      |
+| Status | Code                    | Message                                                                                              |
 | ------ | ----------------------- | ---------------------------------------------------------------------------------------------------- |
 | 400    | `VALIDATION_ERROR`      | `"Missing required fields: email, password, phone, region, ageRange, gender, occupation, education"` |
-| 409    | `DUPLICATE_ENTRY`       | `"Email already registered. Please use a different email."`                                          |
+| 400    | `VALIDATION_ERROR`      | `"Invalid email format"` or `"Invalid Ethiopian phone number format"`                                |
+| 400    | `VALIDATION_ERROR`      | `"Password must be at least 8 characters long"`                                                      |
+| 409    | `DUPLICATE_ENTRY`       | `"Email already registered. Please use a different email or log in."` (for verified emails)          |
+| 409    | `DUPLICATE_ENTRY`       | `"Phone number already registered. Please use a different number."`                                  |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Unable to complete registration. Please try again later."`                                         |
 
 ### 2.2 Send OTP
