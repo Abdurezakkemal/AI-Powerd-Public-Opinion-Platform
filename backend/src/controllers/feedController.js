@@ -43,16 +43,7 @@ const computeContentScore = (policyTopics, userKeywordProfile) => {
 // GET /api/feed
 exports.getFeed = async (req, res) => {
   try {
-    if (req.user.role !== "citizen") {
-      return sendError(
-        res,
-        ErrorCodes.FORBIDDEN,
-        "Feed only for citizens",
-        null,
-        403,
-      );
-    }
-
+    // No explicit role check – the route middleware already ensures citizen/planner
     const userId = req.user.id;
     const cacheKey = `feed:user:${userId}`;
 

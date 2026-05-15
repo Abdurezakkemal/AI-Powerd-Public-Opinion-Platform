@@ -6,7 +6,7 @@ const limiters = require("../config/rateLimits");
 
 router.post(
   "/",
-  auth(["citizen"]),
+  auth(["citizen", "planner"]),
   limiters.vote,
   voteController.submitAppVote,
 );
