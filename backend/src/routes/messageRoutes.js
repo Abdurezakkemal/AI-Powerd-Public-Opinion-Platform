@@ -3,8 +3,8 @@ const router = express.Router();
 const messageController = require("../controllers/messageController");
 const auth = require("../middleware/authMiddleware");
 const limiters = require("../config/rateLimits");
+const validateObjectId = require("../middleware/validateObjectId");
 
-// All message endpoints require planner or admin role
 router.post(
   "/",
   auth(["planner", "admin"]),
@@ -12,10 +12,16 @@ router.post(
   messageController.sendMessage,
 );
 router.get("/inbox", auth(["planner", "admin"]), messageController.getInbox);
-router.get("/:id", auth(["planner", "admin"]), messageController.getMessage);
+router.get(
+  "/:id",
+  auth(["planner", "admin"]),
+  validateObjectId("id"),
+  messageController.getMessage,
+);
 router.post(
   "/:id/reply",
   auth(["planner", "admin"]),
+  validateObjectId("id"),
   limiters.comment,
   messageController.replyToMessage,
 );

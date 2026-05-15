@@ -63,22 +63,95 @@ exports.register = async (req, res) => {
       );
     }
 
-    const existing = await User.findOne({
-      $or: [{ email }, { phoneHash: hashPhone(phone) }],
-    });
+    // Email format validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid email format",
+        null,
+        400,
+      );
+    }
+
+    // Ethiopian phone number validation
+    const phoneRegex = /^(\+251|0)?[9]\d{8}$/;
+    if (!phoneRegex.test(phone)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid Ethiopian phone number format. Use +2519XXXXXXXX or 09XXXXXXXX.",
+        null,
+        400,
+      );
+    }
+
+    // Password strength
+    if (password.length < 8) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Password must be at least 8 characters long",
+        null,
+        400,
+      );
+    }
+
+    // Check for existing user by email
+    const existing = await User.findOne({ email });
     if (existing) {
-      const field = existing.email === email ? "Email" : "Phone number";
+      // If unverified, reset the timer and send a new OTP
+      if (!existing.verified) {
+        existing.createdAt = new Date();
+        await existing.save();
+
+        const otp = generateOTP();
+        const otpKey = `otp:email:${email}`;
+        await client.setEx(otpKey, 300, otp);
+        await sendOtpEmail(email, otp);
+
+        await createAuditLog({
+          userId: existing._id,
+          userRole: "citizen",
+          action: "RESEND_OTP_ON_RE_REGISTER",
+          details: { email, phone: normalizePhone(phone) },
+          req,
+        });
+
+        logger.info(`Re‑registered existing unverified user: ${email}`);
+        return sendSuccess(
+          res,
+          { userId: existing._id },
+          "A new OTP has been sent to your email. Please verify within 5 minutes.",
+          200,
+        );
+      } else {
+        // Verified user – duplicate
+        return sendError(
+          res,
+          ErrorCodes.DUPLICATE,
+          "Email already registered. Please use a different email or log in.",
+          null,
+          409,
+        );
+      }
+    }
+
+    // Check phone duplicate
+    const phoneHash = hashPhone(phone);
+    const existingPhone = await User.findOne({ phoneHash });
+    if (existingPhone) {
       return sendError(
         res,
         ErrorCodes.DUPLICATE,
-        `${field} already registered. Please use a different ${field.toLowerCase()}.`,
+        "Phone number already registered. Please use a different number.",
         null,
         409,
       );
     }
 
     const passwordHash = await hashPassword(password);
-    const phoneHash = hashPhone(phone);
 
     const user = new User({
       email,
@@ -96,10 +169,9 @@ exports.register = async (req, res) => {
     await user.save();
 
     const otp = generateOTP();
-    console.log(`[DEV] OTP for ${email}: ${otp}`); // temporary
+    console.log(`[DEV] OTP for ${email}: ${otp}`);
     const otpKey = `otp:email:${email}`;
     await client.setEx(otpKey, 300, otp);
-
     await sendOtpEmail(email, otp);
 
     await createAuditLog({
@@ -148,7 +220,6 @@ exports.sendOtp = async (req, res) => {
     const user = await User.findOne({ email });
     if (!user) {
       logger.warn(`OTP requested for non-existent email: ${email}`);
-      // Do not audit log for non-existent users (to prevent enumeration)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -159,13 +230,13 @@ exports.sendOtp = async (req, res) => {
     }
 
     const otp = generateOTP();
-    console.log(`[DEV] OTP for ${email}: ${otp}`); // temporary
+    console.log(`[DEV] OTP for ${email}: ${otp}`);
     const otpKey = `otp:email:${email}`;
     await client.setEx(otpKey, 300, otp);
 
     await sendOtpEmail(email, otp);
 
-    // Audit log for OTP send
+    // AUDIT LOG – ADD THIS
     await createAuditLog({
       userId: user._id,
       userRole: user.role,
@@ -194,7 +265,6 @@ exports.sendOtp = async (req, res) => {
     );
   }
 };
-
 exports.verifyOtp = async (req, res) => {
   try {
     const { email, code } = req.body;
@@ -247,6 +317,12 @@ exports.verifyOtp = async (req, res) => {
 
     logger.info(`User verified: ${user.email} (${user._id})`);
 
+    // Role-based JWT expiry
+    let expiresIn;
+    if (user.role === "admin") expiresIn = "6h";
+    else if (user.role === "planner") expiresIn = "12h";
+    else expiresIn = "7d";
+
     const token = jwt.sign(
       {
         id: user._id,
@@ -255,7 +331,7 @@ exports.verifyOtp = async (req, res) => {
         verified: user.verified,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" },
+      { expiresIn },
     );
 
     return sendSuccess(
@@ -286,6 +362,17 @@ exports.login = async (req, res) => {
         res,
         ErrorCodes.VALIDATION,
         "Email and password are required",
+        null,
+        400,
+      );
+    }
+
+    // Prevent NoSQL injection – reject non‑string inputs
+    if (typeof email !== "string" || typeof password !== "string") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid input format. Email and password must be strings.",
         null,
         400,
       );
@@ -336,6 +423,12 @@ exports.login = async (req, res) => {
       );
     }
 
+    // Role-based JWT expiry
+    let expiresIn;
+    if (user.role === "admin") expiresIn = "6h";
+    else if (user.role === "planner") expiresIn = "12h";
+    else expiresIn = "7d";
+
     const token = jwt.sign(
       {
         id: user._id,
@@ -344,7 +437,7 @@ exports.login = async (req, res) => {
         verified: user.verified,
       },
       process.env.JWT_SECRET,
-      { expiresIn: "7d" },
+      { expiresIn },
     );
 
     await createAuditLog({
@@ -362,6 +455,11 @@ exports.login = async (req, res) => {
       "Login successful.",
     );
   } catch (err) {
+    console.error("=== LOGIN ERROR ===");
+    console.error("Error name:", err.name);
+    console.error("Error message:", err.message);
+    console.error("Error stack:", err.stack);
+    console.error("Request body:", JSON.stringify(req.body, null, 2));
     logger.error({ error: err.message, stack: err.stack }, "Login error");
     return sendError(
       res,
@@ -422,7 +520,7 @@ exports.forgotPassword = async (req, res) => {
     await sendMobilePasswordResetEmail(email, token);
     logger.info(`Password reset email sent to ${email}`);
 
-    // Audit log for password reset request
+    // Audit log for password reset request - ADDED BACK
     await createAuditLog({
       userId: user._id,
       userRole: user.role,

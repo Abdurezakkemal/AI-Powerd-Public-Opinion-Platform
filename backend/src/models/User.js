@@ -5,7 +5,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   passwordHash: { type: String, required: true },
   phoneHash: { type: String, unique: true, sparse: true, default: null },
-  region: { type: String, required: true }, // make required?
+  region: { type: String, required: true },
   role: {
     type: String,
     enum: ["citizen", "planner", "admin"],
@@ -50,6 +50,13 @@ const userSchema = new mongoose.Schema({
       "postgraduate",
     ],
     required: true,
+  },
+
+  // Translation preference for citizens
+  preferredLanguage: {
+    type: String,
+    enum: ["am", "om", "ti", "en"],
+    default: "en",
   },
 
   // Planner-specific fields

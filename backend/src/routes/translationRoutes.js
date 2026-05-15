@@ -2,12 +2,14 @@ const express = require("express");
 const router = express.Router();
 const translationController = require("../controllers/translationController");
 const auth = require("../middleware/authMiddleware");
+const limiters = require("../config/rateLimits");
 
-// Allow planners and admins to translate comments (and optionally citizens)
+// All authenticated users (citizen, planner, admin) can translate
 router.post(
   "/",
-  auth(["planner", "admin", "citizen"]),
-  translationController.translateText,
+  auth(["citizen", "planner", "admin"]),
+  limiters.analyticsRead,
+  translationController.translate,
 );
 
 module.exports = router;

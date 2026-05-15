@@ -20,9 +20,6 @@ export const policyApi = {
   unpublish(id) {
     return apiClient.patch(`/policies/${id}/unpublish`);
   },
-  activate(id) {
-    return apiClient.patch(`/policies/${id}/activate`);
-  },
   pause(id) {
     return apiClient.patch(`/policies/${id}/pause`);
   },

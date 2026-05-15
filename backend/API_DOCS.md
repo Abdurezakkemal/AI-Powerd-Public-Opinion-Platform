@@ -18,10 +18,18 @@ Most endpoints require a Bearer token obtained after successful login or OTP ver
 Include the token in the Authorization header:
 
 ```http
-Authorization: Bearer <your-jwt-token>
+    Authorization: Bearer <your-jwt-token>
 ```
 
-Tokens expire after 7 days. After expiry, the user must log in again.
+**Token expiry depends on the user role**:
+
+| Role    | Expiry time |
+| ------- | ----------- |
+| Citizen | 7 days      |
+| Planner | 12 hours    |
+| Admin   | 6 hours     |
+
+After expiry, the user must log in again.
 
 ### 1.3. Uniform Response Format
 
@@ -91,9 +99,9 @@ These endpoints are public (no token required).
 
 **`POST /auth/register`**
 
-Creates a new citizen account. An OTP is sent to the provided email address (not phone). The phone number is stored for channel exclusivity (to prevent app users from voting via SMS).
+Creates a new citizen account. An OTP is sent to the provided email address. The phone number is stored for channel exclusivity (to prevent app users from voting via SMS).
 
-Request body:
+**Request body:**
 
 ```json
 {
@@ -119,7 +127,23 @@ Request body:
 | occupation | string | yes      | `student`, `farmer`, `merchant`, `government-employee`, `private-sector`, `unemployed`, `other` |
 | education  | string | yes      | `no-formal`, `primary`, `secondary`, `diploma`, `bachelors`, `postgraduate`                     |
 
-**Response (201 Created):**
+**CAPTCHA:**  
+In production, the request must include a `captchaToken` field (obtained from Google reCAPTCHA v2).  
+For local development, you can disable CAPTCHA by setting `DISABLE_CAPTCHA=true` in the environment.
+
+**Input validation rules:**
+
+- `email` – must be a valid email format (`name@domain.com`).
+- `phone` – must be a valid Ethiopian phone number (e.g., `+251912345678`, `0912345678`, or `912345678`).
+- `password` – at least 8 characters.
+
+**Behaviour:**
+
+- If the email is already registered and **verified**, the API returns `409 DUPLICATE_ENTRY`.
+- If the email is already registered but **unverified** (the user never completed OTP verification), the system **resets the 24‑hour verification timer** and sends a fresh OTP to the email. The existing user record is reused, and the API returns `200 OK` with a message indicating a new OTP has been sent.
+- New users have **24 hours** to verify their email. After 24 hours, unverified accounts are automatically deleted by a daily cleanup job (runs at 2 AM). This prevents email addresses from being held hostage.
+
+**Response (201 Created) – for a completely new user:**
 
 ```json
 {
@@ -130,12 +154,26 @@ Request body:
 }
 ```
 
+**Response (200 OK) – for an existing unverified user (re‑registration):**
+
+```json
+{
+  "status": "success",
+  "data": { "userId": "67f1a2b3c4d5e6f7a8b9c0d1" },
+  "message": "A new OTP has been sent to your email. Please verify within 5 minutes.",
+  "timestamp": "..."
+}
+```
+
 **Error responses:**
 
-| Status | Code                    | Message example                                                                                      |
+| Status | Code                    | Message                                                                                              |
 | ------ | ----------------------- | ---------------------------------------------------------------------------------------------------- |
 | 400    | `VALIDATION_ERROR`      | `"Missing required fields: email, password, phone, region, ageRange, gender, occupation, education"` |
-| 409    | `DUPLICATE_ENTRY`       | `"Email already registered. Please use a different email."`                                          |
+| 400    | `VALIDATION_ERROR`      | `"Invalid email format"` or `"Invalid Ethiopian phone number format"`                                |
+| 400    | `VALIDATION_ERROR`      | `"Password must be at least 8 characters long"`                                                      |
+| 409    | `DUPLICATE_ENTRY`       | `"Email already registered. Please use a different email or log in."` (for verified emails)          |
+| 409    | `DUPLICATE_ENTRY`       | `"Phone number already registered. Please use a different number."`                                  |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Unable to complete registration. Please try again later."`                                         |
 
 ### 2.2 Send OTP
@@ -214,12 +252,19 @@ Error responses:
 
 **`POST /auth/login`**
 
-Authenticates a user with email and password. Returns a JWT token valid for 7 days.
+Authenticates a user with email and password. Returns a JWT token valid for 7 days (citizen), 12 hours (planner), or 6 hours (admin).
+
+**CAPTCHA:**  
+In production, the request must include a `captchaToken` field (obtained from Google reCAPTCHA v2).  
+For local development, you can disable CAPTCHA by setting `DISABLE_CAPTCHA=true` in the environment.
+
+**Request body:**
 
 ```json
 {
   "email": "user@example.com",
-  "password": "strongPass123"
+  "password": "strongPass123",
+  "captchaToken": "optional_in_development"
 }
 ```
 
@@ -361,7 +406,7 @@ The admin cannot reset their own password through this endpoint – they must us
 
 ## 3. Policy Endpoints
 
-| Role    | View own draft/published? | View others' draft/published? | View others' active/paused/closed?      | Create / Update / Delete (own) | Publish / Unpublish (own) | Activate / Pause / Resume / Close / Extend (own)      |
+| Role    | View own draft/published? | View others' draft/published? | View others' active/paused/closed?      | Create / Update / Delete (own) | Publish / Unpublish (own) | Pause / Resume / Close / Extend (own)                 |
 | ------- | ------------------------- | ----------------------------- | --------------------------------------- | ------------------------------ | ------------------------- | ----------------------------------------------------- |
 | Citizen | No                        | No                            | Yes (`active` and `paused`, own region) | No                             | No                        | No                                                    |
 | Planner | Yes (all statuses)        | **No (404)**                  | Yes                                     | Yes (draft/published only)     | Yes (draft → published)   | Yes (published → active, active/paused → close, etc.) |
@@ -377,7 +422,6 @@ The admin cannot reset their own password through this endpoint – they must us
 
 - Delete allowed only for `draft` or `published` policies. Update only for `draft` policies.
 - Extend works on `active` or `paused`. Pause works on `active`, Resume on `paused`. Close works on `active` or `paused`.
-- Activate moves a `published` policy to `active` (within voting window). Auto‑activation also does this on startDate.
 - Publish moves a `draft` policy to `published` (or directly to `active` if startDate already passed).
 - Unpublish moves a `published` policy back to `draft`.
 
@@ -642,25 +686,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.7 Activate policy (published → active)
-
-**`PATCH /policies/:id/activate`**
-
-**Roles:** policy owner (planner) or admin  
-**Condition:** Policy status must be `published`. Current date must be within `startDate` and `endDate`.
-
-**Response (200 OK):**
-
-```json
-{
-  "status": "success",
-  "data": { "id": "...", "status": "active" },
-  "message": "Policy activated successfully. Voting is now open.",
-  "timestamp": "..."
-}
-```
-
-### 3.8 Pause policy (active → paused)
+### 3.7 Pause policy (active → paused)
 
 **`PATCH /policies/:id/pause`**
 
@@ -678,7 +704,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.9 Resume policy (paused → active)
+### 3.8 Resume policy (paused → active)
 
 **`PATCH /policies/:id/resume`**
 
@@ -696,7 +722,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.10 Close policy (active/paused → closed)
+### 3.9 Close policy (active/paused → closed)
 
 **`POST /policies/:id/close`**
 
@@ -714,7 +740,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.11 Extend policy end date
+### 3.10 Extend policy end date
 
 **`PATCH /policies/:id/extend`**
 
@@ -746,7 +772,7 @@ Query parameters (all optional):
 | 400    | `VALIDATION_ERROR` | `"New end date cannot be in the past"`                 |
 | 403    | `FORBIDDEN`        | `"Only active or paused policies can change end date"` |
 
-### 3.12 Delete policy (draft or published only)
+### 3.11 Delete policy (draft or published only)
 
 **`DELETE /policies/:id`**
 
@@ -764,7 +790,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.13 Clone policy
+### 3.12 Clone policy
 
 **`POST /policies/:id/clone`**
 
@@ -790,7 +816,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.14 Archive a policy (soft delete)
+### 3.13 Archive a policy (soft delete)
 
 **`PATCH /policies/:id/archive`**
 
@@ -825,7 +851,7 @@ Query parameters (all optional):
 | 403    | `FORBIDDEN`        | `"You do not have permission to archive this policy"`               |
 | 404    | `NOT_FOUND`        | `"Policy not found"`                                                |
 
-### 3.15 Restore an archived policy
+### 3.14 Restore an archived policy
 
 **`PATCH /policies/:id/restore`**
 
@@ -860,7 +886,7 @@ Query parameters (all optional):
 | 403    | `FORBIDDEN`        | `"You do not have permission to restore this policy"`                          |
 | 404    | `NOT_FOUND`        | `"Policy not found"`                                                           |
 
-### 3.16 Policy history
+### 3.15 Policy history
 
 **`GET /policies/:id/history`**
 
@@ -897,7 +923,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.17 Suggest topics for a policy (AI‑assisted)
+### 3.16 Suggest topics for a policy (AI‑assisted)
 
 **`POST /policies/suggest-topics`**
 
@@ -980,6 +1006,8 @@ All endpoints in this section require authentication with a valid JWT token (cit
 | `rating`         | Integer 1‑5                                                                     | `5`                        |
 | `rankedChoice`   | Array of option IDs in order of preference (max length = `rankedChoiceMaxRank`) | `["opt2", "opt1", "opt3"]` |
 
+**Note:** `policyId` must be a valid MongoDB ObjectId. Invalid IDs return `400 VALIDATION_ERROR`.
+
 **Response (201 Created):**
 
 ```json
@@ -1023,7 +1051,7 @@ All endpoints in this section require authentication with a valid JWT token (cit
 ```json
 {
   "policyId": "67f1a2b3c4d5e6f7a8b9c0d1",
-  "parentCommentId": null,
+  "parentCommentId": null, // or an existing comment ID to reply to
   "text": "This is a comment (1‑2000 characters)"
 }
 ```
@@ -1038,6 +1066,8 @@ All endpoints in this section require authentication with a valid JWT token (cit
   - Created with `visibility = "visible"`, `moderationStatus = "none"`, `moderationReason = null`. No AI processing.
   - Parent comment author receives in‑app notification (`type: "COMMENT_REPLY"`).
 - Profanity filter: if blocked, `visibility = "hidden"`, `hiddenReason = "profanity"`, `moderationStatus = "needs_review"`, `moderationReason = "moderator_flag"`.
+
+**Note:** `policyId` and `parentCommentId` (if provided) must be valid MongoDB ObjectIds. Invalid IDs return `400 VALIDATION_ERROR`.
 
 **Response (201 Created):**
 
@@ -1100,8 +1130,6 @@ Returns top‑level comments that are visible to citizens (i.e., `visibility = "
 ```
 
 **Note:** Reported or hidden comments are excluded.
-
----
 
 ### 4.4 Get a single comment by ID
 
@@ -1300,8 +1328,6 @@ Returns all replies to a specific comment. Only returns replies with `visibility
 }
 ```
 
----
-
 ### 4.7 Appeal a moderation decision (citizen)
 
 **`POST /comments/:commentId/appeal`**
@@ -1333,8 +1359,6 @@ Returns all replies to a specific comment. Only returns replies with `visibility
   "timestamp": "..."
 }
 ```
-
----
 
 ### 4.8 Resolve an appeal
 
@@ -1370,8 +1394,6 @@ Returns all replies to a specific comment. Only returns replies with `visibility
 }
 ```
 
----
-
 ### 4.9 Edit a comment (author only)
 
 **`PUT /comments/:id`**
@@ -1406,8 +1428,6 @@ Returns all replies to a specific comment. Only returns replies with `visibility
   "timestamp": "..."
 }
 ```
-
----
 
 ### 4.10 Get comment edit history
 
@@ -1602,7 +1622,7 @@ Downloads raw vote data as CSV with demographic columns. Supports same filters a
 
 **`GET /analytics/:policyId/comments`**
 
-Returns comments belonging to a policy, with moderator filters and the `isEdited` flag.
+**Roles:** planner, admin
 
 **Query parameters (all optional):**
 
@@ -1954,251 +1974,6 @@ Aggregates shared metrics (total votes, comments, sentiment counts, top keywords
 | 403    | `FORBIDDEN`             | `"Only planners and admins can access cross‑policy analytics"` |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve cross‑policy analytics"`                  |
 
-## 6. Admin Endpoints
-
-Role required: **`admin`** (all endpoints in this section)
-
-### 6.1 Planner Management
-
-#### 6.1.1 List planners
-
-**`GET /admin/planners`**
-
-Query parameters (all optional):
-
-| Parameter | Type    | Default | Description                                    |
-| --------- | ------- | ------- | ---------------------------------------------- |
-| active    | boolean | none    | Filter by true (active) or false (deactivated) |
-| page      | integer | 1       | Page number (1‑based)                          |
-| limit     | integer | 10      | Items per page (max 100)                       |
-
-Response (200 OK):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "total": 5,
-    "page": 1,
-    "pages": 1,
-    "planners": [
-      {
-        "_id": "...",
-        "email": "planner@example.com",
-        "region": "",
-        "role": "planner",
-        "verified": true,
-        "active": true,
-        "createdAt": "..."
-      }
-    ]
-  },
-  "message": "Planners retrieved successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                                                |
-| ------ | --------------------- | ------------------------------------------------------ |
-| 403    | FORBIDDEN             | "Access denied. Insufficient permissions."             |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to retrieve planners. Please try again later." |
-
-#### 6.1.2 Create planner
-
-**`POST /admin/planners`**
-
-Request body:
-
-| Field    | Type   | Required | Description                          |
-| -------- | ------ | -------- | ------------------------------------ |
-| email    | string | yes      | Valid email address (must be unique) |
-| password | string | yes      | Min 6 characters                     |
-
-Response (201 Created):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "id": "...",
-    "email": "newplanner@example.com"
-  },
-  "message": "Planner account created successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                                       |
-| ------ | --------------------- | --------------------------------------------- |
-| 400    | VALIDATION_ERROR      | "Email and password are required"             |
-| 409    | DUPLICATE_ENTRY       | "A user with this email already exists"       |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to create planner. Please try again." |
-
-#### 6.1.3 Update planner
-
-**`PUT /admin/planners/:id`**
-
-Path parameter:
-
-| Parameter | Type   | Description     |
-| --------- | ------ | --------------- |
-| id        | string | Planner user ID |
-
-Request body (fields optional):
-
-| Field    | Type    | Description                                  |
-| -------- | ------- | -------------------------------------------- |
-| password | string  | New password (min 6 chars)                   |
-| active   | boolean | Set to false to deactivate, true to activate |
-
-Response (200 OK):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "id": "...",
-    "email": "planner@example.com",
-    "active": true
-  },
-  "message": "Planner updated successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                                       |
-| ------ | --------------------- | --------------------------------------------- |
-| 404    | NOT_FOUND             | "Planner not found"                           |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to update planner. Please try again." |
-
-#### 6.1.4 Toggle planner status
-
-**`PUT /admin/planners/:id/status`**
-
-Path parameter:
-
-| Parameter | Type   | Description     |
-| --------- | ------ | --------------- |
-| id        | string | Planner user ID |
-
-Request body:
-
-| Field  | Type    | Required | Description                           |
-| ------ | ------- | -------- | ------------------------------------- |
-| active | boolean | yes      | true to activate, false to deactivate |
-
-Response (200 OK):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "plannerId": "...",
-    "active": false
-  },
-  "message": "Planner account deactivated successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                                 |
-| ------ | --------------------- | --------------------------------------- |
-| 400    | VALIDATION_ERROR      | "active field is required (true/false)" |
-| 404    | NOT_FOUND             | "Planner not found"                     |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to update planner status"       |
-
-### 6.2 Citizen Management
-
-#### 6.2.1 List citizens
-
-**`GET /admin/users/citizens`**
-
-Query parameters (all optional):
-
-| Parameter | Type    | Default | Description                                    |
-| --------- | ------- | ------- | ---------------------------------------------- |
-| active    | boolean | none    | Filter by true (active) or false (deactivated) |
-| page      | integer | 1       | Page number (1‑based)                          |
-| limit     | integer | 10      | Items per page (max 100)                       |
-
-Response (200 OK):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "total": 25,
-    "page": 1,
-    "pages": 3,
-    "citizens": [
-      {
-        "_id": "...",
-        "email": "citizen@example.com",
-        "region": "Addis Ababa",
-        "role": "citizen",
-        "verified": true,
-        "active": true,
-        "createdAt": "..."
-      }
-    ]
-  },
-  "message": "Citizens retrieved successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                       |
-| ------ | --------------------- | ----------------------------- |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to retrieve citizens" |
-
-#### 6.2.2 Toggle citizen status
-
-**`PUT /admin/users/:id/status`**
-
-Path parameter:
-
-| Parameter | Type   | Description     |
-| --------- | ------ | --------------- |
-| id        | string | Citizen user ID |
-
-Request body:
-
-| Field  | Type    | Required | Description                           |
-| ------ | ------- | -------- | ------------------------------------- |
-| active | boolean | yes      | true to activate, false to deactivate |
-
-Response (200 OK):
-
-```json
-{
-  "status": "success",
-  "data": {
-    "userId": "...",
-    "active": false
-  },
-  "message": "Citizen account deactivated successfully",
-  "timestamp": "..."
-}
-```
-
-Error responses:
-
-| Status | Code                  | Message                                 |
-| ------ | --------------------- | --------------------------------------- |
-| 400    | VALIDATION_ERROR      | "active field is required (true/false)" |
-| 404    | NOT_FOUND             | "Citizen not found"                     |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to update citizen status"       |
-
 ### 6.3 Comment Moderation
 
 All endpoints in this section require the **Admin** role.
@@ -2309,7 +2084,7 @@ Manually updates sentiment, keywords, or moderation flags of a comment. Cannot c
 
 ---
 
-### 6.3.4 Retry a single comment (strict)
+#### 6.3.4 Retry a single comment (strict)
 
 **`POST /admin/comments/:id/retry`**
 
@@ -2350,7 +2125,7 @@ Resets a comment to `pending_ai` status so the AI worker will re‑process it.
 
 ---
 
-### 6.3.5 Force retry a comment (any comment)
+#### 6.3.5 Force retry a comment (any comment)
 
 **`POST /admin/comments/:id/force-retry`**
 
@@ -2369,12 +2144,14 @@ Forces a comment to be re‑processed by the AI worker regardless of its current
 
 **Response (200 OK):**
 
-    {
-      "status": "success",
-      "data": { "commentId": "..." },
-      "message": "Comment force‑queued for AI reprocessing.",
-      "timestamp": "..."
-    }
+```json
+{
+  "status": "success",
+  "data": { "commentId": "..." },
+  "message": "Comment force‑queued for AI reprocessing.",
+  "timestamp": "..."
+}
+```
 
 **Error responses:**
 
@@ -2384,7 +2161,9 @@ Forces a comment to be re‑processed by the AI worker regardless of its current
 | 403    | `FORBIDDEN`             | `"Access denied"`                 |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Failed to force‑retry comment"` |
 
-### 6.3.6 Bulk retry comments by IDs
+---
+
+#### 6.3.6 Bulk retry comments by IDs
 
 **`POST /admin/comments/bulk/retry-by-ids`**
 
@@ -2444,9 +2223,9 @@ Retries multiple comments at once. Only comments that are `low_confidence`, `vis
 | 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many bulk requests. Please wait."`   |
 | 500    | `INTERNAL_SERVER_ERROR` | `"Failed to process bulk retry"`           |
 
-## 6.4 Admin Dashboard & Monitoring
+### 6.4 Admin Dashboard & Monitoring
 
-### 6.4.1 Dashboard statistics
+#### 6.4.1 Dashboard statistics
 
 **`GET /admin/dashboard/stats`**
 
@@ -2479,7 +2258,7 @@ Returns platform‑wide counts and AI health.
 - `aiHealth.pendingComments` – same as `comments.pendingReview` (cached from database).
 - `aiHealth.failedComments` – number of `needs_review` comments that have failed AI retries more than 5 times.
 
-### 6.4.2 Platform trends
+#### 6.4.2 Platform trends
 
 **`GET /admin/trends`**
 
@@ -2512,7 +2291,7 @@ Query parameters (all optional):
 - `week`: `YYYY-Www` (e.g., `2026-W17`)
 - `month`: `YYYY-MM`
 
-## 6.4.3 View audit logs
+#### 6.4.3 View audit logs
 
 **`GET /admin/audit-logs`**
 
@@ -2556,7 +2335,7 @@ Query parameters (all optional):
 }
 ```
 
-### 6.4.4 Export audit logs (CSV)
+#### 6.4.4 Export audit logs (CSV)
 
 **`GET /admin/audit-logs/export`**
 
@@ -2567,7 +2346,7 @@ Same query parameters as `GET /admin/audit-logs` (page/limit ignored – exports
 - Content‑Type: `text/csv`
 - Content‑Disposition: `attachment; filename="audit-logs-<timestamp>.csv"`
 
-### 6.4.5 AI service health
+#### 6.4.5 AI service health
 
 **`GET /admin/ai/health`**
 
@@ -2590,9 +2369,9 @@ Returns the health status of the AI service plus comment queue statistics.
 
 If the AI service is unreachable, `status` is `"unreachable"` and an `error` field may be present (e.g., `"Request failed with status code 404"`).
 
-## 6.5 Password Reset (Admin) – Admin‑initiated
+### 6.5 Password Reset (Admin) – Admin‑initiated
 
-### 6.5.1 Initiate password reset for a user
+#### 6.5.1 Initiate password reset for a user
 
 **`POST /admin/users/:id/initiate-password-reset`**
 
@@ -2641,9 +2420,10 @@ Response (200 OK):
 {
   "status": "success",
   "data": {
-    "\_id": "...",
+    "_id": "...",
     "email": "user@example.com",
     "region": "Addis Ababa",
+    "preferredLanguage": "en",
     "role": "citizen",
     "verified": true,
     "active": true,
@@ -2654,64 +2434,59 @@ Response (200 OK):
 }
 ```
 
-Notes:
+**Notes:**
 
--passwordHash and phoneHash are never returned.
--verified indicates if OTP verification is complete.
--active indicates if account is enabled (deactivated users cannot log in).
+- `passwordHash` and `phoneHash` are never returned.
+- `verified` indicates if OTP verification is complete.
+- `active` indicates if account is enabled (deactivated users cannot log in).
+- `preferredLanguage` is the user's chosen language for automatic translation (default `"en"`).
 
-Error responses:
+**Error responses:**
 
-| Status | Code                  | Message                             |
-| ------ | --------------------- | ----------------------------------- |
-| 401    | UNAUTHORIZED          | "Access denied. No token provided." |
-| 404    | NOT_FOUND             | "User not found"                    |
-| 500    | INTERNAL_SERVER_ERROR | "Failed to retrieve user profile"   |
+| Status | Code                    | Message                               |
+| ------ | ----------------------- | ------------------------------------- |
+| 401    | `UNAUTHORIZED`          | `"Access denied. No token provided."` |
+| 404    | `NOT_FOUND`             | `"User not found"`                    |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to retrieve user profile"`   |
 
 ### 7.2 Update profile
 
 **`PUT /users/me`**
 
-Request body (only `region` allowed):
+**Request body** (only `region` and `preferredLanguage` are allowed):
 
 ```json
 {
-  "region": "Oromia"
+  "region": "Oromia",
+  "preferredLanguage": "am"
 }
 ```
 
-Response (200 OK): returns the updated user object (same shape as GET /users/me).
+- `region` – string, any region name.
+- `preferredLanguage` – one of `"am"`, `"om"`, `"ti"`, `"en"` (default `"en"`).
 
-**Error if `email` is provided:**
+**Response (200 OK):** returns the updated user object (same shape as `GET /users/me`).
 
-```json
-{
-  "status": "error",
-  "error": {
-    "code": "VALIDATION_ERROR",
-    "message": "No valid fields provided for update (only region is allowed)"
-  }
-}
-```
-
-**Error if `email` is provided:**
+**Error if an invalid field (e.g., `email`) is provided:**
 
 ```json
 {
   "status": "error",
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "No valid fields provided for update (only region is allowed)"
-  }
+    "message": "No valid fields provided for update (only region and preferredLanguage are allowed)"
+  },
+  "timestamp": "..."
 }
 ```
 
-**Error responses (other):**
-| Status | Code | Message |
-| ------ | --------------------- | ------------------------------------- |
-| 400 | VALIDATION_ERROR | "No valid fields provided for update" |
-| 404 | NOT_FOUND | "User not found" |
-| 500 | INTERNAL_SERVER_ERROR | "Failed to update user profile" |
+**Error responses:**
+
+| Status | Code                    | Message                                 |
+| ------ | ----------------------- | --------------------------------------- |
+| 400    | `VALIDATION_ERROR`      | `"No valid fields provided for update"` |
+| 404    | `NOT_FOUND`             | `"User not found"`                      |
+| 500    | `INTERNAL_SERVER_ERROR` | `"Failed to update user profile"`       |
 
 ### 7.3 Change password
 
@@ -2827,6 +2602,8 @@ Downloads a JSON file containing all personal data associated with the user, inc
 | ----------- | ------ | ------------------------------------------------------------------------------------------------------------------ |
 | `startDate` | string | ISO date (e.g., `2026-05-01`). Filters votes, comments, notifications, and messages created on or after this date. |
 | `endDate`   | string | ISO date. Filters votes, comments, notifications, and messages created on or before this date.                     |
+
+**Note:** The export includes only data that belongs to the user. Planner requests are included regardless of date filters.
 
 If `startDate` and `endDate` are omitted, all data is exported.
 
@@ -4045,19 +3822,71 @@ Error responses:
 | 403    | FORBIDDEN             | "Feed only for citizens"           |
 | 500    | INTERNAL_SERVER_ERROR | "Failed to record interaction"     |
 
+## 14. Translation (On‑Demand)
+
+These endpoints allow authenticated users (citizens, planners, admins) to translate text between Amharic, Oromo, Tigrinya, and English. Translations are cached in Redis for 24 hours to improve performance.
+
+### 14.1 Translate text
+
+**`POST /api/translate`**
+
+**Authentication required:** yes (any role: citizen, planner, admin)  
+**Rate limit:** 30 requests per minute per user (shared with analytics read limit)
+
+**Request body:**
+
+```json
+{
+  "text": "ሰላም ውድ",
+  "sourceLang": "am", // optional – auto‑detected if omitted
+  "targetLang": "en" // optional, defaults to "en"
+}
+```
+
+**Supported language codes:** `am` (Amharic), `om` (Oromo), `ti` (Tigrinya), `en` (English).
+
+**Behaviour:**
+
+- If `sourceLang` is omitted, the backend calls the AI service to detect the language automatically.
+- The translated text is cached in Redis for 24 hours. Subsequent identical requests return the cached result.
+- The endpoint uses a remote Hugging Face Space running the `facebook/nllb-200-distilled-1.3B` model.
+
+**Response (200 OK):**
+
+```json
+{
+  "status": "success",
+  "data": {
+    "translatedText": "Hello dear"
+  },
+  "message": "Translation successful",
+  "timestamp": "..."
+}
+```
+
+**Error responses:**
+
+| Status | Code                    | Message                                                      |
+| ------ | ----------------------- | ------------------------------------------------------------ |
+| 400    | `VALIDATION_ERROR`      | `"text is required"` or `"Invalid language code"`            |
+| 503    | `INTERNAL_SERVER_ERROR` | `"Translation service unavailable. Please try again later."` |
+| 429    | `RATE_LIMIT_EXCEEDED`   | `"Too many requests. Please wait a moment."`                 |
+
 ## Appendix: Rate Limiting Summary
 
-| Endpoint group                               | Limit        | Time window | Scope             |
-| -------------------------------------------- | ------------ | ----------- | ----------------- |
-| `/auth/login`, `/auth/verify-otp`            | 10 requests  | 15 minutes  | Per IP            |
-| `/auth/send-otp`                             | 3 requests   | 1 hour      | Per IP            |
-| `/auth/forgot-password`                      | 3 requests   | 1 hour      | Per IP            |
-| `/auth/reset-password`                       | 5 requests   | 15 minutes  | Per IP            |
-| `/votes` (POST)                              | 30 requests  | 1 hour      | Per user (by JWT) |
-| `/comments` (POST)                           | 10 requests  | 1 minute    | Per user (by JWT) |
-| `POST /comments/:commentId/report`           | 5 requests   | 1 minute    | Per user (by JWT) |
-| `POST /comments/:commentId/appeal`           | 3 requests   | 24 hours    | Per user (by JWT) |
-| `PUT /comments/:commentId/moderate`          | 30 requests  | 1 minute    | Per user (by JWT) |
-| `GET /analytics/*` (all analytics endpoints) | 30 requests  | 1 minute    | Per user (by JWT) |
-| All other `/api` endpoints                   | 100 requests | 15 minutes  | Per IP            |
-| `/sms/receive`                               | 3 votes      | 24 hours    | Per phone number  |
+| Endpoint group                               | Limit        | Time window | Scope                  |
+| -------------------------------------------- | ------------ | ----------- | ---------------------- |
+| `/auth/login`, `/auth/verify-otp`            | 10 requests  | 15 minutes  | Per IP                 |
+| `/auth/send-otp`                             | 3 requests   | 1 hour      | Per IP                 |
+| `/auth/forgot-password`                      | 3 requests   | 1 hour      | Per IP                 |
+| `/auth/reset-password`                       | 5 requests   | 15 minutes  | Per IP                 |
+| `/votes` (POST)                              | 30 requests  | 1 hour      | Per user (by JWT)      |
+| `/comments` (POST)                           | 10 requests  | 1 minute    | Per user (by JWT)      |
+| `POST /comments/:commentId/report`           | 5 requests   | 1 minute    | Per user (by JWT)      |
+| `POST /comments/:commentId/appeal`           | 3 requests   | 24 hours    | Per user (by JWT)      |
+| `PUT /comments/:commentId/moderate`          | 30 requests  | 1 minute    | Per user (by JWT)      |
+| `GET /analytics/*` (all analytics endpoints) | 30 requests  | 1 minute    | Per user (by JWT)      |
+| `POST /api/translate`                        | 30 requests  | 1 minute    | Per user (by JWT)      |
+| `POST /admin/comments/bulk/retry-by-ids`     | 10 requests  | 1 minute    | Per admin (by user ID) |
+| All other `/api` endpoints                   | 100 requests | 15 minutes  | Per IP                 |
+| `/sms/receive`                               | 3 votes      | 24 hours    | Per phone number       |

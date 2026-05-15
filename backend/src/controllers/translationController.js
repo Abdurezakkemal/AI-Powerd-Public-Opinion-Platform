@@ -7,50 +7,86 @@ const {
   ErrorCodes,
 } = require("../utils/responseHelper");
 
-const LIBRE_TRANSLATE_URL =
-  process.env.LIBRE_TRANSLATE_URL || "http://localhost:5000";
+const TRANSLATE_SPACE_URL = process.env.TRANSLATE_SPACE_URL;
+const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
+const AI_SERVICE_URL = process.env.AI_SERVICE_URL || "http://localhost:8000";
 
 const getCacheKey = (text, sourceLang, targetLang) => {
-  return `trans:${Buffer.from(`${sourceLang}|${targetLang}|${text}`).toString("base64")}`;
+  const key = `translate:${sourceLang}:${targetLang}:${text}`;
+  const crypto = require("crypto");
+  return `trans:${crypto.createHash("md5").update(key).digest("hex")}`;
 };
 
-exports.translateText = async (req, res) => {
+// Helper to detect language using AI service
+const detectLanguage = async (text) => {
   try {
-    const { text, sourceLang, targetLang } = req.body;
-    if (!text || !targetLang) {
+    const response = await axios.post(
+      `${AI_SERVICE_URL}/analyze`,
+      { text },
+      {
+        headers: { "X-Internal-API-Key": INTERNAL_API_KEY },
+        timeout: 5000,
+      },
+    );
+    return response.data.language;
+  } catch (err) {
+    logger.error(
+      "Language detection failed, defaulting to English",
+      err.message,
+    );
+    return "en";
+  }
+};
+
+exports.translate = async (req, res) => {
+  try {
+    let { text, sourceLang, targetLang = "en" } = req.body;
+    if (!text) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "text and targetLang are required",
+        "text is required",
         null,
         400,
       );
     }
 
-    const src = sourceLang || "auto";
-    const cacheKey = getCacheKey(text, src, targetLang);
+    // Auto‑detect source language if not provided
+    if (!sourceLang) {
+      sourceLang = await detectLanguage(text);
+    }
+
+    const cacheKey = getCacheKey(text, sourceLang, targetLang);
     const cached = await redisClient.get(cacheKey);
     if (cached) {
       return sendSuccess(
         res,
         { translatedText: cached },
-        "Translation from cache",
+        "Translation retrieved from cache",
+      );
+    }
+
+    if (!TRANSLATE_SPACE_URL) {
+      logger.error("TRANSLATE_SPACE_URL environment variable not set");
+      return sendError(
+        res,
+        ErrorCodes.INTERNAL,
+        "Translation service not configured",
+        null,
+        503,
       );
     }
 
     const response = await axios.post(
-      `${LIBRE_TRANSLATE_URL}/translate`,
+      `${TRANSLATE_SPACE_URL}/translate`,
+      { text, source_lang: sourceLang, target_lang: targetLang },
       {
-        q: text,
-        source: src,
-        target: targetLang,
-        format: "text",
+        headers: { "X-Internal-API-Key": INTERNAL_API_KEY },
+        timeout: 60000,
       },
-      { timeout: 10000 },
     );
-
-    const translated = response.data.translatedText;
-    await redisClient.setEx(cacheKey, 86400, translated); // cache 24h
+    const translated = response.data.translated_text;
+    await redisClient.setEx(cacheKey, 86400, translated);
 
     return sendSuccess(
       res,
@@ -58,34 +94,19 @@ exports.translateText = async (req, res) => {
       "Translation successful",
     );
   } catch (err) {
-    // logger.error({ error: err.message }, "Translation failed");
-    // if (err.code === "ECONNREFUSED") {
-    //   return sendError(
-    //     res,
-    //     ErrorCodes.INTERNAL,
-    //     "Translation service not running",
-    //     null,
-    //     503,
-    //   );
-    // }
-    // return sendError(
-    //   res,
-    //   ErrorCodes.INTERNAL,
-    //   "Failed to translate text",
-    //   null,
-    //   500,
-    // );
-    logger.warn(
-      { error: err.message },
-      "Translation service unavailable – returning fallback",
-    );
-    // Graceful fallback: return original text with a note
-    return sendSuccess(
+    console.error("=== TRANSLATION ERROR ===");
+    console.error("Message:", err.message);
+    if (err.response) {
+      console.error("Status:", err.response.status);
+      console.error("Data:", err.response.data);
+    }
+    logger.error({ error: err.message }, "Translation error");
+    return sendError(
       res,
-      {
-        translatedText: `[Translation offline] ${text}`,
-      },
-      "Translation service unavailable – using fallback",
+      ErrorCodes.INTERNAL,
+      "Translation service unavailable. Please try again later.",
+      null,
+      503,
     );
   }
 };

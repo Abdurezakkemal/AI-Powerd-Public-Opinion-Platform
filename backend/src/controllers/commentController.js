@@ -68,6 +68,26 @@ exports.postComment = async (req, res) => {
       );
     }
 
+    // Validate policyId
+    if (!mongoose.Types.ObjectId.isValid(policyId)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid policyId format",
+        null,
+        400,
+      );
+    }
+    if (parentCommentId && !mongoose.Types.ObjectId.isValid(parentCommentId)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid parentCommentId format",
+        null,
+        400,
+      );
+    }
+
     const policy = await Policy.findById(policyId);
     if (!policy)
       return sendError(
@@ -138,7 +158,6 @@ exports.postComment = async (req, res) => {
       }
     }
 
-    // Fetch user demographics snapshot
     const user = await User.findById(req.user.id);
     const demographicsSnapshot = {
       ageRange: user.ageRange,

@@ -25,6 +25,17 @@ exports.submitAppVote = async (req, res) => {
       );
     }
 
+    // Validate policyId is a valid ObjectId
+    if (!mongoose.Types.ObjectId.isValid(policyId)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid policyId format",
+        null,
+        400,
+      );
+    }
+
     const user = await User.findById(req.user.id);
     if (!user) {
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
@@ -69,7 +80,6 @@ exports.submitAppVote = async (req, res) => {
       );
     }
 
-    // Validate vote value against poll type
     if (!validateVoteValue(policy.pollType, value, policy)) {
       return sendError(
         res,
@@ -80,7 +90,6 @@ exports.submitAppVote = async (req, res) => {
       );
     }
 
-    // Check duplicate
     const existing = await Vote.findOne({
       policyId,
       $or: [{ userId: user._id }, { phoneHash: user.phoneHash }],
@@ -113,7 +122,6 @@ exports.submitAppVote = async (req, res) => {
     });
     await vote.save();
 
-    // Optional comment (new comment model without voteId)
     let commentDoc = null;
     if (comment && comment.trim().length > 0) {
       if (comment.length > 2000) {
@@ -149,15 +157,13 @@ exports.submitAppVote = async (req, res) => {
       await commentDoc.save();
     }
 
-    // === Alert detection: record vote and check anomalies ===
     await recordVote(policyId, normalizedValue);
 
-    // Get policy owner ID and associate IDs for notifications
     const ownerId = policy.createdBy.toString();
     const associates = await PolicyAssociate.find({
       policyId,
       revokedAt: null,
-      permissions: "view_analytics", // only notify those who can see analytics
+      permissions: "view_analytics",
     }).select("plannerId");
     const associateIds = associates.map((a) => a.plannerId.toString());
 

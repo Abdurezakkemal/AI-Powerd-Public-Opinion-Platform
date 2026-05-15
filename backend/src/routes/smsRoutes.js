@@ -1,9 +1,9 @@
 const express = require("express");
 const router = express.Router();
 const smsController = require("../controllers/smsController");
+const limiters = require("../config/rateLimits");
 
-// Public endpoints (can add simple API key later if needed)
-router.post("/receive", smsController.receiveSms);
+router.post("/receive", limiters.smsReceive, smsController.receiveSms);
 router.get("/results", smsController.getResults);
 
 module.exports = router;

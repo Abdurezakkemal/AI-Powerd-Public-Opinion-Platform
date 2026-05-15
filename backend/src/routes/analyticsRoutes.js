@@ -6,65 +6,72 @@ const auth = require("../middleware/authMiddleware");
 const {
   hasAssociatePermission,
 } = require("../middleware/permissionMiddleware");
+const limiters = require("../config/rateLimits");
+const validateObjectId = require("../middleware/validateObjectId");
 
-// All analytics endpoints require planner or admin role
-// For associate permissions, each endpoint uses its specific permission check
+const analyticsReadLimiter = limiters.analyticsRead;
 
-// Cross-policy analytics (must be before /:policyId routes)
 router.get(
   "/cross",
   auth(["planner", "admin"]),
+  analyticsReadLimiter,
   crossAnalyticsController.getCrossAnalytics,
 );
 
-// Heatmap (requires policyId query param – handled inside controller)
 router.get(
   "/heatmap",
   auth(["planner", "admin"]),
+  analyticsReadLimiter,
   analyticsController.getHeatmap,
 );
 
-// Timeseries
 router.get(
   "/:policyId/timeseries",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
+  analyticsReadLimiter,
   analyticsController.getTimeseries,
 );
 
-// Correlation (only for multipleChoice policies)
 router.get(
   "/:policyId/correlation",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
+  analyticsReadLimiter,
   analyticsController.getCorrelation,
 );
 
-// Demographic breakdown
 router.get(
   "/:policyId/demographics",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
+  analyticsReadLimiter,
   analyticsController.getDemographicBreakdown,
 );
 
-// Policy summary analytics (with associate permission)
 router.get(
   "/:policyId",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
+  analyticsReadLimiter,
   hasAssociatePermission("view_analytics"),
   analyticsController.getAnalytics,
 );
 
-// CSV export (with associate permission)
 router.get(
   "/:policyId/export",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
+  analyticsReadLimiter,
   hasAssociatePermission("export_data"),
   analyticsController.exportAnalytics,
 );
 
-// Comments list (with associate permission for moderation)
 router.get(
   "/:policyId/comments",
   auth(["planner", "admin"]),
+  validateObjectId("policyId"),
+  analyticsReadLimiter,
   hasAssociatePermission("moderate_comments"),
   analyticsController.getComments,
 );

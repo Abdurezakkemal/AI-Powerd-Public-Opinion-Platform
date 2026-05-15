@@ -27,12 +27,16 @@ SENTIMENT_URL = os.environ.get("SENTIMENT_SPACE_URL", "https://abyayel-sentiment
 TOPIC_URL = os.environ.get("TOPIC_SPACE_URL", "https://abyayel-topic-model.hf.space/suggest-topics")
 KEYWORD_URL = os.environ.get("KEYWORD_SPACE_URL", "https://abyayel-keyword-extractor.hf.space/extract")
 
+# ---------- API Key for remote Spaces ----------
+INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
+HEADERS = {"X-Internal-API-Key": INTERNAL_API_KEY} if INTERNAL_API_KEY else {}
+
 # ---------- Remote helper functions with retries ----------
 async def detect_language_remote(text: str, retries: int = 2):
     async with aiohttp.ClientSession() as session:
         for attempt in range(retries + 1):
             try:
-                async with session.post(LANGID_URL, json={"text": text}, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                async with session.post(LANGID_URL, json={"text": text}, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status != 200:
                         error_text = await resp.text()
                         logger.error(f"LangID space error: status {resp.status}, body: {error_text}")
@@ -57,7 +61,7 @@ async def analyze_sentiment_remote(text: str, language: str, retries: int = 2):
     async with aiohttp.ClientSession() as session:
         for attempt in range(retries + 1):
             try:
-                async with session.post(SENTIMENT_URL, json={"text": text, "language": language}, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                async with session.post(SENTIMENT_URL, json={"text": text, "language": language}, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status != 200:
                         error_text = await resp.text()
                         logger.error(f"Sentiment space error: status {resp.status}, body: {error_text}")
@@ -78,7 +82,7 @@ async def extract_keywords_remote(text: str, language: str, top_n: int = 5, retr
     async with aiohttp.ClientSession() as session:
         for attempt in range(retries + 1):
             try:
-                async with session.post(KEYWORD_URL, json={"text": text, "language": language, "top_n": top_n}, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                async with session.post(KEYWORD_URL, json={"text": text, "language": language, "top_n": top_n}, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=10)) as resp:
                     if resp.status != 200:
                         error_text = await resp.text()
                         logger.error(f"Keyword space error: status {resp.status}, body: {error_text}")
@@ -100,7 +104,7 @@ async def suggest_topics_remote(text: str, retries: int = 2):
     async with aiohttp.ClientSession() as session:
         for attempt in range(retries + 1):
             try:
-                async with session.post(TOPIC_URL, json={"text": text}, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                async with session.post(TOPIC_URL, json={"text": text}, headers=HEADERS, timeout=aiohttp.ClientTimeout(total=60)) as resp:
                     if resp.status != 200:
                         error_text = await resp.text()
                         logger.error(f"Topic space error: status {resp.status}, body: {error_text}")

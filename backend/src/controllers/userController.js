@@ -43,18 +43,19 @@ exports.getMe = async (req, res) => {
   }
 };
 
-// PUT /users/me – only region can be updated
+// PUT /users/me – allows updating region and preferredLanguage
 exports.updateMe = async (req, res) => {
   try {
-    const { region } = req.body;
+    const { region, preferredLanguage } = req.body;
     const updates = {};
     if (region) updates.region = region;
+    if (preferredLanguage) updates.preferredLanguage = preferredLanguage;
 
     if (Object.keys(updates).length === 0) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "No valid fields provided for update (only region is allowed)",
+        "No valid fields provided for update (only region and preferredLanguage are allowed)",
         null,
         400,
       );
@@ -281,6 +282,7 @@ exports.deleteMe = async (req, res) => {
     );
   }
 };
+
 // GET /users/me/export – GDPR data portability
 exports.exportMe = async (req, res) => {
   try {
@@ -342,6 +344,7 @@ exports.exportMe = async (req, res) => {
         gender: user.gender,
         occupation: user.occupation,
         education: user.education,
+        preferredLanguage: user.preferredLanguage,
         createdAt: user.createdAt,
       },
       votes: votes.map((v) => ({
