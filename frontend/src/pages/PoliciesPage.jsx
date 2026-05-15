@@ -76,7 +76,10 @@ export function PoliciesPage() {
         status: filters.status || undefined,
         region: filters.region || undefined,
         topic: filters.topic || undefined,
-        includeArchived: filters.includeArchived || filters.status === "archived" ? true : undefined,
+        includeArchived:
+          filters.includeArchived || filters.status === "archived"
+            ? true
+            : undefined,
         owner: "me",
         page,
         limit: PAGE_SIZE,
@@ -93,7 +96,13 @@ export function PoliciesPage() {
   useEffect(() => {
     loadPolicies();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters.status, filters.region, filters.topic, filters.includeArchived, page]);
+  }, [
+    filters.status,
+    filters.region,
+    filters.topic,
+    filters.includeArchived,
+    page,
+  ]);
 
   const filteredPolicies = useMemo(() => {
     const query = filters.search.trim().toLowerCase();
@@ -157,11 +166,19 @@ export function PoliciesPage() {
 
   const deletePolicy = async (policy) => {
     if (!window.confirm(`Delete "${policy.title}" permanently?`)) return;
-    await runAction(`delete-${policy.id}`, () => policyApi.delete(policy.id), "Policy deleted.");
+    await runAction(
+      `delete-${policy.id}`,
+      () => policyApi.delete(policy.id),
+      "Policy deleted.",
+    );
   };
 
   const clonePolicy = async (policy) => {
-    await runAction(`clone-${policy.id}`, () => policyApi.clone(policy.id), "Policy cloned as a new draft.");
+    await runAction(
+      `clone-${policy.id}`,
+      () => policyApi.clone(policy.id),
+      "Policy cloned as a new draft.",
+    );
   };
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
@@ -172,7 +189,10 @@ export function PoliciesPage() {
         title="Policies"
         description="Create draft policies, manage lifecycle states, and open analytics for active, paused, or closed policies."
         actions={
-          <Link className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800" to="/policies/new">
+          <Link
+            className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800"
+            to="/policies/new"
+          >
             <FilePlus className="h-4 w-4" />
             Create New Policy
           </Link>
@@ -181,7 +201,11 @@ export function PoliciesPage() {
 
       <div className="space-y-3">
         <ErrorAlert message={error} />
-        {notice ? <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{notice}</div> : null}
+        {notice ? (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+            {notice}
+          </div>
+        ) : null}
       </div>
 
       <section className="mt-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
@@ -192,7 +216,9 @@ export function PoliciesPage() {
               className="w-full rounded-lg border border-slate-300 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
               placeholder="Search by title or code"
               value={filters.search}
-              onChange={(event) => resetToFirstPage("search", event.target.value)}
+              onChange={(event) =>
+                resetToFirstPage("search", event.target.value)
+              }
             />
           </label>
 
@@ -226,7 +252,9 @@ export function PoliciesPage() {
             className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600"
             type="date"
             value={filters.startDate}
-            onChange={(event) => resetToFirstPage("startDate", event.target.value)}
+            onChange={(event) =>
+              resetToFirstPage("startDate", event.target.value)
+            }
             aria-label="Filter by start date"
           />
 
@@ -234,7 +262,9 @@ export function PoliciesPage() {
             className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600"
             type="date"
             value={filters.endDate}
-            onChange={(event) => resetToFirstPage("endDate", event.target.value)}
+            onChange={(event) =>
+              resetToFirstPage("endDate", event.target.value)
+            }
             aria-label="Filter by end date"
           />
 
@@ -250,7 +280,9 @@ export function PoliciesPage() {
             type="checkbox"
             className="h-4 w-4 accent-teal-700"
             checked={filters.includeArchived}
-            onChange={(event) => resetToFirstPage("includeArchived", event.target.checked)}
+            onChange={(event) =>
+              resetToFirstPage("includeArchived", event.target.checked)
+            }
           />
           Include archived policies
         </label>
@@ -275,18 +307,34 @@ export function PoliciesPage() {
               <tbody className="divide-y divide-slate-100">
                 {filteredPolicies.map((policy) => {
                   const busy = actionLoading.endsWith(policy.id);
-                  const analyticsAllowed = ["active", "paused", "closed"].includes(policy.status);
+                  const analyticsAllowed = [
+                    "active",
+                    "paused",
+                    "closed",
+                  ].includes(policy.status);
                   return (
                     <tr key={policy.id} className="align-top">
                       <td className="max-w-xs px-4 py-4">
-                        <p className="font-bold text-slate-950">{policy.title}</p>
-                        <p className="mt-1 line-clamp-2 text-xs text-slate-500">{policy.description}</p>
+                        <p className="font-bold text-slate-950">
+                          {policy.title}
+                        </p>
+                        <p className="mt-1 line-clamp-2 text-xs text-slate-500">
+                          {policy.description}
+                        </p>
                       </td>
-                      <td className="px-4 py-4 font-mono text-xs font-bold text-slate-700">{policy.policyCode}</td>
-                      <td className="px-4 py-4"><StatusBadge status={policy.status} /></td>
-                      <td className="max-w-xs px-4 py-4 text-slate-600">{policy.targetRegions?.join(", ") || "None"}</td>
+                      <td className="px-4 py-4 font-mono text-xs font-bold text-slate-700">
+                        {policy.policyCode}
+                      </td>
+                      <td className="px-4 py-4">
+                        <StatusBadge status={policy.status} />
+                      </td>
+                      <td className="max-w-xs px-4 py-4 text-slate-600">
+                        {policy.targetRegions?.join(", ") || "None"}
+                      </td>
                       <td className="px-4 py-4 text-slate-600">
-                        <div className="min-w-40">{formatDate(policy.startDate)}</div>
+                        <div className="min-w-40">
+                          {formatDate(policy.startDate)}
+                        </div>
                         <div>{formatDate(policy.endDate)}</div>
                       </td>
                       <td className="min-w-[23rem] px-4 py-4">
@@ -310,59 +358,144 @@ export function PoliciesPage() {
                             </Link>
                           ) : null}
                           {policy.status === "draft" ? (
-                            <Button disabled={busy} icon={Power} onClick={() => runAction(`publish-${policy.id}`, () => policyApi.publish(policy.id), "Policy published.")}>
+                            <Button
+                              disabled={busy}
+                              icon={Power}
+                              onClick={() =>
+                                runAction(
+                                  `publish-${policy.id}`,
+                                  () => policyApi.publish(policy.id),
+                                  "Policy published.",
+                                )
+                              }
+                            >
                               Publish
                             </Button>
                           ) : null}
                           {policy.status === "published" ? (
-                            <>
-                              <Button disabled={busy} icon={RefreshCw} onClick={() => runAction(`unpublish-${policy.id}`, () => policyApi.unpublish(policy.id), "Policy unpublished.")}>
-                                Unpublish
-                              </Button>
-                              <Button disabled={busy} icon={Play} onClick={() => runAction(`activate-${policy.id}`, () => policyApi.activate(policy.id), "Policy activated.")}>
-                                Activate
-                              </Button>
-                            </>
+                            <Button
+                              disabled={busy}
+                              icon={RefreshCw}
+                              onClick={() =>
+                                runAction(
+                                  `unpublish-${policy.id}`,
+                                  () => policyApi.unpublish(policy.id),
+                                  "Policy unpublished.",
+                                )
+                              }
+                            >
+                              Unpublish
+                            </Button>
                           ) : null}
                           {policy.status === "active" ? (
-                            <Button disabled={busy} icon={Pause} onClick={() => runAction(`pause-${policy.id}`, () => policyApi.pause(policy.id), "Policy paused.")}>
+                            <Button
+                              disabled={busy}
+                              icon={Pause}
+                              onClick={() =>
+                                runAction(
+                                  `pause-${policy.id}`,
+                                  () => policyApi.pause(policy.id),
+                                  "Policy paused.",
+                                )
+                              }
+                            >
                               Pause
                             </Button>
                           ) : null}
                           {policy.status === "paused" ? (
-                            <Button disabled={busy} icon={Play} onClick={() => runAction(`resume-${policy.id}`, () => policyApi.resume(policy.id), "Policy resumed.")}>
+                            <Button
+                              disabled={busy}
+                              icon={Play}
+                              onClick={() =>
+                                runAction(
+                                  `resume-${policy.id}`,
+                                  () => policyApi.resume(policy.id),
+                                  "Policy resumed.",
+                                )
+                              }
+                            >
                               Resume
                             </Button>
                           ) : null}
                           {["active", "paused"].includes(policy.status) ? (
                             <>
-                              <Button disabled={busy} icon={CalendarClock} onClick={() => extendPolicy(policy)}>
+                              <Button
+                                disabled={busy}
+                                icon={CalendarClock}
+                                onClick={() => extendPolicy(policy)}
+                              >
                                 Extend
                               </Button>
-                              <Button disabled={busy} icon={Power} variant="danger" onClick={() => runAction(`close-${policy.id}`, () => policyApi.close(policy.id), "Policy closed.")}>
+                              <Button
+                                disabled={busy}
+                                icon={Power}
+                                variant="danger"
+                                onClick={() =>
+                                  runAction(
+                                    `close-${policy.id}`,
+                                    () => policyApi.close(policy.id),
+                                    "Policy closed.",
+                                  )
+                                }
+                              >
                                 Close
                               </Button>
                             </>
                           ) : null}
                           {["draft", "published"].includes(policy.status) ? (
-                            <Button disabled={busy} icon={Trash2} variant="danger" onClick={() => deletePolicy(policy)}>
+                            <Button
+                              disabled={busy}
+                              icon={Trash2}
+                              variant="danger"
+                              onClick={() => deletePolicy(policy)}
+                            >
                               Delete
                             </Button>
                           ) : null}
-                          {policy.status !== "draft" && policy.status !== "archived" ? (
-                            <Button disabled={busy} icon={Archive} variant="danger" onClick={() => runAction(`archive-${policy.id}`, () => policyApi.archive(policy.id), "Policy archived.")}>
+                          {policy.status !== "draft" &&
+                          policy.status !== "archived" ? (
+                            <Button
+                              disabled={busy}
+                              icon={Archive}
+                              variant="danger"
+                              onClick={() =>
+                                runAction(
+                                  `archive-${policy.id}`,
+                                  () => policyApi.archive(policy.id),
+                                  "Policy archived.",
+                                )
+                              }
+                            >
                               Archive
                             </Button>
                           ) : null}
                           {policy.status === "archived" ? (
-                            <Button disabled={busy} icon={RotateCcw} onClick={() => runAction(`restore-${policy.id}`, () => policyApi.restore(policy.id), "Policy restored to draft.")}>
+                            <Button
+                              disabled={busy}
+                              icon={RotateCcw}
+                              onClick={() =>
+                                runAction(
+                                  `restore-${policy.id}`,
+                                  () => policyApi.restore(policy.id),
+                                  "Policy restored to draft.",
+                                )
+                              }
+                            >
                               Restore
                             </Button>
                           ) : null}
-                          <Button disabled={busy} icon={Copy} onClick={() => clonePolicy(policy)}>
+                          <Button
+                            disabled={busy}
+                            icon={Copy}
+                            onClick={() => clonePolicy(policy)}
+                          >
                             Clone
                           </Button>
-                          <Button disabled={busy} icon={History} onClick={() => showHistory(policy)}>
+                          <Button
+                            disabled={busy}
+                            icon={History}
+                            onClick={() => showHistory(policy)}
+                          >
                             History
                           </Button>
                         </div>
@@ -374,12 +507,20 @@ export function PoliciesPage() {
             </table>
           </div>
           <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600">
-            <span>Page {page} of {totalPages}</span>
+            <span>
+              Page {page} of {totalPages}
+            </span>
             <div className="flex gap-2">
-              <Button disabled={page <= 1} onClick={() => setPage((current) => Math.max(1, current - 1))}>
+              <Button
+                disabled={page <= 1}
+                onClick={() => setPage((current) => Math.max(1, current - 1))}
+              >
                 Previous
               </Button>
-              <Button disabled={page >= totalPages} onClick={() => setPage((current) => current + 1)}>
+              <Button
+                disabled={page >= totalPages}
+                onClick={() => setPage((current) => current + 1)}
+              >
                 Next
               </Button>
             </div>
@@ -391,7 +532,10 @@ export function PoliciesPage() {
             title="No policies match your filters"
             description="Adjust the status, region, date range, or search query to find policies."
             action={
-              <Link className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800" to="/policies/new">
+              <Link
+                className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800"
+                to="/policies/new"
+              >
                 Create New Policy
               </Link>
             }
@@ -400,16 +544,26 @@ export function PoliciesPage() {
       )}
 
       {historyPolicy ? (
-        <Modal title={`History: ${historyPolicy.title}`} onClose={() => setHistoryPolicy(null)}>
+        <Modal
+          title={`History: ${historyPolicy.title}`}
+          onClose={() => setHistoryPolicy(null)}
+        >
           {historyEvents.length ? (
             <ol className="space-y-3">
               {historyEvents.map((event, index) => (
-                <li key={`${event.action}-${event.timestamp}-${index}`} className="rounded-lg border border-slate-200 p-3">
+                <li
+                  key={`${event.action}-${event.timestamp}-${index}`}
+                  className="rounded-lg border border-slate-200 p-3"
+                >
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="font-bold text-slate-950">{event.action}</p>
-                    <p className="text-xs text-slate-500">{formatDate(event.timestamp)}</p>
+                    <p className="text-xs text-slate-500">
+                      {formatDate(event.timestamp)}
+                    </p>
                   </div>
-                  <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">{event.userRole || "unknown role"}</p>
+                  <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">
+                    {event.userRole || "unknown role"}
+                  </p>
                   {event.details ? (
                     <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
                       {JSON.stringify(event.details, null, 2)}
@@ -419,7 +573,10 @@ export function PoliciesPage() {
               ))}
             </ol>
           ) : (
-            <EmptyState title="No history events" description="This policy does not have audit events yet." />
+            <EmptyState
+              title="No history events"
+              description="This policy does not have audit events yet."
+            />
           )}
         </Modal>
       ) : null}

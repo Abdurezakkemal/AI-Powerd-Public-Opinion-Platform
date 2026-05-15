@@ -62,13 +62,6 @@ router.patch(
   policyController.unpublish,
 );
 router.patch(
-  "/:id/activate",
-  auth(["planner", "admin"]),
-  validateObjectId("id"),
-  limiters.policyWrite,
-  policyController.activate,
-);
-router.patch(
   "/:id/extend",
   auth(["planner", "admin"]),
   validateObjectId("id"),

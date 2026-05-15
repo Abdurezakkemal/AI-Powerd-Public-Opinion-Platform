@@ -386,7 +386,7 @@ The admin cannot reset their own password through this endpoint – they must us
 
 ## 3. Policy Endpoints
 
-| Role    | View own draft/published? | View others' draft/published? | View others' active/paused/closed?      | Create / Update / Delete (own) | Publish / Unpublish (own) | Activate / Pause / Resume / Close / Extend (own)      |
+| Role    | View own draft/published? | View others' draft/published? | View others' active/paused/closed?      | Create / Update / Delete (own) | Publish / Unpublish (own) | Pause / Resume / Close / Extend (own)                 |
 | ------- | ------------------------- | ----------------------------- | --------------------------------------- | ------------------------------ | ------------------------- | ----------------------------------------------------- |
 | Citizen | No                        | No                            | Yes (`active` and `paused`, own region) | No                             | No                        | No                                                    |
 | Planner | Yes (all statuses)        | **No (404)**                  | Yes                                     | Yes (draft/published only)     | Yes (draft → published)   | Yes (published → active, active/paused → close, etc.) |
@@ -402,7 +402,6 @@ The admin cannot reset their own password through this endpoint – they must us
 
 - Delete allowed only for `draft` or `published` policies. Update only for `draft` policies.
 - Extend works on `active` or `paused`. Pause works on `active`, Resume on `paused`. Close works on `active` or `paused`.
-- Activate moves a `published` policy to `active` (within voting window). Auto‑activation also does this on startDate.
 - Publish moves a `draft` policy to `published` (or directly to `active` if startDate already passed).
 - Unpublish moves a `published` policy back to `draft`.
 
@@ -667,25 +666,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.7 Activate policy (published → active)
-
-**`PATCH /policies/:id/activate`**
-
-**Roles:** policy owner (planner) or admin  
-**Condition:** Policy status must be `published`. Current date must be within `startDate` and `endDate`.
-
-**Response (200 OK):**
-
-```json
-{
-  "status": "success",
-  "data": { "id": "...", "status": "active" },
-  "message": "Policy activated successfully. Voting is now open.",
-  "timestamp": "..."
-}
-```
-
-### 3.8 Pause policy (active → paused)
+### 3.7 Pause policy (active → paused)
 
 **`PATCH /policies/:id/pause`**
 
@@ -703,7 +684,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.9 Resume policy (paused → active)
+### 3.8 Resume policy (paused → active)
 
 **`PATCH /policies/:id/resume`**
 
@@ -721,7 +702,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.10 Close policy (active/paused → closed)
+### 3.9 Close policy (active/paused → closed)
 
 **`POST /policies/:id/close`**
 
@@ -739,7 +720,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.11 Extend policy end date
+### 3.10 Extend policy end date
 
 **`PATCH /policies/:id/extend`**
 
@@ -771,7 +752,7 @@ Query parameters (all optional):
 | 400    | `VALIDATION_ERROR` | `"New end date cannot be in the past"`                 |
 | 403    | `FORBIDDEN`        | `"Only active or paused policies can change end date"` |
 
-### 3.12 Delete policy (draft or published only)
+### 3.11 Delete policy (draft or published only)
 
 **`DELETE /policies/:id`**
 
@@ -789,7 +770,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.13 Clone policy
+### 3.12 Clone policy
 
 **`POST /policies/:id/clone`**
 
@@ -815,7 +796,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.14 Archive a policy (soft delete)
+### 3.13 Archive a policy (soft delete)
 
 **`PATCH /policies/:id/archive`**
 
@@ -850,7 +831,7 @@ Query parameters (all optional):
 | 403    | `FORBIDDEN`        | `"You do not have permission to archive this policy"`               |
 | 404    | `NOT_FOUND`        | `"Policy not found"`                                                |
 
-### 3.15 Restore an archived policy
+### 3.14 Restore an archived policy
 
 **`PATCH /policies/:id/restore`**
 
@@ -885,7 +866,7 @@ Query parameters (all optional):
 | 403    | `FORBIDDEN`        | `"You do not have permission to restore this policy"`                          |
 | 404    | `NOT_FOUND`        | `"Policy not found"`                                                           |
 
-### 3.16 Policy history
+### 3.15 Policy history
 
 **`GET /policies/:id/history`**
 
@@ -922,7 +903,7 @@ Query parameters (all optional):
 }
 ```
 
-### 3.17 Suggest topics for a policy (AI‑assisted)
+### 3.16 Suggest topics for a policy (AI‑assisted)
 
 **`POST /policies/suggest-topics`**
 
