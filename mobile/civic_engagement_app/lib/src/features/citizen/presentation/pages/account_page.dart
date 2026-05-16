@@ -30,6 +30,7 @@ class _AccountPageState extends State<AccountPage> {
   final _locationService = LocationService();
   bool _isDetectingLocation = false;
   bool _logoutAfterPhoneVerify = false;
+  String _selectedLanguage = 'en';
 
   @override
   void dispose() {
@@ -54,11 +55,17 @@ class _AccountPageState extends State<AccountPage> {
             _regionController.text != state.profile!.region) {
           _regionController.text = state.profile!.region;
         }
+        if (state.profile != null &&
+            _selectedLanguage != state.profile!.preferredLanguage) {
+          _selectedLanguage = state.profile!.preferredLanguage;
+        }
         if (state.actionStatus == RequestStatus.success &&
             state.message != null) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text(state.message!), backgroundColor: Colors.green.shade600));
+          ).showSnackBar(SnackBar(
+              content: Text(state.message!),
+              backgroundColor: Colors.green.shade600));
           _currentPasswordController.clear();
           _newPasswordController.clear();
           _emailCodeController.clear();
@@ -73,7 +80,9 @@ class _AccountPageState extends State<AccountPage> {
           _logoutAfterPhoneVerify = false;
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(SnackBar(content: Text(state.message!), backgroundColor: Colors.redAccent));
+          ).showSnackBar(SnackBar(
+              content: Text(state.message!),
+              backgroundColor: Colors.redAccent));
         }
       },
       builder: (context, state) {
@@ -97,7 +106,8 @@ class _AccountPageState extends State<AccountPage> {
 
   Widget _body(BuildContext context, ProfileState state) {
     if (state.status == RequestStatus.loading && state.profile == null) {
-      return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+      return const Center(
+          child: CircularProgressIndicator(color: AppTheme.primary));
     }
 
     if (state.status == RequestStatus.failure && state.profile == null) {
@@ -109,7 +119,8 @@ class _AccountPageState extends State<AccountPage> {
 
     final profile = state.profile;
     if (profile == null) {
-      return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+      return const Center(
+          child: CircularProgressIndicator(color: AppTheme.primary));
     }
 
     final busy = state.actionStatus == RequestStatus.loading;
@@ -152,26 +163,79 @@ class _AccountPageState extends State<AccountPage> {
                       const SizedBox(height: 4),
                       Row(
                         children: [
-                          Icon(Icons.location_on_rounded, size: 14, color: AppTheme.mutedText.withValues(alpha: 0.8)),
+                          Icon(Icons.location_on_rounded,
+                              size: 14,
+                              color: AppTheme.mutedText.withValues(alpha: 0.8)),
                           const SizedBox(width: 4),
                           Text(
                             profile.region,
-                            style: const TextStyle(color: AppTheme.mutedText, fontWeight: FontWeight.w600, fontSize: 13),
+                            style: const TextStyle(
+                                color: AppTheme.mutedText,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13),
                           ),
                           const SizedBox(width: 8),
                           if (profile.verified) ...[
-                            Icon(Icons.verified_rounded, size: 14, color: Colors.blue.shade600),
+                            Icon(Icons.verified_rounded,
+                                size: 14, color: Colors.blue.shade600),
                             const SizedBox(width: 2),
-                            Text('Verified', style: TextStyle(color: Colors.blue.shade600, fontWeight: FontWeight.w700, fontSize: 13)),
+                            Text('Verified',
+                                style: TextStyle(
+                                    color: Colors.blue.shade600,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13)),
                           ] else ...[
-                            Icon(Icons.pending_actions_rounded, size: 14, color: Colors.orange.shade600),
+                            Icon(Icons.pending_actions_rounded,
+                                size: 14, color: Colors.orange.shade600),
                             const SizedBox(width: 2),
-                            Text('Unverified', style: TextStyle(color: Colors.orange.shade600, fontWeight: FontWeight.w700, fontSize: 13)),
+                            Text('Unverified',
+                                style: TextStyle(
+                                    color: Colors.orange.shade600,
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 13)),
                           ],
                         ],
                       ),
                     ],
                   ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          AppCard(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const _SectionTitle(
+                  icon: Icons.translate_rounded,
+                  title: 'Language',
+                ),
+                const SizedBox(height: 12),
+                DropdownButtonFormField<String>(
+                  value: _selectedLanguage,
+                  decoration: const InputDecoration(
+                    labelText: 'Preferred translation language',
+                    prefixIcon: Icon(Icons.language_rounded),
+                  ),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  items: const [
+                    DropdownMenuItem(value: 'en', child: Text('English')),
+                    DropdownMenuItem(value: 'am', child: Text('Amharic')),
+                    DropdownMenuItem(value: 'om', child: Text('Oromo')),
+                    DropdownMenuItem(value: 'ti', child: Text('Tigrinya')),
+                  ],
+                  onChanged: busy
+                      ? null
+                      : (value) {
+                          if (value == null || value == _selectedLanguage) {
+                            return;
+                          }
+                          setState(() => _selectedLanguage = value);
+                          context
+                              .read<ProfileCubit>()
+                              .updatePreferredLanguage(value);
+                        },
                 ),
               ],
             ),
@@ -350,7 +414,8 @@ class _AccountPageState extends State<AccountPage> {
                               borderRadius: BorderRadius.circular(16),
                               boxShadow: [
                                 BoxShadow(
-                                  color: AppTheme.primary.withValues(alpha: 0.3),
+                                  color:
+                                      AppTheme.primary.withValues(alpha: 0.3),
                                   blurRadius: 8,
                                   offset: const Offset(0, 4),
                                 )
@@ -460,7 +525,8 @@ class _AccountPageState extends State<AccountPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _SectionTitle(icon: Icons.logout_rounded, title: 'Session'),
+                const _SectionTitle(
+                    icon: Icons.logout_rounded, title: 'Session'),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
                   onPressed: () => context.read<AuthCubit>().logout(),
@@ -475,8 +541,10 @@ class _AccountPageState extends State<AccountPage> {
                   label: const Text('Delete account'),
                   style: TextButton.styleFrom(
                     foregroundColor: Colors.redAccent,
-                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 16),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16)),
                   ),
                 ),
               ],
@@ -551,7 +619,8 @@ class _AccountPageState extends State<AccountPage> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Delete account?', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: const Text('Delete account?',
+            style: TextStyle(fontWeight: FontWeight.w800)),
         content: const Text(
           'Your account will be anonymized and deactivated. This cannot be undone.',
           style: TextStyle(color: AppTheme.mutedText),
@@ -559,12 +628,14 @@ class _AccountPageState extends State<AccountPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel', style: TextStyle(fontWeight: FontWeight.w700)),
+            child: const Text('Cancel',
+                style: TextStyle(fontWeight: FontWeight.w700)),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Delete', style: TextStyle(fontWeight: FontWeight.w800)),
+            child: const Text('Delete',
+                style: TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),
@@ -627,7 +698,10 @@ class _SectionTitle extends StatelessWidget {
           title,
           style: Theme.of(
             context,
-          ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900, fontSize: 18),
+          )
+              .textTheme
+              .titleMedium
+              ?.copyWith(fontWeight: FontWeight.w900, fontSize: 18),
         ),
       ],
     );

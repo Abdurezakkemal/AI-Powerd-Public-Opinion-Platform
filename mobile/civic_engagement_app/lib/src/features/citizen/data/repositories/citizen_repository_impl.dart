@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../../../core/error/api_exception.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/json_export_saver.dart';
 import '../../../../core/session/session_store.dart';
@@ -39,6 +40,15 @@ class CitizenRepositoryImpl implements CitizenRepository {
     final response = await _apiClient.put(
       '/users/me',
       body: {'region': region.trim()},
+    );
+    return UserProfileModel.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<UserProfile> updatePreferredLanguage(String preferredLanguage) async {
+    final response = await _apiClient.put(
+      '/users/me',
+      body: {'preferredLanguage': preferredLanguage.trim()},
     );
     return UserProfileModel.fromJson(response.data as Map<String, dynamic>);
   }
@@ -299,6 +309,44 @@ class CitizenRepositoryImpl implements CitizenRepository {
   }
 
   @override
+  Future<String> translateText({
+    required String text,
+    String? sourceLang,
+    String? targetLang,
+  }) async {
+    try {
+      final response = await _apiClient.post(
+        '/translate',
+        body: {
+          'text': text.trim(),
+          if (sourceLang != null && sourceLang.trim().isNotEmpty)
+            'sourceLang': sourceLang.trim(),
+          if (targetLang != null && targetLang.trim().isNotEmpty)
+            'targetLang': targetLang.trim(),
+        },
+      );
+      final data = response.data as Map<String, dynamic>? ?? {};
+      return data['translatedText']?.toString() ??
+          data['translation']?.toString() ??
+          '';
+    } on ApiException catch (error) {
+      final normalized = error.message.toLowerCase();
+      if (normalized.contains('translation') &&
+          (normalized.contains('not configured') ||
+              normalized.contains('unavailable') ||
+              normalized.contains('service'))) {
+        throw ApiException(
+          code: error.code,
+          statusCode: error.statusCode,
+          message:
+              'Translation is temporarily unavailable. Please try again later.',
+        );
+      }
+      rethrow;
+    }
+  }
+
+  @override
   Future<CommentPage> getCommentReplies({
     required String commentId,
     int page = 1,
@@ -385,6 +433,9 @@ class CitizenRepositoryImpl implements CitizenRepository {
     String? email,
     String? phone,
     String? region,
+    String? proofFileBase64,
+    String? proofFileName,
+    String? proofFileMimeType,
   }) async {
     final body = <String, dynamic>{
       'reason': reason.trim(),
@@ -406,6 +457,16 @@ class CitizenRepositoryImpl implements CitizenRepository {
         body[key] = trimmed;
       }
     });
+    final trimmedProof = proofFileBase64?.trim();
+    if (trimmedProof != null && trimmedProof.isNotEmpty) {
+      body['proofFile'] = trimmedProof;
+      if (proofFileName != null && proofFileName.trim().isNotEmpty) {
+        body['proofFileName'] = proofFileName.trim();
+      }
+      if (proofFileMimeType != null && proofFileMimeType.trim().isNotEmpty) {
+        body['proofFileMimeType'] = proofFileMimeType.trim();
+      }
+    }
     final response = await _apiClient.post(
       '/planners/request',
       body: body,

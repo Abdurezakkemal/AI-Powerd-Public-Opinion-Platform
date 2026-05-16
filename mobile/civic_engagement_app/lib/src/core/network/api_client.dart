@@ -197,6 +197,17 @@ class ApiClient {
   }
 
   ApiException _errorFrom(dynamic decoded, int statusCode) {
+    if (statusCode == 429) {
+      final parsed = _messageFrom(decoded);
+      return ApiException(
+        code: _codeFrom(decoded) ?? 'RATE_LIMIT_EXCEEDED',
+        message: parsed.isEmpty
+            ? 'Too many requests. Please wait and try again.'
+            : parsed,
+        statusCode: statusCode,
+      );
+    }
+
     if (decoded is Map<String, dynamic>) {
       final error = decoded['error'];
       if (error is Map<String, dynamic>) {
@@ -214,6 +225,29 @@ class ApiClient {
       );
     }
     return ApiException(message: 'Request failed.', statusCode: statusCode);
+  }
+
+  String _messageFrom(dynamic decoded) {
+    if (decoded is Map<String, dynamic>) {
+      final error = decoded['error'];
+      if (error is Map<String, dynamic>) {
+        return error['message']?.toString() ?? '';
+      }
+      return decoded['message']?.toString() ??
+          decoded['detail']?.toString() ??
+          '';
+    }
+    return '';
+  }
+
+  String? _codeFrom(dynamic decoded) {
+    if (decoded is Map<String, dynamic>) {
+      final error = decoded['error'];
+      if (error is Map<String, dynamic>) {
+        return error['code']?.toString();
+      }
+    }
+    return null;
   }
 
   Uri _uri(String baseUrl, String path, Map<String, dynamic>? query) {

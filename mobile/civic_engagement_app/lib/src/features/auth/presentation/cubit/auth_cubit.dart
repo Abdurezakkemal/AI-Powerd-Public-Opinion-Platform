@@ -53,6 +53,7 @@ class AuthCubit extends Cubit<AuthState> {
     required String phone,
     required String region,
     required UserDemographics demographics,
+    String? captchaToken,
   }) async {
     emit(const AuthState.loading());
     try {
@@ -62,6 +63,7 @@ class AuthCubit extends Cubit<AuthState> {
         phone: phone,
         region: region,
         demographics: demographics,
+        captchaToken: captchaToken,
       );
       emit(AuthState.otpPending(email: email, message: result.message));
     } on ApiException catch (error) {
@@ -91,10 +93,18 @@ class AuthCubit extends Cubit<AuthState> {
     }
   }
 
-  Future<void> login({required String email, required String password}) async {
+  Future<void> login({
+    required String email,
+    required String password,
+    String? captchaToken,
+  }) async {
     emit(const AuthState.loading());
     try {
-      final session = await _repository.login(email: email, password: password);
+      final session = await _repository.login(
+        email: email,
+        password: password,
+        captchaToken: captchaToken,
+      );
       // Connect WebSocket after successful login
       _connectSocket(session);
       emit(AuthState.authenticated(session));

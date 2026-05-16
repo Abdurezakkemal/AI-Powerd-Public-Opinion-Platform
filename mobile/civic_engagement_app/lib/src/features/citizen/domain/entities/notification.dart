@@ -3,8 +3,11 @@ import 'package:equatable/equatable.dart';
 /// Notification types as per backend API Section 12.3
 enum NotificationType {
   policyActivated('POLICY_ACTIVATED'),
+  policyAutoActivated('POLICY_AUTO_ACTIVATED'),
   policyClosed('POLICY_CLOSED'),
+  policyAutoClosed('POLICY_AUTO_CLOSED'),
   policyExtended('POLICY_EXTENDED'),
+  policyLifecycle('POLICY_LIFECYCLE'),
   associateAssigned('ASSOCIATE_ASSIGNED'),
   associatePermissionsUpdated('ASSOCIATE_PERMISSIONS_UPDATED'),
   associateRevoked('ASSOCIATE_REVOKED'),
@@ -16,7 +19,10 @@ enum NotificationType {
   voteSurge('VOTE_SURGE'),
   ratingDrop('RATING_DROP'),
   emergingTopic('EMERGING_TOPIC'),
-  plannerApproved('PLANNER_APPROVED');
+  plannerApproved('PLANNER_APPROVED'),
+  plannerRequestApproved('PLANNER_REQUEST_APPROVED'),
+  accountDeletionConfirmed('ACCOUNT_DELETION_CONFIRMED'),
+  unknown('UNKNOWN');
 
   final String value;
   const NotificationType(this.value);
@@ -24,7 +30,7 @@ enum NotificationType {
   static NotificationType fromString(String value) {
     return NotificationType.values.firstWhere(
       (type) => type.value == value,
-      orElse: () => NotificationType.policyActivated,
+      orElse: () => NotificationType.unknown,
     );
   }
 }

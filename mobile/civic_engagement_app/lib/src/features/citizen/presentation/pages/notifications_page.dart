@@ -45,7 +45,8 @@ class NotificationsPage extends StatelessWidget {
           builder: (context, state) {
             if (state.status == RequestStatus.loading &&
                 state.notifications.isEmpty) {
-              return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+              return const Center(
+                  child: CircularProgressIndicator(color: AppTheme.primary));
             }
 
             if (state.status == RequestStatus.failure &&
@@ -242,19 +243,33 @@ class _NotificationCard extends StatelessWidget {
 IconData _iconForType(String type, bool read) {
   switch (type) {
     case 'POLICY_ACTIVATED':
+    case 'POLICY_AUTO_ACTIVATED':
       return Icons.play_circle_outline_rounded;
     case 'POLICY_CLOSED':
+    case 'POLICY_AUTO_CLOSED':
       return Icons.lock_clock_rounded;
     case 'POLICY_EXTENDED':
+    case 'POLICY_LIFECYCLE':
       return Icons.event_repeat_rounded;
+    case 'ASSOCIATE_ASSIGNED':
+    case 'ASSOCIATE_PERMISSIONS_UPDATED':
+    case 'ASSOCIATE_REVOKED':
+      return Icons.group_add_outlined;
     case 'COMMENT_REPLY':
       return Icons.reply_rounded;
     case 'COMMENT_FLAGGED':
       return Icons.flag_outlined;
+    case 'COMMENT_APPEAL':
+      return Icons.rate_review_outlined;
     case 'APPEAL_RESOLVED':
       return Icons.gavel_rounded;
     case 'PLANNER_APPROVED':
+    case 'PLANNER_REQUEST_APPROVED':
       return Icons.verified_user_outlined;
+    case 'VOTE_SURGE':
+    case 'RATING_DROP':
+    case 'EMERGING_TOPIC':
+      return Icons.monitor_heart_outlined;
     default:
       return read
           ? Icons.notifications_none_rounded

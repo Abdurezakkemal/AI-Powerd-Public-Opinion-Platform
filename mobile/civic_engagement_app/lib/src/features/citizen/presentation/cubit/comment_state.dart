@@ -18,12 +18,16 @@ class CommentLoaded extends CommentState {
     required this.total,
     required this.page,
     required this.hasMore,
+    this.translatedComments = const {},
+    this.translatingCommentId,
   });
 
   final List<Comment> comments;
   final int total;
   final int page;
   final bool hasMore;
+  final Map<String, String> translatedComments;
+  final String? translatingCommentId;
 }
 
 class CommentError extends CommentState {
@@ -38,6 +42,7 @@ class CommentPosting extends CommentLoaded {
     required super.total,
     required super.page,
     required super.hasMore,
+    super.translatedComments,
   });
 }
 
@@ -53,6 +58,7 @@ class CommentReporting extends CommentLoaded {
     required super.total,
     required super.page,
     required super.hasMore,
+    super.translatedComments,
   });
 }
 
@@ -68,6 +74,7 @@ class CommentEditing extends CommentLoaded {
     required super.total,
     required super.page,
     required super.hasMore,
+    super.translatedComments,
   });
 }
 
@@ -83,11 +90,19 @@ class CommentAppealing extends CommentLoaded {
     required super.total,
     required super.page,
     required super.hasMore,
+    super.translatedComments,
   });
 }
 
-class CommentAppealed extends CommentState {
-  const CommentAppealed(this.message);
+class CommentAppealed extends CommentLoaded {
+  const CommentAppealed({
+    required this.message,
+    required super.comments,
+    required super.total,
+    required super.page,
+    required super.hasMore,
+    super.translatedComments,
+  });
 
   final String message;
 }

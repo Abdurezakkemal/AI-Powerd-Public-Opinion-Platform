@@ -32,6 +32,7 @@ class _AuthPageState extends State<AuthPage> {
   final _passwordController = TextEditingController();
   final _phoneController = TextEditingController();
   final _regionController = TextEditingController();
+  final _captchaController = TextEditingController();
   final _otpController = TextEditingController();
   final _resetTokenController = TextEditingController();
   final _newPasswordController = TextEditingController();
@@ -57,6 +58,7 @@ class _AuthPageState extends State<AuthPage> {
     _passwordController.dispose();
     _phoneController.dispose();
     _regionController.dispose();
+    _captchaController.dispose();
     _otpController.dispose();
     _resetTokenController.dispose();
     _newPasswordController.dispose();
@@ -148,6 +150,7 @@ class _AuthPageState extends State<AuthPage> {
                             key: const ValueKey('login'),
                             emailController: _emailController,
                             passwordController: _passwordController,
+                            captchaController: _captchaController,
                             loading: state.isBusy,
                             onSubmit: _login,
                           ),
@@ -157,6 +160,7 @@ class _AuthPageState extends State<AuthPage> {
                             passwordController: _passwordController,
                             phoneController: _phoneController,
                             regionController: _regionController,
+                            captchaController: _captchaController,
                             selectedAgeRange: _selectedAgeRange,
                             selectedGender: _selectedGender,
                             selectedOccupation: _selectedOccupation,
@@ -211,6 +215,7 @@ class _AuthPageState extends State<AuthPage> {
     context.read<AuthCubit>().login(
           email: _emailController.text,
           password: _passwordController.text,
+          captchaToken: _captchaController.text,
         );
   }
 
@@ -257,6 +262,7 @@ class _AuthPageState extends State<AuthPage> {
           password: _passwordController.text,
           phone: _phoneController.text,
           region: _regionController.text,
+          captchaToken: _captchaController.text,
           demographics: UserDemographics(
             ageRange: _selectedAgeRange!,
             gender: _selectedGender!,
@@ -411,6 +417,7 @@ class _LoginForm extends StatelessWidget {
   const _LoginForm({
     required this.emailController,
     required this.passwordController,
+    required this.captchaController,
     required this.loading,
     required this.onSubmit,
     super.key,
@@ -418,6 +425,7 @@ class _LoginForm extends StatelessWidget {
 
   final TextEditingController emailController;
   final TextEditingController passwordController;
+  final TextEditingController captchaController;
   final bool loading;
   final VoidCallback onSubmit;
 
@@ -440,6 +448,13 @@ class _LoginForm extends StatelessWidget {
           icon: Icons.lock_outline_rounded,
           obscureText: true,
         ),
+        const SizedBox(height: 12),
+        AppTextField(
+          controller: captchaController,
+          label: 'CAPTCHA token',
+          hint: 'Required only when enabled by the server',
+          icon: Icons.security_rounded,
+        ),
         const SizedBox(height: 18),
         AppButton(
           label: 'Login',
@@ -458,6 +473,7 @@ class _RegisterForm extends StatelessWidget {
     required this.passwordController,
     required this.phoneController,
     required this.regionController,
+    required this.captchaController,
     required this.selectedAgeRange,
     required this.selectedGender,
     required this.selectedOccupation,
@@ -477,6 +493,7 @@ class _RegisterForm extends StatelessWidget {
   final TextEditingController passwordController;
   final TextEditingController phoneController;
   final TextEditingController regionController;
+  final TextEditingController captchaController;
   final String? selectedAgeRange;
   final String? selectedGender;
   final String? selectedOccupation;
@@ -515,6 +532,13 @@ class _RegisterForm extends StatelessWidget {
           hint: '+251912345678',
           icon: Icons.phone_iphone_rounded,
           keyboardType: TextInputType.phone,
+        ),
+        const SizedBox(height: 12),
+        AppTextField(
+          controller: captchaController,
+          label: 'CAPTCHA token',
+          hint: 'Required only when enabled by the server',
+          icon: Icons.security_rounded,
         ),
         const SizedBox(height: 12),
         Container(

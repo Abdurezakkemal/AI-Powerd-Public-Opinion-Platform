@@ -45,6 +45,7 @@ class CommentCubit extends Cubit<CommentState> {
   List<CommentWithReplies> _allComments = [];
   int _currentPage = 1;
   int _total = 0;
+  final Map<String, String> _translatedComments = {};
 
   Future<void> loadComments({
     required String policyId,
@@ -83,6 +84,7 @@ class CommentCubit extends Cubit<CommentState> {
           total: _total,
           page: _currentPage,
           hasMore: _allComments.length < _total,
+          translatedComments: Map.unmodifiable(_translatedComments),
         ),
       );
     } catch (e) {
@@ -114,6 +116,7 @@ class CommentCubit extends Cubit<CommentState> {
           total: _total,
           page: _currentPage,
           hasMore: _allComments.length < _total,
+          translatedComments: Map.unmodifiable(_translatedComments),
         ),
       );
     } catch (e) {
@@ -217,6 +220,7 @@ class CommentCubit extends Cubit<CommentState> {
       total: _total,
       page: _currentPage,
       hasMore: _allComments.length < _total,
+      translatedComments: Map.unmodifiable(_translatedComments),
     );
   }
 
@@ -312,6 +316,7 @@ class CommentCubit extends Cubit<CommentState> {
   Future<void> appealComment({
     required String commentId,
     required String reason,
+    String? policyId,
   }) async {
     emit(
       CommentAppealing(
@@ -319,6 +324,7 @@ class CommentCubit extends Cubit<CommentState> {
         total: _total,
         page: _currentPage,
         hasMore: _allComments.length < _total,
+        translatedComments: Map.unmodifiable(_translatedComments),
       ),
     );
 
@@ -327,9 +333,28 @@ class CommentCubit extends Cubit<CommentState> {
         commentId: commentId,
         reason: reason,
       );
-      emit(CommentAppealed(message));
+      emit(
+        CommentAppealed(
+          message: message,
+          comments: _currentLoadedState().comments,
+          total: _total,
+          page: _currentPage,
+          hasMore: _allComments.length < _total,
+          translatedComments: Map.unmodifiable(_translatedComments),
+        ),
+      );
+      if (policyId != null) {
+        await loadComments(policyId: policyId, refresh: true);
+      }
     } catch (e) {
       emit(CommentError(e.toString()));
     }
+  }
+
+  Future<String> translateText({
+    required String text,
+    required String targetLang,
+  }) {
+    return _repository.translateText(text: text, targetLang: targetLang);
   }
 }

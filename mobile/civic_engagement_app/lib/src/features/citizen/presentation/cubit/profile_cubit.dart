@@ -46,6 +46,29 @@ class ProfileCubit extends Cubit<ProfileState> {
     }
   }
 
+  Future<void> updatePreferredLanguage(String preferredLanguage) async {
+    emit(state.copyWith(actionStatus: RequestStatus.loading));
+    try {
+      final profile = await _repository.updatePreferredLanguage(
+        preferredLanguage,
+      );
+      emit(
+        state.copyWith(
+          profile: profile,
+          actionStatus: RequestStatus.success,
+          message: 'Preferred language updated successfully.',
+        ),
+      );
+    } on ApiException catch (error) {
+      emit(
+        state.copyWith(
+          actionStatus: RequestStatus.failure,
+          message: error.message,
+        ),
+      );
+    }
+  }
+
   Future<void> changePassword({
     required String currentPassword,
     required String newPassword,

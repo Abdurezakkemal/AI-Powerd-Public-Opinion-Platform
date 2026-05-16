@@ -17,6 +17,9 @@ class PlannerRequestCubit extends Cubit<PlannerRequestState> {
     String? email,
     String? phone,
     String? region,
+    String? proofFileBase64,
+    String? proofFileName,
+    String? proofFileMimeType,
   }) async {
     emit(const PlannerRequestLoading());
     try {
@@ -28,6 +31,9 @@ class PlannerRequestCubit extends Cubit<PlannerRequestState> {
         email: email,
         phone: phone,
         region: region,
+        proofFileBase64: proofFileBase64,
+        proofFileName: proofFileName,
+        proofFileMimeType: proofFileMimeType,
       );
       emit(
         PlannerRequestSuccess(

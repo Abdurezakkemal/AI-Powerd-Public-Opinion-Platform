@@ -11,13 +11,18 @@ abstract class AuthRepository {
     required String phone,
     required String region,
     required UserDemographics demographics,
+    String? captchaToken,
   });
 
   Future<String> sendOtp(String email);
 
   Future<AuthSession> verifyOtp({required String email, required String code});
 
-  Future<AuthSession> login({required String email, required String password});
+  Future<AuthSession> login({
+    required String email,
+    required String password,
+    String? captchaToken,
+  });
 
   Future<String> forgotPassword(String email);
 

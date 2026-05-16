@@ -8,6 +8,9 @@ class UserProfileModel extends UserProfile {
     required super.role,
     required super.verified,
     required super.active,
+    super.preferredLanguage,
+    super.fullName,
+    super.phone,
     super.createdAt,
   });
 
@@ -19,6 +22,9 @@ class UserProfileModel extends UserProfile {
       role: json['role']?.toString() ?? '',
       verified: json['verified'] == true,
       active: json['active'] != false,
+      preferredLanguage: json['preferredLanguage']?.toString() ?? 'en',
+      fullName: (json['fullName'] ?? json['name'])?.toString(),
+      phone: (json['phone'] ?? json['phoneNumber'])?.toString(),
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
     );
   }

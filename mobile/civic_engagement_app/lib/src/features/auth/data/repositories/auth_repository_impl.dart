@@ -22,7 +22,9 @@ class AuthRepositoryImpl implements AuthRepository {
     required String phone,
     required String region,
     required UserDemographics demographics,
+    String? captchaToken,
   }) async {
+    final trimmedCaptcha = captchaToken?.trim();
     final response = await _apiClient.post(
       '/auth/register',
       authenticated: false,
@@ -35,6 +37,8 @@ class AuthRepositoryImpl implements AuthRepository {
         'gender': demographics.gender,
         'occupation': demographics.occupation,
         'education': demographics.education,
+        if (trimmedCaptcha != null && trimmedCaptcha.isNotEmpty)
+          'captchaToken': trimmedCaptcha,
       },
     );
     final data = response.data as Map<String, dynamic>? ?? {};
@@ -71,11 +75,18 @@ class AuthRepositoryImpl implements AuthRepository {
   Future<AuthSession> login({
     required String email,
     required String password,
+    String? captchaToken,
   }) async {
+    final trimmedCaptcha = captchaToken?.trim();
     final response = await _apiClient.post(
       '/auth/login',
       authenticated: false,
-      body: {'email': email.trim(), 'password': password},
+      body: {
+        'email': email.trim(),
+        'password': password,
+        if (trimmedCaptcha != null && trimmedCaptcha.isNotEmpty)
+          'captchaToken': trimmedCaptcha,
+      },
     );
     return _saveSession(response.data as Map<String, dynamic>? ?? {});
   }

@@ -14,6 +14,8 @@ abstract class CitizenRepository {
 
   Future<UserProfile> updateRegion(String region);
 
+  Future<UserProfile> updatePreferredLanguage(String preferredLanguage);
+
   Future<String> changePassword({
     required String currentPassword,
     required String newPassword,
@@ -92,6 +94,12 @@ abstract class CitizenRepository {
   // NEW: Get single comment by ID (Section 4.4)
   Future<Comment> getComment(String commentId);
 
+  Future<String> translateText({
+    required String text,
+    String? sourceLang,
+    String? targetLang,
+  });
+
   // NEW: Get replies for a comment
   Future<CommentPage> getCommentReplies({
     required String commentId,
@@ -120,6 +128,9 @@ abstract class CitizenRepository {
     String? email,
     String? phone,
     String? region,
+    String? proofFileBase64,
+    String? proofFileName,
+    String? proofFileMimeType,
   });
 
   // Personalized Feed (Section 13)
