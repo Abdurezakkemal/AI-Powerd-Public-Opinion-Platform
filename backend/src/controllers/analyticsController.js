@@ -235,7 +235,12 @@ exports.getAnalytics = async (req, res) => {
       const agg = await getPollTypeAggregation(policy, voteFilter);
       const comms = await Comment.find({
         policyId: policy._id,
-        moderationStatus: "none",
+        visibility: "visible",
+        aiStatus: "processed",
+        $or: [
+          { "reviewFlags.sentimentReviewNeeded": false },
+          { "sentiment.overriddenByModerator": true },
+        ],
       }).lean();
       return [agg, comms];
     });
@@ -486,11 +491,18 @@ exports.getTimeseries = async (req, res) => {
     }
 
     // ---------- COMMENT AGGREGATION (sentiment + keywords) ----------
-    const commentFilter = { policyId: policy._id, moderationStatus: "none" };
+    const commentFilter = {
+      policyId: policy._id,
+      visibility: "visible",
+      aiStatus: "processed",
+      $or: [
+        { "reviewFlags.sentimentReviewNeeded": false },
+        { "sentiment.overriddenByModerator": true },
+      ],
+    };
     if (start) commentFilter.createdAt = { $gte: start };
     if (end)
       commentFilter.createdAt = { ...commentFilter.createdAt, $lte: end };
-
     const commentPipeline = [
       { $match: commentFilter },
       {
@@ -790,7 +802,15 @@ exports.getDemographicBreakdown = async (req, res) => {
     }
 
     // ----- Comment aggregation (sentiment + keywords) -----
-    const commentFilter = { policyId: policy._id, moderationStatus: "none" };
+    const commentFilter = {
+      policyId: policy._id,
+      visibility: "visible",
+      aiStatus: "processed",
+      $or: [
+        { "reviewFlags.sentimentReviewNeeded": false },
+        { "sentiment.overriddenByModerator": true },
+      ],
+    };
     if (start) commentFilter.createdAt = { $gte: start };
     if (end)
       commentFilter.createdAt = { ...commentFilter.createdAt, $lte: end };
@@ -1030,8 +1050,35 @@ exports.getComments = async (req, res) => {
     if (parentCommentId === "null") filter.parentCommentId = null;
     else if (parentCommentId) filter.parentCommentId = parentCommentId;
     if (sentiment) filter["sentiment.label"] = sentiment;
-    if (status) filter.moderationStatus = status; // map frontend "status" query to moderationStatus
     if (language) filter.language = language;
+
+    // Map old status parameter to new fields
+    if (status) {
+      if (status === "none") {
+        filter.visibility = "visible";
+        filter.aiStatus = "processed";
+        filter.$or = [
+          { "reviewFlags.sentimentReviewNeeded": false },
+          { "sentiment.overriddenByModerator": true },
+        ];
+      } else if (status === "needs_review") {
+        filter.visibility = "visible";
+        filter.aiStatus = "processed";
+        filter["reviewFlags.sentimentReviewNeeded"] = true;
+      } else if (status === "pending_ai") {
+        filter.aiStatus = "pending";
+      } else if (status === "flagged") {
+        filter.reportState = { $in: ["reported", "under_review"] };
+      }
+    } else {
+      // Default: show only approved comments (visible, processed, and either high confidence or overridden)
+      filter.visibility = "visible";
+      filter.aiStatus = "processed";
+      filter.$or = [
+        { "reviewFlags.sentimentReviewNeeded": false },
+        { "sentiment.overriddenByModerator": true },
+      ];
+    }
 
     const comments = await Comment.find(filter)
       .sort({ createdAt: -1 })
@@ -1042,19 +1089,34 @@ exports.getComments = async (req, res) => {
 
     const total = await Comment.countDocuments(filter);
 
-    const formatted = comments.map((c) => ({
-      id: c._id,
-      text: c.text,
-      sentiment: c.sentiment?.label,
-      confidence: c.sentiment?.confidence,
-      keywords: c.keywords,
-      moderationStatus: c.moderationStatus, // replaced status with moderationStatus
-      visibility: c.visibility,
-      isOfficialReply: c.isOfficialReply,
-      createdAt: c.createdAt,
-      userEmail: c.userId?.email,
-      isEdited: (c.editedHistory && c.editedHistory.length > 0) || false,
-    }));
+    const formatted = comments.map((c) => {
+      // Compute old moderationStatus for backward compatibility
+      let moderationStatus;
+      if (c.aiStatus === "pending") {
+        moderationStatus = "pending_ai";
+      } else if (c.aiStatus === "processed") {
+        if (c.reviewFlags?.sentimentReviewNeeded) {
+          moderationStatus = "needs_review";
+        } else {
+          moderationStatus = "none";
+        }
+      } else {
+        moderationStatus = "pending_review";
+      }
+      return {
+        id: c._id,
+        text: c.text,
+        sentiment: c.sentiment?.label,
+        confidence: c.sentiment?.confidence,
+        keywords: c.keywords,
+        moderationStatus: moderationStatus,
+        visibility: c.visibility,
+        isOfficialReply: c.isOfficialReply,
+        createdAt: c.createdAt,
+        userEmail: c.userId?.email,
+        isEdited: (c.editedHistory && c.editedHistory.length > 0) || false,
+      };
+    });
 
     return sendSuccess(
       res,
@@ -1072,7 +1134,6 @@ exports.getComments = async (req, res) => {
     );
   }
 };
-
 // ---------- Heatmap (with caching) ----------
 exports.getHeatmap = async (req, res) => {
   try {
@@ -1363,7 +1424,12 @@ exports.getHeatmap = async (req, res) => {
     // ----- COMMENT AGGREGATION (sentiment + keywords) -----
     const commentMatch = {
       policyId: policy._id,
-      moderationStatus: "none",
+      visibility: "visible",
+      aiStatus: "processed",
+      $or: [
+        { "reviewFlags.sentimentReviewNeeded": false },
+        { "sentiment.overriddenByModerator": true },
+      ],
     };
     if (start) commentMatch.createdAt = { $gte: start };
     if (end) commentMatch.createdAt = { ...commentMatch.createdAt, $lte: end };

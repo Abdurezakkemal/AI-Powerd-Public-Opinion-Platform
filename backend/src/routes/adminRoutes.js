@@ -6,6 +6,7 @@ const reportController = require("../controllers/reportController");
 const limiters = require("../config/rateLimits");
 const validateObjectId = require("../middleware/validateObjectId");
 
+// Planner management
 router.get("/planners", auth(["admin"]), adminController.listPlanners);
 router.post("/planners", auth(["admin"]), adminController.createPlanner);
 router.put(
@@ -21,41 +22,47 @@ router.put(
   adminController.updatePlannerStatus,
 );
 
+// Comment moderation – AI low confidence
 router.get(
   "/comments/pending",
   auth(["admin"]),
   adminController.getPendingComments,
 );
+// Comment moderation – reported comments
 router.get(
   "/comments/flagged",
   auth(["admin"]),
   adminController.getFlaggedComments,
 );
+// Manual override (sentiment/keywords)
 router.put(
   "/comments/:id",
   auth(["admin"]),
   validateObjectId("id"),
   adminController.updateComment,
 );
-
+// Retry (single)
 router.post(
   "/comments/:id/retry",
   auth(["admin"]),
   validateObjectId("id"),
   adminController.retryComment,
 );
+// Force retry (any comment)
 router.post(
   "/comments/:id/force-retry",
   auth(["admin"]),
   validateObjectId("id"),
   adminController.forceRetryComment,
 );
+// Bulk retry by IDs
 router.post(
   "/comments/bulk/retry-by-ids",
   auth(["admin"]),
   limiters.bulkAdmin,
   adminController.bulkRetryCommentsByIds,
 );
+// Soft delete comment
 router.delete(
   "/comments/:id",
   auth(["admin"]),
@@ -63,6 +70,30 @@ router.delete(
   adminController.deleteComment,
 );
 
+// Report management
+router.get(
+  "/comments/:commentId/reports",
+  auth(["admin"]),
+  validateObjectId("commentId"),
+  adminController.getCommentReports,
+);
+router.put(
+  "/comments/:commentId/reports/:reportId",
+  auth(["admin"]),
+  validateObjectId("commentId"),
+  adminController.resolveReport,
+);
+
+// Appeal management
+router.get("/appeals", auth(["admin"]), adminController.getAppeals);
+router.post(
+  "/appeals/:commentId/resolve",
+  auth(["admin"]),
+  validateObjectId("commentId"),
+  adminController.resolveAppeal,
+);
+
+// Citizen management
 router.get("/users/citizens", auth(["admin"]), adminController.listCitizens);
 router.put(
   "/users/:id/status",
@@ -71,6 +102,7 @@ router.put(
   adminController.updateCitizenStatus,
 );
 
+// Dashboard & reports
 router.get(
   "/dashboard/stats",
   auth(["admin"]),
@@ -85,6 +117,7 @@ router.get(
 );
 router.get("/ai/health", auth(["admin"]), reportController.getAIHealth);
 
+// Admin‑initiated password reset
 router.post(
   "/users/:id/initiate-password-reset",
   auth(["admin"]),

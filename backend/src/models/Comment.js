@@ -1,101 +1,207 @@
 const mongoose = require("mongoose");
 
-const commentSchema = new mongoose.Schema({
-  policyId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Policy",
-    required: true,
-  },
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  voteId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Vote",
-    default: null,
-  },
-  parentCommentId: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: "Comment",
-    default: null,
-  },
-  text: { type: String, required: true, maxlength: 2000 },
-  demographics: {
-    ageRange: String,
-    gender: String,
-    occupation: String,
-    education: String,
-  },
-
-  language: { type: String, default: null },
-  sentiment: {
-    label: {
+// Event schema (immutable audit trail)
+const CommentEventSchema = new mongoose.Schema(
+  {
+    type: {
       type: String,
-      enum: ["positive", "negative", "neutral"],
-      default: null,
+      enum: [],
+      required: true,
     },
-    confidence: { type: Number, default: null },
+    actor: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
+    data: { type: mongoose.Schema.Types.Mixed, default: {} },
+    createdAt: { type: Date, default: Date.now },
   },
-  // Inside commentSchema, add:
-  keywords: { type: [String], default: [] },
-  aiPrediction: { type: mongoose.Schema.Types.Mixed, default: null },
+  { _id: false },
+);
 
-  visibility: { type: String, enum: ["visible", "hidden"], default: "visible" },
-  hiddenReason: {
-    type: String,
-    enum: ["reports", "moderator", "profanity"],
-    default: null,
-  },
-
-  moderationStatus: {
-    type: String,
-    enum: ["none", "pending_ai", "needs_review", "reviewed"],
-    default: "pending_ai",
-  },
-  moderationReason: {
-    type: String,
-    enum: ["pending_ai", "low_confidence", "reports", "moderator_flag"],
-    default: "pending_ai",
-  },
-
-  reportCount: { type: Number, default: 0 },
-  reportedAt: { type: Date, default: null },
-
-  flaggedSnapshot: {
-    text: String,
-    sentiment: { label: String, confidence: Number },
-    keywords: [String],
-    capturedAt: Date,
-    reportCountAtCapture: Number,
-  },
-
-  appeal: {
-    reason: String,
+// Report subdocument
+const ReportSchema = new mongoose.Schema(
+  {
+    reporterId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    reason: { type: String, required: true, trim: true },
+    details: { type: String, default: null, trim: true },
     status: {
       type: String,
-      enum: ["pending", "resolved_approved", "resolved_rejected"],
+      enum: ["pending", "valid", "invalid", "resolved"],
+      default: "pending",
     },
-    createdAt: Date,
-    resolvedAt: Date,
-    resolvedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
-    resolutionNote: String,
-  },
-
-  editedHistory: [
-    {
+    createdAt: { type: Date, default: Date.now },
+    resolvedAt: { type: Date, default: null },
+    resolvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    moderatorNotes: { type: String, default: null },
+    snapshot: {
       text: String,
       sentiment: { label: String, confidence: Number },
       keywords: [String],
-      editedAt: Date,
+      visibility: String,
+      aiStatus: String,
+      reportCount: Number,
     },
-  ],
+  },
+  { _id: true },
+);
 
-  retryCount: { type: Number, default: 0 },
-  nextRetry: { type: Date, default: null },
-  lastRetryTriggeredBy: { type: String, default: null },
+// Appeal subdocument (single)
+const AppealSchema = new mongoose.Schema(
+  {
+    appellantId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+    },
+    reason: { type: String, required: true, trim: true },
+    details: { type: String, default: null, trim: true },
+    status: {
+      type: String,
+      enum: ["pending", "approved", "rejected"],
+      default: "pending",
+    },
+    createdAt: { type: Date, default: Date.now },
+    resolvedAt: { type: Date, default: null },
+    resolvedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    moderatorNotes: { type: String, default: null },
+    snapshot: {
+      text: String,
+      visibility: String,
+      reportState: String,
+      reportCount: Number,
+    },
+  },
+  { _id: true },
+);
 
-  isOfficialReply: { type: Boolean, default: false },
+// Main comment schema
+const CommentSchema = new mongoose.Schema(
+  {
+    userId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      index: true,
+    },
+    policyId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Policy",
+      required: true,
+      index: true,
+    },
+    parentCommentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Comment",
+      default: null,
+    },
 
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now },
-});
+    text: { type: String, required: true, trim: true, maxlength: 5000 },
+    language: { type: String, default: null },
+    editedAt: { type: Date, default: null },
+    editCount: { type: Number, default: 0 },
 
-module.exports = mongoose.model("Comment", commentSchema);
+    // AI layer
+    aiStatus: {
+      type: String,
+      enum: ["pending", "processed", "failed", "stale"],
+      default: "pending",
+      index: true,
+    },
+    sentiment: {
+      label: {
+        type: String,
+        enum: ["positive", "negative", "neutral"],
+        default: null,
+      },
+      confidence: { type: Number, default: null },
+      overriddenByModerator: { type: Boolean, default: false },
+    },
+    keywords: { type: [String], default: [] },
+    aiAnalysis: {
+      raw: { type: mongoose.Schema.Types.Mixed, default: null },
+      version: { type: String, default: null },
+      analyzedAt: { type: Date, default: null },
+    },
+
+    // Reporting layer
+    reportState: {
+      type: String,
+      enum: ["clean", "reported", "under_review", "actioned"],
+      default: "clean",
+      index: true,
+    },
+    reportCount: { type: Number, default: 0 },
+    reports: { type: [ReportSchema], default: [] },
+
+    // Appeal layer (single)
+    appeal: { type: AppealSchema, default: null },
+
+    // Moderation layer
+    visibility: {
+      type: String,
+      enum: ["visible", "hidden", "deleted"],
+      default: "visible",
+    },
+    moderationActions: [
+      {
+        action: {
+          type: String,
+          enum: [
+            "hide",
+            "restore",
+            "delete",
+            "override_sentiment",
+            "override_keywords",
+            "reject_appeal",
+          ],
+        },
+        reason: String,
+        actor: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+        createdAt: { type: Date, default: Date.now },
+      },
+    ],
+    moderatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    moderatedAt: { type: Date, default: null },
+    moderationReason: { type: String, default: null },
+
+    // REVIEW FLAGS (for moderators to find comments needing attention)
+    reviewFlags: {
+      sentimentReviewNeeded: { type: Boolean, default: false },
+      moderationReviewNeeded: { type: Boolean, default: false },
+    },
+
+    replyCount: { type: Number, default: 0 },
+
+    events: { type: [CommentEventSchema], default: [] },
+
+    retryCount: { type: Number, default: 0 },
+    nextRetry: { type: Date, default: null, index: true },
+    isOfficialReply: { type: Boolean, default: false },
+  },
+  { timestamps: true },
+);
+
+// Indexes – all explicit here
+CommentSchema.index({ policyId: 1, createdAt: -1 });
+CommentSchema.index({ policyId: 1, aiStatus: 1 });
+CommentSchema.index({ policyId: 1, reportState: 1 });
+CommentSchema.index({ parentCommentId: 1 });
+CommentSchema.index({ visibility: 1 });
+CommentSchema.index({ "reports.status": 1 });
+CommentSchema.index({ "appeal.status": 1 });
+CommentSchema.index({ "reviewFlags.sentimentReviewNeeded": 1 });
+
+module.exports = mongoose.model("Comment", CommentSchema);

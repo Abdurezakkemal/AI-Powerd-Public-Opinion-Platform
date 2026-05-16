@@ -1,56 +1,59 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
+
 const Comment = require("../models/Comment");
 const Policy = require("../models/Policy");
-const PolicyAssociate = require("../models/PolicyAssociate");
-const User = require("../models/User");
 const logger = require("../utils/logger");
-const { createAuditLog } = require("../utils/audit");
 const {
   sendSuccess,
   sendError,
   ErrorCodes,
 } = require("../utils/responseHelper");
 const { createNotification } = require("../services/notificationService");
+// =====================================================
+// HELPERS
+// =====================================================
 
-const commentUserId = (comment) => {
-  const user = comment.userId;
-  if (!user) return null;
-  return (user._id || user).toString();
+const REPORT_AUTO_HIDE_THRESHOLD = 5; // configurable
+
+const createEvent = ({ type, actor = null, data = {} }) => ({
+  type,
+  actor,
+  data,
+  createdAt: new Date(),
+});
+
+const canEditComment = (comment) => {
+  if (!comment) return false;
+  return comment.visibility !== "deleted" && comment.visibility !== "removed";
 };
 
-const formatComment = (comment, { includePrivate = false } = {}) => {
-  const response = {
-    id: comment._id,
-    policyId: comment.policyId,
-    parentCommentId: comment.parentCommentId,
-    text: comment.text,
-    sentiment: comment.sentiment?.label,
-    keywords: comment.keywords,
-    isOfficialReply: comment.isOfficialReply,
-    createdAt: comment.createdAt,
-    userId: commentUserId(comment),
-    userEmail: comment.userId?.email,
-    visibility: comment.visibility,
-    hiddenReason: comment.hiddenReason,
-    moderationStatus: comment.moderationStatus,
-    moderationReason: comment.moderationReason,
-    isEdited: comment.editedHistory && comment.editedHistory.length > 0,
-  };
+const buildVisibilityFilter = (user) => {
+  if (user?.role === "admin") return {};
+  if (user?.role === "planner") return { visibility: { $ne: "removed" } };
+  return { visibility: "visible" };
+};
 
-  if (includePrivate) {
-    response.reportCount = comment.reportCount;
-    response.appeal = comment.appeal;
-    response.flaggedSnapshot = comment.flaggedSnapshot;
+const buildSortOption = (sort) => {
+  switch (sort) {
+    case "top":
+      return { replyCount: -1, createdAt: -1 };
+    case "old":
+      return { createdAt: 1 };
+    case "controversial":
+      return { reportCount: -1, createdAt: -1 };
+    default:
+      return { createdAt: -1 };
   }
-
-  return response;
 };
 
-// ========== POST COMMENT (top‑level or reply) ==========
+// =====================================================
+// POST COMMENT
+// =====================================================
 exports.postComment = async (req, res) => {
   try {
-    const { policyId, parentCommentId, text } = req.body;
-    if (!policyId || !text) {
+    const { policyId, text, parentCommentId = null } = req.body;
+
+    if (!policyId || !text?.trim()) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -59,35 +62,6 @@ exports.postComment = async (req, res) => {
         400,
       );
     }
-    if (text.length < 1 || text.length > 2000) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Comment must be 1–2000 characters",
-        null,
-        400,
-      );
-    }
-
-    // Validate policyId
-    if (!mongoose.Types.ObjectId.isValid(policyId)) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Invalid policyId format",
-        null,
-        400,
-      );
-    }
-    if (parentCommentId && !mongoose.Types.ObjectId.isValid(parentCommentId)) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Invalid parentCommentId format",
-        null,
-        400,
-      );
-    }
 
     const policy = await Policy.findById(policyId);
     if (!policy)
@@ -98,162 +72,237 @@ exports.postComment = async (req, res) => {
         null,
         404,
       );
-    if (!["active", "paused"].includes(policy.status)) {
-      return sendError(
-        res,
-        ErrorCodes.FORBIDDEN,
-        "Comments only allowed on active/paused policies",
-        null,
-        403,
-      );
-    }
 
-    // For top-level comments (not replies), check if user already has a comment linked to their vote
-    if (!parentCommentId) {
-      // First, find the user's vote for this policy
-      const Vote = require("../models/Vote");
-      const userVote = await Vote.findOne({
-        policyId,
-        userId: req.user.id,
-      });
-
-      // If user has a vote, check if there's already a comment linked to it
-      if (userVote) {
-        const existingComment = await Comment.findOne({
-          policyId,
-          userId: req.user.id,
-          voteId: userVote._id,
-          parentCommentId: null,
-        });
-        if (existingComment) {
-          return sendError(
-            res,
-            ErrorCodes.DUPLICATE,
-            "You have already commented on this policy",
-            null,
-            409,
-          );
-        }
-      } else {
-        // User hasn't voted yet, so they can't comment
-        return sendError(
-          res,
-          ErrorCodes.FORBIDDEN,
-          "You must vote on this policy before commenting",
-          null,
-          403,
-        );
-      }
-    }
-
+    let parentComment = null;
     if (parentCommentId) {
-      const parent = await Comment.findById(parentCommentId);
-      if (!parent || parent.policyId.toString() !== policyId) {
+      parentComment = await Comment.findById(parentCommentId);
+      if (!parentComment)
         return sendError(
           res,
           ErrorCodes.NOT_FOUND,
-          "Parent comment not found in this policy",
+          "Parent comment not found",
           null,
           404,
+        );
+      if (
+        parentComment.visibility === "deleted" ||
+        parentComment.visibility === "removed"
+      ) {
+        return sendError(
+          res,
+          ErrorCodes.VALIDATION,
+          "Cannot reply to deleted comment",
+          null,
+          400,
         );
       }
     }
 
-    const user = await User.findById(req.user.id);
-    const demographicsSnapshot = {
-      ageRange: user.ageRange,
-      gender: user.gender,
-      occupation: user.occupation,
-      education: user.education,
-    };
-
-    const isReply = !!parentCommentId;
-
-    // For top-level comments, try to link to existing vote
-    let voteId = null;
-    if (!isReply) {
-      const Vote = require("../models/Vote");
-      const existingVote = await Vote.findOne({
-        policyId,
-        userId: req.user.id,
-      });
-      if (existingVote) {
-        voteId = existingVote._id;
-      }
-    }
-
-    const comment = new Comment({
+    const comment = await Comment.create({
+      userId: req.user.id,
       policyId,
-      userId: req.user.id,
-      voteId: voteId,
       parentCommentId: parentCommentId || null,
-      text,
-      demographics: demographicsSnapshot,
+      text: text.trim(),
       visibility: "visible",
-      hiddenReason: null,
-      moderationStatus: isReply ? "none" : "pending_ai",
-      moderationReason: isReply ? null : "pending_ai",
+      aiStatus: "pending",
+      reportState: "clean",
       reportCount: 0,
+      reports: [],
+      events: [
+        createEvent({
+          type: "created",
+          actor: req.user.id,
+          data: { text: text.trim() },
+        }),
+      ],
     });
-    await comment.save();
 
-    if (isReply) {
-      const parent = await Comment.findById(parentCommentId).populate(
-        "userId",
-        "email",
-      );
-      if (
-        parent &&
-        parent.userId &&
-        parent.userId._id.toString() !== req.user.id.toString()
-      ) {
-        await createNotification({
-          userId: parent.userId._id,
-          type: "COMMENT_REPLY",
-          title: "New reply to your comment",
-          message: `${req.user.id} replied: ${text.slice(0, 100)}...`,
-          data: { policyId, commentId: comment._id },
-          severity: "info",
-          source: "system",
-        });
-      }
+    if (parentComment) {
+      parentComment.replyCount += 1;
+      await parentComment.save();
     }
 
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "POST_COMMENT",
-      targetType: "Comment",
-      targetId: comment._id,
-      details: { policyId, parentCommentId, textPreview: text.slice(0, 100) },
-      req,
-    });
-
-    logger.info(`User ${req.user.id} posted comment on policy ${policyId}`);
-    return sendSuccess(
-      res,
-      { commentId: comment._id },
-      "Comment posted successfully",
-      201,
-    );
+    logger.info(`Comment created: ${comment._id} by user ${req.user.id}`);
+    return sendSuccess(res, comment, "Comment created successfully");
   } catch (err) {
-    console.error("Full error in postComment:", err);
     logger.error({ error: err.message }, "Post comment error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to post comment",
+      "Failed to create comment",
       null,
       500,
     );
   }
 };
 
-// ========== GET POLICY COMMENTS (for citizens) ==========
+// =====================================================
+// EDIT COMMENT
+// =====================================================
+exports.editComment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { text } = req.body;
+    if (!text?.trim())
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Text is required",
+        null,
+        400,
+      );
+
+    const comment = await Comment.findById(id);
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+    if (comment.userId.toString() !== req.user.id.toString()) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not own this comment",
+        null,
+        403,
+      );
+    }
+    if (!canEditComment(comment))
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Comment cannot be edited",
+        null,
+        400,
+      );
+
+    const previousText = comment.text;
+    comment.text = text.trim();
+    comment.editCount += 1;
+    comment.editedAt = new Date();
+    comment.aiStatus = "pending";
+    comment.sentiment = { label: null, confidence: null };
+    comment.keywords = [];
+
+    comment.events.push(
+      createEvent({
+        type: "edited",
+        actor: req.user.id,
+        data: { previousText, newText: text.trim() },
+      }),
+    );
+
+    await comment.save();
+    logger.info(`Comment edited: ${comment._id}`);
+    return sendSuccess(res, comment, "Comment updated successfully");
+  } catch (err) {
+    logger.error({ error: err.message }, "Edit comment error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to edit comment",
+      null,
+      500,
+    );
+  }
+};
+
+// =====================================================
+// DELETE COMMENT
+// =====================================================
+exports.deleteComment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const comment = await Comment.findById(id);
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+
+    const isOwner = comment.userId.toString() === req.user.id.toString();
+    const isAdmin = req.user.role === "admin";
+    if (!isOwner && !isAdmin)
+      return sendError(res, ErrorCodes.FORBIDDEN, "Unauthorized", null, 403);
+
+    comment.visibility = "deleted";
+    comment.events.push(createEvent({ type: "deleted", actor: req.user.id }));
+    await comment.save();
+
+    logger.info(`Comment deleted: ${comment._id}`);
+    return sendSuccess(res, null, "Comment deleted successfully");
+  } catch (err) {
+    logger.error({ error: err.message }, "Delete comment error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to delete comment",
+      null,
+      500,
+    );
+  }
+};
+
+// =====================================================
+// RESTORE COMMENT
+// =====================================================
+exports.restoreComment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const comment = await Comment.findById(id);
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+
+    const isOwner = comment.userId.toString() === req.user.id.toString();
+    const isAdmin = req.user.role === "admin";
+    if (!isOwner && !isAdmin)
+      return sendError(res, ErrorCodes.FORBIDDEN, "Unauthorized", null, 403);
+
+    comment.visibility = "visible";
+    comment.events.push(createEvent({ type: "restored", actor: req.user.id }));
+    await comment.save();
+
+    logger.info(`Comment restored: ${comment._id}`);
+    return sendSuccess(res, comment, "Comment restored successfully");
+  } catch (err) {
+    logger.error({ error: err.message }, "Restore comment error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to restore comment",
+      null,
+      500,
+    );
+  }
+};
+
+// =====================================================
+// GET POLICY COMMENTS
+// =====================================================
 exports.getPolicyComments = async (req, res) => {
   try {
     const { policyId } = req.params;
-    const { page = 1, limit = 20 } = req.query;
+    const {
+      page = 1,
+      limit = 20,
+      sort = "new",
+      sentiment,
+      visibility,
+      reportState,
+      parentCommentId = null,
+    } = req.query;
 
     const policy = await Policy.findById(policyId);
     if (!policy)
@@ -265,37 +314,62 @@ exports.getPolicyComments = async (req, res) => {
         404,
       );
 
-    // Citizens see visible comments plus their own hidden comments so they can appeal.
-    const filter = {
-      policyId,
-      parentCommentId: null, // top-level only (replies fetched separately if needed)
-      $or: [
-        { visibility: "visible" },
-        { visibility: "hidden", userId: req.user.id },
-      ],
-    };
+    const filter = { policyId, ...buildVisibilityFilter(req.user) };
+    if (parentCommentId === "null" || parentCommentId === null)
+      filter.parentCommentId = null;
+    else if (parentCommentId) filter.parentCommentId = parentCommentId;
+    if (sentiment) filter["sentiment.label"] = sentiment;
+    if (visibility && ["planner", "admin"].includes(req.user.role))
+      filter.visibility = visibility;
+    if (reportState) filter.reportState = reportState;
 
     const comments = await Comment.find(filter)
-      .sort({ createdAt: -1 })
+      .populate("userId", "email firstName lastName")
+      .sort(buildSortOption(sort))
       .skip((page - 1) * limit)
       .limit(Number(limit))
-      .populate("userId", "email")
       .lean();
-
-    const isModerator =
-      req.user.role === "admin" || req.user.role === "planner";
-    const formatted = comments.map((c) =>
-      formatComment(c, {
-        includePrivate:
-          isModerator || commentUserId(c) === req.user.id.toString(),
-      }),
-    );
 
     const total = await Comment.countDocuments(filter);
 
+    const formatted = comments.map((c) => ({
+      id: c._id,
+      text: c.text,
+      user: c.userId
+        ? {
+            id: c.userId._id,
+            email: c.userId.email,
+            firstName: c.userId.firstName,
+            lastName: c.userId.lastName,
+          }
+        : null,
+      policyId: c.policyId,
+      parentCommentId: c.parentCommentId,
+      visibility: c.visibility,
+      reportState: c.reportState,
+      reportCount: c.reportCount,
+      sentiment: c.sentiment,
+      keywords: c.keywords,
+      replyCount: c.replyCount,
+      isOfficialReply: c.isOfficialReply,
+      aiStatus: c.aiStatus,
+      editedAt: c.editedAt,
+      editCount: c.editCount,
+      createdAt: c.createdAt,
+      updatedAt: c.updatedAt,
+    }));
+
     return sendSuccess(
       res,
-      { comments: formatted, total, page: Number(page) },
+      {
+        comments: formatted,
+        pagination: {
+          total,
+          page: Number(page),
+          limit: Number(limit),
+          pages: Math.ceil(total / limit),
+        },
+      },
       "Comments retrieved",
     );
   } catch (err) {
@@ -309,12 +383,16 @@ exports.getPolicyComments = async (req, res) => {
     );
   }
 };
-// ========== GET SINGLE COMMENT BY ID ==========
+
+// =====================================================
+// GET COMMENT BY ID
+// =====================================================
 exports.getCommentById = async (req, res) => {
   try {
     const { id } = req.params;
-    const comment = await Comment.findById(id)
-      .populate("userId", "email")
+    const filter = { _id: id, ...buildVisibilityFilter(req.user) };
+    const comment = await Comment.findOne(filter)
+      .populate("userId", "email firstName lastName")
       .lean();
     if (!comment)
       return sendError(
@@ -325,27 +403,33 @@ exports.getCommentById = async (req, res) => {
         404,
       );
 
-    const isModerator =
-      req.user.role === "admin" || req.user.role === "planner";
-
-    const isAuthor = commentUserId(comment) === req.user.id.toString();
-
-    // Citizens can see visible comments and their own hidden comments.
-    if (!isModerator && comment.visibility !== "visible" && !isAuthor) {
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Comment not found",
-        null,
-        404,
-      );
-    }
-
-    const response = formatComment(comment, {
-      includePrivate: isModerator || isAuthor,
-    });
-
-    return sendSuccess(res, response, "Comment retrieved");
+    const formatted = {
+      id: comment._id,
+      text: comment.text,
+      user: comment.userId
+        ? {
+            id: comment.userId._id,
+            email: comment.userId.email,
+            firstName: comment.userId.firstName,
+            lastName: comment.userId.lastName,
+          }
+        : null,
+      policyId: comment.policyId,
+      parentCommentId: comment.parentCommentId,
+      visibility: comment.visibility,
+      reportState: comment.reportState,
+      reportCount: comment.reportCount,
+      sentiment: comment.sentiment,
+      keywords: comment.keywords,
+      replyCount: comment.replyCount,
+      isOfficialReply: comment.isOfficialReply,
+      aiStatus: comment.aiStatus,
+      editedAt: comment.editedAt,
+      editCount: comment.editCount,
+      createdAt: comment.createdAt,
+      updatedAt: comment.updatedAt,
+    };
+    return sendSuccess(res, formatted, "Comment retrieved");
   } catch (err) {
     logger.error({ error: err.message }, "Get comment by ID error");
     return sendError(
@@ -358,15 +442,16 @@ exports.getCommentById = async (req, res) => {
   }
 };
 
-// ========== GET REPLIES FOR A COMMENT ==========
-exports.getCommentReplies = async (req, res) => {
+// =====================================================
+// GET REPLIES
+// =====================================================
+exports.getReplies = async (req, res) => {
   try {
     const { commentId } = req.params;
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, sort = "new" } = req.query;
 
-    // Verify parent comment exists
-    const parentComment = await Comment.findById(commentId);
-    if (!parentComment) {
+    const parent = await Comment.findById(commentId);
+    if (!parent)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -374,42 +459,60 @@ exports.getCommentReplies = async (req, res) => {
         null,
         404,
       );
-    }
 
-    // Citizens see visible replies plus their own hidden replies.
     const filter = {
       parentCommentId: commentId,
-      $or: [
-        { visibility: "visible" },
-        { visibility: "hidden", userId: req.user.id },
-      ],
+      ...buildVisibilityFilter(req.user),
     };
-
     const replies = await Comment.find(filter)
-      .sort({ createdAt: 1 }) // Replies in chronological order
+      .populate("userId", "email firstName lastName")
+      .sort(buildSortOption(sort))
       .skip((page - 1) * limit)
       .limit(Number(limit))
-      .populate("userId", "email")
       .lean();
 
-    const isModerator =
-      req.user.role === "admin" || req.user.role === "planner";
-    const formatted = replies.map((c) =>
-      formatComment(c, {
-        includePrivate:
-          isModerator || commentUserId(c) === req.user.id.toString(),
-      }),
-    );
-
     const total = await Comment.countDocuments(filter);
+    const formatted = replies.map((r) => ({
+      id: r._id,
+      text: r.text,
+      user: r.userId
+        ? {
+            id: r.userId._id,
+            email: r.userId.email,
+            firstName: r.userId.firstName,
+            lastName: r.userId.lastName,
+          }
+        : null,
+      parentCommentId: r.parentCommentId,
+      visibility: r.visibility,
+      reportState: r.reportState,
+      reportCount: r.reportCount,
+      sentiment: r.sentiment,
+      keywords: r.keywords,
+      replyCount: r.replyCount,
+      isOfficialReply: r.isOfficialReply,
+      aiStatus: r.aiStatus,
+      editedAt: r.editedAt,
+      editCount: r.editCount,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    }));
 
     return sendSuccess(
       res,
-      { replies: formatted, total, page: Number(page) },
+      {
+        replies: formatted,
+        pagination: {
+          total,
+          page: Number(page),
+          limit: Number(limit),
+          pages: Math.ceil(total / limit),
+        },
+      },
       "Replies retrieved",
     );
   } catch (err) {
-    logger.error({ error: err.message }, "Get comment replies error");
+    logger.error({ error: err.message }, "Get replies error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -419,118 +522,27 @@ exports.getCommentReplies = async (req, res) => {
     );
   }
 };
-// ========== EDIT COMMENT (author only, with history) ==========
-exports.editComment = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { text } = req.body;
-    if (!text || text.trim().length === 0) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Comment text is required",
-        null,
-        400,
-      );
-    }
-    if (text.length > 2000) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Comment too long (max 2000 characters)",
-        null,
-        400,
-      );
-    }
 
-    const comment = await Comment.findById(id).populate("policyId");
-    if (!comment)
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Comment not found",
-        null,
-        404,
-      );
+// =====================================================
+// REPORT COMMENT
+// =====================================================
 
-    if (comment.userId.toString() !== req.user.id.toString()) {
-      return sendError(
-        res,
-        ErrorCodes.FORBIDDEN,
-        "Only the comment author can edit the text",
-        null,
-        403,
-      );
-    }
-
-    const snapshot = {
-      text: comment.text,
-      sentiment: comment.sentiment ? { ...comment.sentiment } : null,
-      keywords: [...(comment.keywords || [])],
-      editedAt: new Date(),
-    };
-    let updatedHistory = comment.editedHistory || [];
-    updatedHistory.unshift(snapshot);
-    if (updatedHistory.length > 3) updatedHistory = updatedHistory.slice(0, 3);
-    comment.editedHistory = updatedHistory;
-    comment.text = text;
-    comment.updatedAt = new Date();
-
-    if (!comment.parentCommentId) {
-      comment.moderationStatus = "pending_ai";
-      comment.moderationReason = "pending_ai";
-      comment.sentiment = null;
-      comment.keywords = [];
-      comment.retryCount = 0;
-      comment.nextRetry = null;
-    }
-    await comment.save();
-
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "EDIT_COMMENT",
-      targetType: "Comment",
-      targetId: comment._id,
-      details: {
-        policyId: comment.policyId,
-        oldTextPreview: snapshot.text.slice(0, 100),
-      },
-      req,
-    });
-
-    return sendSuccess(res, { commentId: comment._id }, "Comment updated");
-  } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Edit comment error",
-    );
-    return sendError(
-      res,
-      ErrorCodes.INTERNAL,
-      "Failed to edit comment",
-      null,
-      500,
-    );
-  }
-};
-
-// ========== REPORT COMMENT ==========
 exports.reportComment = async (req, res) => {
   try {
     const { commentId } = req.params;
-    const { reason } = req.body;
-    if (!reason)
+    const { reason, description = "" } = req.body;
+    if (!reason) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Reason required",
+        "Report reason is required",
         null,
         400,
       );
+    }
 
-    const comment = await Comment.findById(commentId);
-    if (!comment)
+    const comment = await Comment.findById(commentId).populate("policyId");
+    if (!comment) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -538,73 +550,99 @@ exports.reportComment = async (req, res) => {
         null,
         404,
       );
-
-    comment.reportCount += 1;
-    if (comment.reportCount >= 3) {
-      comment.visibility = "hidden";
-      comment.hiddenReason = "reports";
-      comment.moderationStatus = "needs_review";
-      comment.moderationReason = "reports";
-      comment.reportedAt = new Date();
-
-      if (!comment.flaggedSnapshot) {
-        comment.flaggedSnapshot = {
-          text: comment.text,
-          sentiment: comment.sentiment ? { ...comment.sentiment } : null,
-          keywords: [...(comment.keywords || [])],
-          capturedAt: new Date(),
-          reportCountAtCapture: comment.reportCount,
-        };
-      }
     }
-    await comment.save();
+    if (comment.visibility === "deleted") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Comment is no longer reportable",
+        null,
+        400,
+      );
+    }
 
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "REPORT_COMMENT",
-      targetType: "Comment",
-      targetId: comment._id,
-      details: { reason, newReportCount: comment.reportCount },
-      req,
+    // Check for duplicate report
+    const alreadyReported = comment.reports.some(
+      (r) => r.reporterId.toString() === req.user.id.toString(),
+    );
+    if (alreadyReported) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "You already reported this comment",
+        null,
+        400,
+      );
+    }
+
+    // Snapshot
+    const snapshot = {
+      text: comment.text,
+      sentiment: comment.sentiment,
+      keywords: comment.keywords,
+      visibility: comment.visibility,
+      aiStatus: comment.aiStatus,
+      reportCount: comment.reportCount + 1,
+    };
+
+    comment.reports.push({
+      reporterId: req.user.id,
+      reason,
+      details: description || null,
+      status: "pending",
+      snapshot,
+      createdAt: new Date(),
     });
+    comment.reportCount += 1;
+    if (comment.reportState === "clean") comment.reportState = "reported";
 
-    if (comment.reportCount >= 3) {
-      const policy = await Policy.findById(comment.policyId);
-      if (policy) {
-        // Notify policy owner
+    // Auto‑hide threshold
+    if (comment.reportCount >= REPORT_AUTO_HIDE_THRESHOLD) {
+      comment.visibility = "hidden";
+      comment.reportState = "under_review";
+      comment.moderationActions.push({
+        action: "hide",
+        reason: "auto_hide_reports",
+        actor: null,
+        createdAt: new Date(),
+      });
+      comment.moderatedBy = null;
+      comment.moderatedAt = new Date();
+      comment.moderationReason = "auto_hide_reports";
+
+      // Notify the comment author that their comment has been hidden
+      if (comment.userId && comment.policyId) {
         await createNotification({
-          userId: policy.createdBy,
-          type: "COMMENT_FLAGGED",
-          title: "Comment flagged for review",
-          message: `Comment #${commentId} has been reported ${comment.reportCount} times.`,
-          data: { commentId, policyId: comment.policyId },
+          userId: comment.userId,
+          type: "COMMENT_HIDDEN",
+          title: "Your comment has been hidden",
+          message: `Your comment on policy "${comment.policyId.title}" was hidden due to multiple reports. You can appeal this decision.`,
+          data: { commentId: comment._id, policyId: comment.policyId._id },
           severity: "warning",
           source: "system",
         });
-
-        // Notify associates with moderate_comments permission
-        const PolicyAssociate = require("../models/PolicyAssociate");
-        const associates = await PolicyAssociate.find({
-          policyId: comment.policyId,
-          revokedAt: null,
-          permissions: { $in: ["moderate_comments"] },
-        }).select("plannerId");
-        for (const associate of associates) {
-          await createNotification({
-            userId: associate.plannerId,
-            type: "COMMENT_FLAGGED",
-            title: "Comment flagged for review",
-            message: `A comment (ID: ${commentId}) has been reported ${comment.reportCount} times.`,
-            data: { commentId, policyId: comment.policyId },
-            severity: "warning",
-            source: "system",
-          });
-        }
       }
     }
 
-    return sendSuccess(res, null, "Comment reported. Moderators will review.");
+    comment.events.push(
+      createEvent({
+        type: "reported",
+        actor: req.user.id,
+        data: { reason, description, reportCount: comment.reportCount },
+      }),
+    );
+    await comment.save();
+
+    logger.info(`Comment reported: ${comment._id}`);
+    return sendSuccess(
+      res,
+      {
+        reportCount: comment.reportCount,
+        reportState: comment.reportState,
+        visibility: comment.visibility,
+      },
+      "Comment reported successfully",
+    );
   } catch (err) {
     logger.error({ error: err.message }, "Report comment error");
     return sendError(
@@ -616,12 +654,145 @@ exports.reportComment = async (req, res) => {
     );
   }
 };
-
-// ========== GET COMMENT EDIT HISTORY ==========
-exports.getCommentHistory = async (req, res) => {
+// =====================================================
+// GET MY REPORTS
+// =====================================================
+exports.getMyReports = async (req, res) => {
   try {
-    const { id } = req.params;
-    const comment = await Comment.findById(id).select("editedHistory");
+    const { page = 1, limit = 20 } = req.query;
+    const comments = await Comment.find({ "reports.reporterId": req.user.id })
+      .populate("userId", "email")
+      .lean();
+
+    const extracted = [];
+    for (const comment of comments) {
+      const myReports = comment.reports.filter(
+        (r) => r.reporterId.toString() === req.user.id.toString(),
+      );
+      for (const report of myReports) {
+        extracted.push({
+          commentId: comment._id,
+          commentText: comment.text,
+          commentVisibility: comment.visibility,
+          reportId: report._id,
+          reason: report.reason,
+          description: report.details,
+          status: report.status,
+          moderatorNote: report.moderatorNotes || null,
+          createdAt: report.createdAt,
+        });
+      }
+    }
+    const sorted = extracted.sort(
+      (a, b) => new Date(b.createdAt) - new Date(a.createdAt),
+    );
+    const paginated = sorted.slice((page - 1) * limit, page * limit);
+
+    return sendSuccess(
+      res,
+      {
+        reports: paginated,
+        pagination: {
+          total: sorted.length,
+          page: Number(page),
+          limit: Number(limit),
+          pages: Math.ceil(sorted.length / limit),
+        },
+      },
+      "Reports retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Get my reports error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve reports",
+      null,
+      500,
+    );
+  }
+};
+
+// =====================================================
+// GET COMMENT REPORTS (MODERATOR)
+// =====================================================
+exports.getCommentReports = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const comment = await Comment.findById(commentId)
+      .populate("reports.reporterId", "email firstName lastName")
+      .lean();
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+    if (!["planner", "admin"].includes(req.user.role))
+      return sendError(res, ErrorCodes.FORBIDDEN, "Unauthorized", null, 403);
+
+    const reports = comment.reports.map((report) => ({
+      id: report._id,
+      reason: report.reason,
+      description: report.details,
+      status: report.status,
+      moderatorNote: report.moderatorNotes,
+      reportedBy: report.reporterId
+        ? {
+            id: report.reporterId._id,
+            email: report.reporterId.email,
+            firstName: report.reporterId.firstName,
+            lastName: report.reporterId.lastName,
+          }
+        : null,
+      snapshot: report.snapshot,
+      createdAt: report.createdAt,
+      resolvedAt: report.resolvedAt || null,
+    }));
+
+    return sendSuccess(
+      res,
+      {
+        commentId: comment._id,
+        reportState: comment.reportState,
+        reportCount: comment.reportCount,
+        reports,
+      },
+      "Comment reports retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Get comment reports error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve reports",
+      null,
+      500,
+    );
+  }
+};
+
+// =====================================================
+// MODERATE COMMENT
+// =====================================================
+exports.moderateComment = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { action, reason, sentimentOverride, keywordsOverride } = req.body;
+    const allowedActions = ["approve", "hide", "remove", "restore"];
+    if (!allowedActions.includes(action)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Invalid moderation action",
+        null,
+        400,
+      );
+    }
+
+    const comment = await Comment.findById(commentId).populate("policyId");
     if (!comment) {
       return sendError(
         res,
@@ -631,112 +802,123 @@ exports.getCommentHistory = async (req, res) => {
         404,
       );
     }
-    return sendSuccess(
-      res,
-      { history: comment.editedHistory || [] },
-      "Edit history retrieved",
-    );
-  } catch (err) {
-    logger.error({ error: err.message }, "Get history error");
-    return sendError(
-      res,
-      ErrorCodes.INTERNAL,
-      "Failed to retrieve history",
-      null,
-      500,
-    );
-  }
-};
 
-// ========== MODERATION ENDPOINTS (for planners/admins) ==========
-exports.moderateComment = async (req, res) => {
-  try {
-    const { commentId } = req.params;
-    const { action, sentiment, keywords } = req.body;
-    const allowedActions = ["approve", "delete", "retry"];
-    if (!action || !allowedActions.includes(action)) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Invalid action. Use approve, delete, or retry",
-        null,
-        400,
-      );
-    }
-
-    const comment = await Comment.findById(commentId).populate("policyId");
-    if (!comment)
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Comment not found",
-        null,
-        404,
-      );
-
-    const isAdmin = req.user.role === "admin";
-    const isOwner =
-      comment.policyId.createdBy.toString() === req.user.id.toString();
-    let isModerator = false;
-    if (!isAdmin && !isOwner) {
-      const associate = await PolicyAssociate.findOne({
-        policyId: comment.policyId,
-        plannerId: req.user.id,
-        revokedAt: null,
-        permissions: { $in: ["moderate_comments"] },
-      });
-      isModerator = !!associate;
-    }
-    if (!isAdmin && !isOwner && !isModerator) {
-      return sendError(
-        res,
-        ErrorCodes.FORBIDDEN,
-        "No permission to moderate this comment",
-        null,
-        403,
-      );
-    }
+    // Permission check (already handled by route middleware, but we'll keep)
+    // For now assume user is admin or planner with appropriate permissions.
 
     switch (action) {
       case "approve":
-        comment.visibility = "visible";
-        comment.hiddenReason = null;
-        comment.moderationStatus = "reviewed";
-        comment.moderationReason = null;
+        if (comment.visibility !== "visible") {
+          comment.visibility = "visible";
+          comment.moderationActions.push({
+            action: "restore",
+            reason: reason || "approved_by_moderator",
+            actor: req.user.id,
+            createdAt: new Date(),
+          });
+        }
+        comment.reportState = "actioned";
+        // Clear any review flags since comment is approved
+        if (comment.reviewFlags)
+          comment.reviewFlags.sentimentReviewNeeded = false;
         break;
-      case "delete":
-        comment.visibility = "hidden";
-        comment.hiddenReason = "moderator";
-        comment.moderationStatus = "none";
-        comment.moderationReason = null;
-        comment.text = "[deleted by moderator]";
+      case "hide":
+        if (comment.visibility !== "hidden") {
+          comment.visibility = "hidden";
+          comment.moderationActions.push({
+            action: "hide",
+            reason: reason || "hidden_by_moderator",
+            actor: req.user.id,
+            createdAt: new Date(),
+          });
+          comment.moderatedBy = req.user.id;
+          comment.moderatedAt = new Date();
+          comment.moderationReason = reason || "hidden_by_moderator";
+
+          // Notify the comment author
+          if (comment.userId && comment.policyId) {
+            await createNotification({
+              userId: comment.userId,
+              type: "COMMENT_HIDDEN",
+              title: "Your comment has been hidden by a moderator",
+              message: `Your comment on policy "${comment.policyId.title}" was hidden by a moderator. You can appeal this decision.`,
+              data: { commentId: comment._id, policyId: comment.policyId._id },
+              severity: "warning",
+              source: "system",
+            });
+          }
+        }
         break;
-      case "retry":
-        comment.moderationStatus = "pending_ai";
-        comment.moderationReason = "pending_ai";
-        comment.retryCount = 0;
-        comment.nextRetry = null;
+      case "remove":
+        comment.visibility = "deleted";
+        comment.moderationActions.push({
+          action: "delete",
+          reason: reason || "removed_by_moderator",
+          actor: req.user.id,
+          createdAt: new Date(),
+        });
+        comment.moderatedBy = req.user.id;
+        comment.moderatedAt = new Date();
+        comment.moderationReason = reason || "removed_by_moderator";
+        break;
+      case "restore":
+        if (
+          comment.visibility === "hidden" ||
+          comment.visibility === "deleted"
+        ) {
+          comment.visibility = "visible";
+          comment.moderationActions.push({
+            action: "restore",
+            reason: reason || "restored_by_moderator",
+            actor: req.user.id,
+            createdAt: new Date(),
+          });
+          comment.moderatedBy = null;
+          comment.moderatedAt = null;
+          comment.moderationReason = null;
+          // Clear review flags
+          if (comment.reviewFlags)
+            comment.reviewFlags.sentimentReviewNeeded = false;
+        }
         break;
     }
-    if (sentiment) comment.sentiment = sentiment;
-    if (keywords) comment.keywords = keywords;
+
+    if (sentimentOverride) {
+      comment.sentiment = {
+        label: sentimentOverride.label,
+        confidence: 1,
+        overriddenByModerator: true,
+      };
+      comment.moderationActions.push({
+        action: "override_sentiment",
+        reason: "manual override",
+        actor: req.user.id,
+        createdAt: new Date(),
+      });
+      // Clear review flag
+      if (comment.reviewFlags)
+        comment.reviewFlags.sentimentReviewNeeded = false;
+    }
+    if (keywordsOverride) {
+      comment.keywords = keywordsOverride;
+      comment.moderationActions.push({
+        action: "override_keywords",
+        reason: "manual override",
+        actor: req.user.id,
+        createdAt: new Date(),
+      });
+    }
+
+    comment.events.push(
+      createEvent({
+        type: "moderated",
+        actor: req.user.id,
+        data: { action, reason, sentimentOverride, keywordsOverride },
+      }),
+    );
     await comment.save();
 
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "MODERATE_COMMENT",
-      targetType: "Comment",
-      targetId: comment._id,
-      details: { action, sentiment, keywords },
-      req,
-    });
-
-    return sendSuccess(
-      res,
-      { commentId: comment._id, action },
-      `Comment ${action}d.`,
-    );
+    return sendSuccess(res, comment, "Comment moderated successfully");
   } catch (err) {
     logger.error({ error: err.message }, "Moderate comment error");
     return sendError(
@@ -749,16 +931,18 @@ exports.moderateComment = async (req, res) => {
   }
 };
 
-// ========== APPEAL A MODERATION DECISION ==========
+// =====================================================
+// APPEAL COMMENT
+// =====================================================
 exports.appealComment = async (req, res) => {
   try {
     const { commentId } = req.params;
-    const { reason } = req.body;
+    const { reason, description = "" } = req.body;
     if (!reason) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Appeal reason required",
+        "Appeal reason is required",
         null,
         400,
       );
@@ -783,52 +967,66 @@ exports.appealComment = async (req, res) => {
         403,
       );
     }
-    // Check if comment is hidden and requires review
-    if (
-      comment.visibility !== "hidden" ||
-      comment.moderationStatus !== "needs_review"
-    ) {
+    // Only hidden comments can be appealed
+    if (comment.visibility !== "hidden") {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Only hidden comments that need review can be appealed",
+        "Only hidden comments can be appealed",
+        null,
+        400,
+      );
+    }
+    if (comment.appeal?.status === "pending") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "An appeal is already pending",
         null,
         400,
       );
     }
 
+    const snapshot = {
+      text: comment.text,
+      visibility: comment.visibility,
+      reportState: comment.reportState,
+      reportCount: comment.reportCount,
+    };
+
     comment.appeal = {
+      appellantId: req.user.id,
       reason,
+      details: description || null,
       status: "pending",
+      snapshot,
       createdAt: new Date(),
     };
+
+    comment.events.push(
+      createEvent({
+        type: "appealed",
+        actor: req.user.id,
+        data: { reason, description },
+      }),
+    );
     await comment.save();
 
-    await createNotification({
-      userId: comment.policyId.createdBy,
-      type: "COMMENT_APPEAL",
-      title: "Comment appeal submitted",
-      message: `User appeals the moderation of comment #${commentId}: ${reason.slice(0, 100)}`,
-      data: { commentId, policyId: comment.policyId },
-      severity: "info",
-      source: "system",
-    });
+    // Notify policy owner (planner) that an appeal was submitted
+    const policy = await Policy.findById(comment.policyId);
+    if (policy) {
+      await createNotification({
+        userId: policy.createdBy,
+        type: "COMMENT_APPEAL",
+        title: "Comment appeal submitted",
+        message: `User appeals the moderation of comment #${commentId}: ${reason.slice(0, 100)}`,
+        data: { commentId, policyId: comment.policyId },
+        severity: "info",
+        source: "system",
+      });
+    }
 
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "APPEAL_COMMENT",
-      targetType: "Comment",
-      targetId: comment._id,
-      details: { reason },
-      req,
-    });
-
-    return sendSuccess(
-      res,
-      null,
-      "Appeal submitted. The policy maker will review.",
-    );
+    return sendSuccess(res, comment.appeal, "Appeal submitted successfully");
   } catch (err) {
     console.error("Full error in appealComment:", err);
     logger.error({ error: err.message, stack: err.stack }, "Appeal error");
@@ -841,24 +1039,96 @@ exports.appealComment = async (req, res) => {
     );
   }
 };
+// // =====================================================
+// // RESOLVE APPEAL
+// // =====================================================
+// exports.resolveAppeal = async (req, res) => {
+//   try {
+//     const { commentId } = req.params;
+//     const { resolution, reason } = req.body;
+//     if (!["approved", "rejected"].includes(resolution))
+//       return sendError(
+//         res,
+//         ErrorCodes.VALIDATION,
+//         "Resolution must be 'approved' or 'rejected'",
+//         null,
+//         400,
+//       );
 
-// ========== RESOLVE APPEAL (planner only) ==========
-exports.resolveAppeal = async (req, res) => {
+//     const comment = await Comment.findById(commentId);
+//     if (!comment)
+//       return sendError(
+//         res,
+//         ErrorCodes.NOT_FOUND,
+//         "Comment not found",
+//         null,
+//         404,
+//       );
+//     if (!comment.appeal || comment.appeal.status !== "pending")
+//       return sendError(
+//         res,
+//         ErrorCodes.VALIDATION,
+//         "No pending appeal found",
+//         null,
+//         400,
+//       );
+
+//     comment.appeal.status = resolution;
+//     comment.appeal.resolvedAt = new Date();
+//     comment.appeal.resolvedBy = req.user.id;
+//     comment.appeal.moderatorNotes = reason || null;
+
+//     if (resolution === "approved") {
+//       comment.visibility = "visible";
+//       comment.moderationActions.push({
+//         action: "restore",
+//         reason: "appeal approved",
+//         actor: req.user.id,
+//         createdAt: new Date(),
+//       });
+//       comment.reportState = "actioned";
+//     } else {
+//       comment.moderationActions.push({
+//         action: "reject_appeal",
+//         reason: reason || "appeal rejected",
+//         actor: req.user.id,
+//         createdAt: new Date(),
+//       });
+//     }
+
+//     comment.events.push(
+//       createEvent({
+//         type: "appeal_resolved",
+//         actor: req.user.id,
+//         data: { resolution, reason },
+//       }),
+//     );
+//     await comment.save();
+
+//     return sendSuccess(res, comment.appeal, "Appeal resolved successfully");
+//   } catch (err) {
+//     logger.error({ error: err.message }, "Resolve appeal error");
+//     return sendError(
+//       res,
+//       ErrorCodes.INTERNAL,
+//       "Failed to resolve appeal",
+//       null,
+//       500,
+//     );
+//   }
+// };
+
+// =====================================================
+// GET COMMENT HISTORY
+// =====================================================
+exports.getCommentHistory = async (req, res) => {
   try {
-    const { commentId } = req.params;
-    const { decision, note } = req.body;
-    if (!["approve", "reject"].includes(decision)) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Decision must be approve or reject",
-        null,
-        400,
-      );
-    }
-
-    const comment = await Comment.findById(commentId).populate("policyId");
-    if (!comment) {
+    const { id } = req.params;
+    const comment = await Comment.findById(id).populate(
+      "events.actor",
+      "email role",
+    );
+    if (!comment)
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -866,75 +1136,68 @@ exports.resolveAppeal = async (req, res) => {
         null,
         404,
       );
-    }
-    if (!comment.appeal || comment.appeal.status !== "pending") {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "No pending appeal for this comment",
-        null,
-        400,
-      );
-    }
-
-    const isAdmin = req.user.role === "admin";
-    const isOwner =
-      comment.policyId.createdBy.toString() === req.user.id.toString();
-    if (!isAdmin && !isOwner) {
-      return sendError(
-        res,
-        ErrorCodes.FORBIDDEN,
-        "No permission to resolve this appeal",
-        null,
-        403,
-      );
-    }
-
-    if (decision === "approve") {
-      comment.visibility = "visible";
-      comment.hiddenReason = null;
-      comment.moderationStatus = "reviewed";
-      comment.moderationReason = null;
-      comment.appeal.status = "resolved_approved";
-    } else {
-      comment.appeal.status = "resolved_rejected";
-    }
-    comment.appeal.resolvedAt = new Date();
-    comment.appeal.resolvedBy = req.user.id;
-    comment.appeal.resolutionNote = note || "";
-    await comment.save();
-
-    await createNotification({
-      userId: comment.userId,
-      type: "APPEAL_RESOLVED",
-      title: `Your appeal has been ${decision === "approve" ? "approved" : "rejected"}`,
-      message: note || `The moderator decided to ${decision} your appeal.`,
-      data: { commentId },
-      severity: "info",
-      source: "system",
-    });
-
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "RESOLVE_APPEAL",
-      targetType: "Comment",
-      targetId: comment._id,
-      details: { decision, note },
-      req,
-    });
 
     return sendSuccess(
       res,
-      null,
-      `Appeal ${decision}d. Comment status updated.`,
+      { commentId: comment._id, events: comment.events },
+      "Comment history retrieved",
     );
   } catch (err) {
-    logger.error({ error: err.message }, "Resolve appeal error");
+    logger.error({ error: err.message }, "Get history error");
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to resolve appeal",
+      "Failed to retrieve comment history",
+      null,
+      500,
+    );
+  }
+};
+
+// GET /comments/needs-review
+exports.getCommentsNeedingReview = async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+
+    // Only planners and admins can access this
+    if (!["planner", "admin"].includes(req.user.role)) {
+      return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
+    }
+
+    const filter = {
+      reviewFlags: { sentimentReviewNeeded: true },
+      visibility: "visible", // still visible
+    };
+
+    const comments = await Comment.find(filter)
+      .populate("userId", "email firstName lastName")
+      .populate("policyId", "title policyCode")
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(Number(limit))
+      .lean();
+
+    const total = await Comment.countDocuments(filter);
+
+    return sendSuccess(
+      res,
+      {
+        comments,
+        pagination: {
+          total,
+          page: Number(page),
+          limit: Number(limit),
+          pages: Math.ceil(total / limit),
+        },
+      },
+      "Comments needing review retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Get comments needing review error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve comments",
       null,
       500,
     );

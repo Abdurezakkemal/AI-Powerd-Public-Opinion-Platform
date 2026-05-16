@@ -199,7 +199,11 @@ exports.updatePlanner = async (req, res) => {
     );
     return sendSuccess(
       res,
-      { id: planner._id, email: planner.email, active: active ?? planner.active },
+      {
+        id: planner._id,
+        email: planner.email,
+        active: active ?? planner.active,
+      },
       "Planner updated successfully",
     );
   } catch (err) {
@@ -285,20 +289,23 @@ exports.updatePlannerStatus = async (req, res) => {
 
 // ========== COMMENT MANAGEMENT ==========
 
-// GET /admin/comments/pending
+// GET /admin/comments/pending – low AI confidence comments
 exports.getPendingComments = async (req, res) => {
   try {
-    const comments = await Comment.find({ moderationStatus: "needs_review" })
+    const comments = await Comment.find({
+      "reviewFlags.sentimentReviewNeeded": true,
+      visibility: "visible",
+    })
       .populate("policyId", "title")
-      .populate("userId", "email")
+      .populate("userId", "email firstName lastName")
       .sort({ createdAt: -1 });
     logger.info(
-      `Admin ${req.user.id} retrieved ${comments.length} pending comments`,
+      `Admin ${req.user.id} retrieved ${comments.length} low-confidence comments`,
     );
     return sendSuccess(
       res,
       { comments },
-      "Pending comments retrieved successfully",
+      "Low-confidence comments retrieved successfully",
     );
   } catch (err) {
     logger.error(
@@ -315,15 +322,14 @@ exports.getPendingComments = async (req, res) => {
   }
 };
 
-// GET /admin/comments/flagged
+// GET /admin/comments/flagged – reported comments
 exports.getFlaggedComments = async (req, res) => {
   try {
     const comments = await Comment.find({
-      moderationReason: "reports",
-      moderationStatus: "needs_review",
+      reportState: { $in: ["reported", "under_review"] },
     })
       .populate("policyId", "title")
-      .populate("userId", "email")
+      .populate("userId", "email firstName lastName")
       .sort({ createdAt: -1 });
     logger.info(
       `Admin ${req.user.id} retrieved ${comments.length} flagged comments`,
@@ -348,19 +354,31 @@ exports.getFlaggedComments = async (req, res) => {
   }
 };
 
-// PUT /admin/comments/:id (manual override)
+// PUT /admin/comments/:id – manual override (sentiment & keywords only)
 exports.updateComment = async (req, res) => {
   try {
     const { id } = req.params;
-    const { sentiment, keywords, moderationStatus, moderationReason } =
-      req.body;
+    const { sentiment, keywords } = req.body;
     const updateData = {};
-    if (sentiment !== undefined) updateData.sentiment = sentiment;
+
+    if (sentiment !== undefined) {
+      updateData.sentiment = {
+        label: sentiment.label,
+        confidence: 1,
+        overriddenByModerator: true,
+      };
+    }
     if (keywords !== undefined) updateData.keywords = keywords;
-    if (moderationStatus !== undefined)
-      updateData.moderationStatus = moderationStatus;
-    if (moderationReason !== undefined)
-      updateData.moderationReason = moderationReason;
+
+    if (Object.keys(updateData).length === 0) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "No valid fields provided (sentiment or keywords)",
+        null,
+        400,
+      );
+    }
 
     const comment = await Comment.findByIdAndUpdate(id, updateData, {
       new: true,
@@ -374,6 +392,14 @@ exports.updateComment = async (req, res) => {
         null,
         404,
       );
+
+    comment.events.push({
+      type: "moderated",
+      actor: req.user.id,
+      data: { action: "override_sentiment_keywords", updates: updateData },
+      createdAt: new Date(),
+    });
+    await comment.save();
 
     await createAuditLog({
       userId: req.user.id,
@@ -402,7 +428,7 @@ exports.updateComment = async (req, res) => {
   }
 };
 
-// Normal retry – strict: only low‑confidence, visible, needs_review
+// Normal retry – only for comments that have been AI processed (or failed) and are visible
 exports.retryComment = async (req, res) => {
   try {
     const { id } = req.params;
@@ -416,20 +442,11 @@ exports.retryComment = async (req, res) => {
         404,
       );
 
-    if (comment.moderationStatus !== "needs_review") {
+    if (comment.aiStatus !== "processed" && comment.aiStatus !== "failed") {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        `Only comments in needs_review can be retried. Current: ${comment.moderationStatus}`,
-        null,
-        400,
-      );
-    }
-    if (comment.moderationReason !== "low_confidence") {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        `Only low‑confidence comments can be retried. Current reason: ${comment.moderationReason}`,
+        `Only processed or failed comments can be retried. Current: ${comment.aiStatus}`,
         null,
         400,
       );
@@ -438,17 +455,29 @@ exports.retryComment = async (req, res) => {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Only visible comments can be retried. This comment is hidden due to reports or moderator action.",
+        "Only visible comments can be retried.",
         null,
         400,
       );
     }
 
-    comment.moderationStatus = "pending_ai";
-    comment.moderationReason = "pending_ai";
+    comment.aiStatus = "pending";
+    comment.sentiment = {
+      label: null,
+      confidence: null,
+      overriddenByModerator: false,
+    };
+    comment.keywords = [];
     comment.retryCount = 0;
     comment.nextRetry = null;
-    comment.lastRetryTriggeredBy = `admin:${req.user.id}`;
+    comment.reviewFlags.sentimentReviewNeeded = false;
+
+    comment.events.push({
+      type: "ai_analyzed",
+      actor: req.user.id,
+      data: { action: "manual_retry" },
+      createdAt: new Date(),
+    });
     await comment.save();
 
     await createAuditLog({
@@ -465,7 +494,7 @@ exports.retryComment = async (req, res) => {
     return sendSuccess(
       res,
       { commentId: id },
-      "Comment queued for retry. AI worker will process.",
+      "Comment queued for AI reprocessing.",
     );
   } catch (err) {
     logger.error(
@@ -482,7 +511,7 @@ exports.retryComment = async (req, res) => {
   }
 };
 
-// Force retry – no restrictions, any comment
+// Force retry – any comment, no checks
 exports.forceRetryComment = async (req, res) => {
   try {
     const { id } = req.params;
@@ -496,11 +525,23 @@ exports.forceRetryComment = async (req, res) => {
         404,
       );
 
-    comment.moderationStatus = "pending_ai";
-    comment.moderationReason = "pending_ai";
+    comment.aiStatus = "pending";
+    comment.sentiment = {
+      label: null,
+      confidence: null,
+      overriddenByModerator: false,
+    };
+    comment.keywords = [];
     comment.retryCount = 0;
     comment.nextRetry = null;
-    comment.lastRetryTriggeredBy = `admin:${req.user.id}:force`;
+    comment.reviewFlags.sentimentReviewNeeded = false;
+
+    comment.events.push({
+      type: "ai_analyzed",
+      actor: req.user.id,
+      data: { action: "force_retry" },
+      createdAt: new Date(),
+    });
     await comment.save();
 
     await createAuditLog({
@@ -531,7 +572,7 @@ exports.forceRetryComment = async (req, res) => {
   }
 };
 
-// Bulk retry by IDs – strict criteria
+// Bulk retry by IDs – strict criteria (only processed/failed, visible)
 exports.bulkRetryCommentsByIds = async (req, res) => {
   try {
     const { commentIds } = req.body;
@@ -558,8 +599,7 @@ exports.bulkRetryCommentsByIds = async (req, res) => {
 
       const comment = await Comment.findOne({
         _id: id,
-        moderationStatus: "needs_review",
-        moderationReason: "low_confidence",
+        aiStatus: { $in: ["processed", "failed"] },
         visibility: "visible",
       });
 
@@ -567,7 +607,7 @@ exports.bulkRetryCommentsByIds = async (req, res) => {
         failed.push({
           id,
           reason:
-            "Comment not found or not eligible (must be visible, low‑confidence needs_review)",
+            "Comment not found or not eligible (must be processed/failed and visible)",
         });
         continue;
       }
@@ -577,18 +617,24 @@ exports.bulkRetryCommentsByIds = async (req, res) => {
         continue;
       }
 
-      await Comment.updateOne(
-        { _id: id },
-        {
-          $set: {
-            moderationStatus: "pending_ai",
-            moderationReason: "pending_ai",
-            retryCount: 0,
-            nextRetry: null,
-            lastRetryTriggeredBy: `admin:${req.user.id}`,
-          },
-        },
-      );
+      comment.aiStatus = "pending";
+      comment.sentiment = {
+        label: null,
+        confidence: null,
+        overriddenByModerator: false,
+      };
+      comment.keywords = [];
+      comment.retryCount = 0;
+      comment.nextRetry = null;
+      comment.reviewFlags.sentimentReviewNeeded = false;
+      comment.events.push({
+        type: "ai_analyzed",
+        actor: req.user.id,
+        data: { action: "bulk_retry" },
+        createdAt: new Date(),
+      });
+      await comment.save();
+
       succeeded.push(id);
     }
 
@@ -638,7 +684,7 @@ exports.bulkRetryCommentsByIds = async (req, res) => {
   }
 };
 
-// DELETE /admin/comments/:id
+// DELETE /admin/comments/:id – soft delete
 exports.deleteComment = async (req, res) => {
   try {
     const { id } = req.params;
@@ -653,7 +699,14 @@ exports.deleteComment = async (req, res) => {
       );
     }
 
-    await comment.deleteOne();
+    comment.visibility = "deleted";
+    comment.events.push({
+      type: "deleted",
+      actor: req.user.id,
+      data: { note: "admin_deleted" },
+      createdAt: new Date(),
+    });
+    await comment.save();
 
     await createAuditLog({
       userId: req.user.id,
@@ -661,7 +714,7 @@ exports.deleteComment = async (req, res) => {
       action: "DELETE_COMMENT",
       targetType: "Comment",
       targetId: comment._id,
-      details: { commentText: comment.comment?.substring(0, 100) },
+      details: { policyId: comment.policyId },
       req,
     });
 
@@ -845,6 +898,288 @@ exports.initiatePasswordReset = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to initiate password reset",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== NEW: REPORT MANAGEMENT ==========
+
+// GET /admin/comments/:commentId/reports
+exports.getCommentReports = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const comment = await Comment.findById(commentId)
+      .populate("reports.reporterId", "email firstName lastName")
+      .lean();
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+
+    const reports = comment.reports.map((report) => ({
+      id: report._id,
+      reason: report.reason,
+      details: report.details,
+      status: report.status,
+      moderatorNote: report.moderatorNotes,
+      reportedBy: report.reporterId
+        ? {
+            id: report.reporterId._id,
+            email: report.reporterId.email,
+            firstName: report.reporterId.firstName,
+            lastName: report.reporterId.lastName,
+          }
+        : null,
+      snapshot: report.snapshot,
+      createdAt: report.createdAt,
+      resolvedAt: report.resolvedAt || null,
+    }));
+
+    return sendSuccess(
+      res,
+      {
+        commentId: comment._id,
+        reportState: comment.reportState,
+        reportCount: comment.reportCount,
+        reports,
+      },
+      "Comment reports retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Get comment reports error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve reports",
+      null,
+      500,
+    );
+  }
+};
+
+// PUT /admin/comments/:commentId/reports/:reportId
+exports.resolveReport = async (req, res) => {
+  try {
+    const { commentId, reportId } = req.params;
+    const { resolution, moderatorNote = "" } = req.body;
+    if (!["valid", "invalid", "resolved"].includes(resolution)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Resolution must be 'valid', 'invalid', or 'resolved'",
+        null,
+        400,
+      );
+    }
+
+    const comment = await Comment.findById(commentId);
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+
+    const report = comment.reports.id(reportId);
+    if (!report)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Report not found",
+        null,
+        404,
+      );
+
+    report.status = resolution;
+    report.resolvedAt = new Date();
+    report.resolvedBy = req.user.id;
+    report.moderatorNotes = moderatorNote;
+
+    // If report is valid, optionally hide comment
+    if (resolution === "valid" && comment.visibility === "visible") {
+      comment.visibility = "hidden";
+      comment.moderationActions.push({
+        action: "hide",
+        reason: "report_validated",
+        actor: req.user.id,
+        createdAt: new Date(),
+      });
+      comment.reportState = "actioned";
+    }
+
+    comment.events.push({
+      type: "moderated",
+      actor: req.user.id,
+      data: { action: "resolve_report", reportId, resolution, moderatorNote },
+      createdAt: new Date(),
+    });
+    await comment.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "RESOLVE_REPORT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { reportId, resolution, moderatorNote },
+      req,
+    });
+
+    return sendSuccess(res, { reportId, resolution }, "Report resolved");
+  } catch (err) {
+    logger.error({ error: err.message }, "Resolve report error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to resolve report",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== NEW: APPEAL MANAGEMENT ==========
+
+// GET /admin/appeals
+exports.getAppeals = async (req, res) => {
+  try {
+    const { status = "pending", page = 1, limit = 20 } = req.query;
+    const filter = { "appeal.status": status };
+    const comments = await Comment.find(filter)
+      .populate("userId", "email firstName lastName")
+      .populate("policyId", "title")
+      .populate("appeal.appellantId", "email firstName lastName")
+      .skip((page - 1) * limit)
+      .limit(Number(limit))
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const appeals = comments.map((c) => ({
+      commentId: c._id,
+      text: c.text,
+      policy: c.policyId?.title || "Unknown policy",
+      appeal: c.appeal,
+      appellant: c.appeal?.appellantId,
+      createdAt: c.createdAt,
+    }));
+
+    const total = await Comment.countDocuments(filter);
+
+    return sendSuccess(
+      res,
+      {
+        appeals,
+        pagination: {
+          total,
+          page: Number(page),
+          limit: Number(limit),
+          pages: Math.ceil(total / limit),
+        },
+      },
+      "Appeals retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Get appeals error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve appeals",
+      null,
+      500,
+    );
+  }
+};
+
+// POST /admin/appeals/:commentId/resolve
+exports.resolveAppeal = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { decision, moderatorNote = "" } = req.body;
+    if (!["approved", "rejected"].includes(decision)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Decision must be 'approved' or 'rejected'",
+        null,
+        400,
+      );
+    }
+
+    const comment = await Comment.findById(commentId);
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+    if (!comment.appeal || comment.appeal.status !== "pending") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "No pending appeal found",
+        null,
+        400,
+      );
+    }
+
+    comment.appeal.status = decision;
+    comment.appeal.resolvedAt = new Date();
+    comment.appeal.resolvedBy = req.user.id;
+    comment.appeal.moderatorNotes = moderatorNote;
+
+    if (decision === "approved") {
+      comment.visibility = "visible";
+      comment.moderationActions.push({
+        action: "restore",
+        reason: "appeal approved",
+        actor: req.user.id,
+        createdAt: new Date(),
+      });
+      comment.reportState = "actioned";
+    } else {
+      comment.moderationActions.push({
+        action: "reject_appeal",
+        reason: moderatorNote || "appeal rejected",
+        actor: req.user.id,
+        createdAt: new Date(),
+      });
+    }
+
+    comment.events.push({
+      type: "appeal_resolved",
+      actor: req.user.id,
+      data: { decision, moderatorNote },
+      createdAt: new Date(),
+    });
+    await comment.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "RESOLVE_APPEAL",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { decision, moderatorNote },
+      req,
+    });
+
+    return sendSuccess(res, comment.appeal, "Appeal resolved");
+  } catch (err) {
+    logger.error({ error: err.message }, "Resolve appeal error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to resolve appeal",
       null,
       500,
     );
