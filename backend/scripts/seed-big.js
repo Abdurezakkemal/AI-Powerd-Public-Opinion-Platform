@@ -387,7 +387,7 @@ async function seed() {
     }
     console.log(`Policies created (${createdPolicies.length}).`);
 
-    // Votes and comments (normal, approved)
+    // ===== Votes and normal comments (approved, good confidence) =====
     let voteCount = 0;
     let commentCount = 0;
     for (const citizen of createdCitizens) {
@@ -424,7 +424,6 @@ async function seed() {
             sentimentLabel = "negative";
           const commentText = randomComment(sentimentLabel);
           const keywords = getRandomKeywords(policy.topics);
-          // New fields
           const comment = new Comment({
             policyId: policy._id,
             userId: citizen._id,
@@ -445,11 +444,18 @@ async function seed() {
               sentimentReviewNeeded: false,
               moderationReviewNeeded: false,
             },
+            lastAnalyzedAt: new Date(),
             events: [
               {
                 type: "created",
                 actor: citizen._id,
                 data: { text: commentText },
+                createdAt: new Date(),
+              },
+              {
+                type: "ai_analyzed",
+                actor: null,
+                data: { sentiment: sentimentLabel, confidence: 0.85, keywords },
                 createdAt: new Date(),
               },
             ],
@@ -493,6 +499,7 @@ async function seed() {
           sentimentReviewNeeded: true,
           moderationReviewNeeded: false,
         },
+        lastAnalyzedAt: new Date(),
         events: [
           {
             type: "created",
