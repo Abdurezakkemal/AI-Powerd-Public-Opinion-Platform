@@ -5,7 +5,19 @@ const CommentEventSchema = new mongoose.Schema(
   {
     type: {
       type: String,
-      enum: [],
+      enum: [
+        "created",
+        "edited",
+        "deleted",
+        "restored",
+        "reported",
+        "moderated",
+        "appealed",
+        "appeal_resolved",
+        "ai_analyzed",
+        "ai_failed",
+        "version_created",
+      ],
       required: true,
     },
     actor: { type: mongoose.Schema.Types.ObjectId, ref: "User", default: null },
@@ -86,6 +98,16 @@ const AppealSchema = new mongoose.Schema(
 // Main comment schema
 const CommentSchema = new mongoose.Schema(
   {
+    // Versioning fields
+    originalCommentId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Comment",
+      default: null,
+      index: true,
+    },
+    versionNumber: { type: Number, default: 1, index: true },
+
+    // Core fields
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
@@ -102,6 +124,7 @@ const CommentSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "Comment",
       default: null,
+      index: true,
     },
 
     text: { type: String, required: true, trim: true, maxlength: 5000 },
@@ -131,6 +154,7 @@ const CommentSchema = new mongoose.Schema(
       version: { type: String, default: null },
       analyzedAt: { type: Date, default: null },
     },
+    lastAnalyzedAt: { type: Date, default: null, index: true }, // when AI last successfully analysed this version
 
     // Reporting layer
     reportState: {
@@ -150,6 +174,7 @@ const CommentSchema = new mongoose.Schema(
       type: String,
       enum: ["visible", "hidden", "deleted"],
       default: "visible",
+      index: true,
     },
     moderationActions: [
       {
@@ -177,7 +202,7 @@ const CommentSchema = new mongoose.Schema(
     moderatedAt: { type: Date, default: null },
     moderationReason: { type: String, default: null },
 
-    // REVIEW FLAGS (for moderators to find comments needing attention)
+    // REVIEW FLAGS
     reviewFlags: {
       sentimentReviewNeeded: { type: Boolean, default: false },
       moderationReviewNeeded: { type: Boolean, default: false },
@@ -194,7 +219,7 @@ const CommentSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
-// Indexes – all explicit here
+// Indexes
 CommentSchema.index({ policyId: 1, createdAt: -1 });
 CommentSchema.index({ policyId: 1, aiStatus: 1 });
 CommentSchema.index({ policyId: 1, reportState: 1 });
@@ -203,5 +228,7 @@ CommentSchema.index({ visibility: 1 });
 CommentSchema.index({ "reports.status": 1 });
 CommentSchema.index({ "appeal.status": 1 });
 CommentSchema.index({ "reviewFlags.sentimentReviewNeeded": 1 });
+CommentSchema.index({ originalCommentId: 1, versionNumber: -1 });
+CommentSchema.index({ originalCommentId: 1, createdAt: -1 });
 
 module.exports = mongoose.model("Comment", CommentSchema);

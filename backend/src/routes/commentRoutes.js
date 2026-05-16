@@ -8,6 +8,10 @@ const {
 } = require("../middleware/permissionMiddleware");
 const validateObjectId = require("../middleware/validateObjectId");
 
+// =====================================================
+// PUBLIC / AUTHENTICATED ROUTES
+// =====================================================
+
 // Post a comment (top‑level or reply)
 router.post(
   "/",
@@ -16,7 +20,7 @@ router.post(
   commentController.postComment,
 );
 
-// Get comments for a policy (public, with filters)
+// Get comments for a policy (respects visibility)
 router.get(
   "/policy/:policyId",
   auth(["citizen", "planner", "admin"]),
@@ -32,6 +36,14 @@ router.get(
   commentController.getCommentById,
 );
 
+// Get all versions of a comment thread (for history)
+router.get(
+  "/:id/versions",
+  auth(["planner", "admin"]),
+  validateObjectId("id"),
+  commentController.getCommentVersions,
+);
+
 // Get replies of a comment (paginated)
 router.get(
   "/:commentId/replies",
@@ -40,16 +52,7 @@ router.get(
   commentController.getReplies,
 );
 
-// Report a comment
-router.post(
-  "/:commentId/report",
-  auth(["citizen", "planner", "admin"]),
-  validateObjectId("commentId"),
-  limiters.reportComment,
-  commentController.reportComment,
-);
-
-// Edit a comment (author only)
+// Edit a comment (author only, may create new version)
 router.put(
   "/:id",
   auth(["citizen", "planner", "admin"]),
@@ -57,7 +60,7 @@ router.put(
   commentController.editComment,
 );
 
-// Delete a comment (author or admin)
+// Delete a comment (soft delete all versions, author or admin)
 router.delete(
   "/:id",
   auth(["citizen", "planner", "admin"]),
@@ -73,6 +76,15 @@ router.put(
   commentController.restoreComment,
 );
 
+// Report a comment (citizen)
+router.post(
+  "/:commentId/report",
+  auth(["citizen", "planner", "admin"]),
+  validateObjectId("commentId"),
+  limiters.reportComment,
+  commentController.reportComment,
+);
+
 // Moderate a comment (planner/admin with permission)
 router.put(
   "/:commentId/moderate",
@@ -83,7 +95,7 @@ router.put(
   commentController.moderateComment,
 );
 
-// Citizen submits an appeal for a hidden comment
+// Appeal a moderation decision (citizen)
 router.post(
   "/:commentId/appeal",
   auth(["citizen"]),
@@ -92,14 +104,6 @@ router.post(
   commentController.appealComment,
 );
 
-// // Planner/admin resolves an appeal
-// router.post(
-//   "/:commentId/resolve-appeal",
-//   auth(["planner", "admin"]),
-//   validateObjectId("commentId"),
-//   commentController.resolveAppeal,
-// );
-
 // Get my own reports (citizen)
 router.get(
   "/my-reports",
@@ -107,7 +111,7 @@ router.get(
   commentController.getMyReports,
 );
 
-// Get all reports for a specific comment (moderator)
+// Get all reports for a comment (moderator)
 router.get(
   "/:commentId/reports",
   auth(["planner", "admin"]),
@@ -123,6 +127,7 @@ router.get(
   commentController.getCommentHistory,
 );
 
+// Get comments needing AI review (planner/admin only)
 router.get(
   "/needs-review",
   auth(["planner", "admin"]),

@@ -27,7 +27,7 @@ const processComment = async (comment) => {
       AI_ANALYZE_URL,
       { text: comment.text, language: null },
       {
-        timeout: 60000, // 60 seconds for remote Hugging Face Spaces (cold start can take 30s)
+        timeout: 5000,
         headers: { "X-Internal-API-Key": process.env.INTERNAL_API_KEY },
       },
     );
@@ -50,6 +50,7 @@ const processComment = async (comment) => {
       analyzedAt: new Date(),
     };
     comment.language = aiData.language || null;
+    comment.lastAnalyzedAt = new Date();
 
     // Set review flag based on confidence
     if (sentiment.confidence < CONFIDENCE_THRESHOLD) {

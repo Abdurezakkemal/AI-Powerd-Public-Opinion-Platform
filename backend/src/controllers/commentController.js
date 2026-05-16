@@ -1,5 +1,4 @@
 const mongoose = require("mongoose");
-
 const Comment = require("../models/Comment");
 const Policy = require("../models/Policy");
 const logger = require("../utils/logger");
@@ -9,11 +8,8 @@ const {
   ErrorCodes,
 } = require("../utils/responseHelper");
 const { createNotification } = require("../services/notificationService");
-// =====================================================
-// HELPERS
-// =====================================================
 
-const REPORT_AUTO_HIDE_THRESHOLD = 5; // configurable
+const REPORT_AUTO_HIDE_THRESHOLD = 5;
 
 const createEvent = ({ type, actor = null, data = {} }) => ({
   type,
@@ -46,13 +42,57 @@ const buildSortOption = (sort) => {
   }
 };
 
+// Helper to get the latest version of a comment thread
+const getLatestVersion = async (originalCommentId) => {
+  const query = originalCommentId
+    ? { originalCommentId }
+    : { originalCommentId: null };
+  const latest = await Comment.findOne(query).sort({ versionNumber: -1 });
+  return latest;
+};
+
+// Helper to create a new version
+const createNewVersion = async (originalComment, updates) => {
+  const latestVersion = await getLatestVersion(originalComment._id);
+  const newVersionNumber = (latestVersion?.versionNumber || 0) + 1;
+  const newVersion = new Comment({
+    originalCommentId: originalComment.originalCommentId || originalComment._id,
+    versionNumber: newVersionNumber,
+    userId: originalComment.userId,
+    policyId: originalComment.policyId,
+    parentCommentId: originalComment.parentCommentId,
+    text: updates.text,
+    visibility: "visible",
+    aiStatus: "pending",
+    reportState: "clean",
+    reports: [],
+    appeal: null,
+    moderationActions: [],
+    reviewFlags: {
+      sentimentReviewNeeded: false,
+      moderationReviewNeeded: false,
+    },
+    events: [
+      createEvent({
+        type: "version_created",
+        actor: updates.actor,
+        data: {
+          previousVersionId: originalComment._id,
+          reason: updates.reason,
+        },
+      }),
+    ],
+  });
+  await newVersion.save();
+  return newVersion;
+};
+
 // =====================================================
-// POST COMMENT
+// POST COMMENT (first version)
 // =====================================================
 exports.postComment = async (req, res) => {
   try {
     const { policyId, text, parentCommentId = null } = req.body;
-
     if (!policyId || !text?.trim()) {
       return sendError(
         res,
@@ -84,10 +124,7 @@ exports.postComment = async (req, res) => {
           null,
           404,
         );
-      if (
-        parentComment.visibility === "deleted" ||
-        parentComment.visibility === "removed"
-      ) {
+      if (parentComment.visibility === "deleted") {
         return sendError(
           res,
           ErrorCodes.VALIDATION,
@@ -98,15 +135,16 @@ exports.postComment = async (req, res) => {
       }
     }
 
-    const comment = await Comment.create({
+    const comment = new Comment({
       userId: req.user.id,
       policyId,
       parentCommentId: parentCommentId || null,
       text: text.trim(),
+      originalCommentId: null,
+      versionNumber: 1,
       visibility: "visible",
       aiStatus: "pending",
       reportState: "clean",
-      reportCount: 0,
       reports: [],
       events: [
         createEvent({
@@ -116,6 +154,7 @@ exports.postComment = async (req, res) => {
         }),
       ],
     });
+    await comment.save();
 
     if (parentComment) {
       parentComment.replyCount += 1;
@@ -137,7 +176,7 @@ exports.postComment = async (req, res) => {
 };
 
 // =====================================================
-// EDIT COMMENT
+// EDIT COMMENT (with versioning)
 // =====================================================
 exports.editComment = async (req, res) => {
   try {
@@ -179,25 +218,42 @@ exports.editComment = async (req, res) => {
         400,
       );
 
-    const previousText = comment.text;
-    comment.text = text.trim();
-    comment.editCount += 1;
-    comment.editedAt = new Date();
-    comment.aiStatus = "pending";
-    comment.sentiment = { label: null, confidence: null };
-    comment.keywords = [];
+    // Find the latest version of this thread
+    const threadId = comment.originalCommentId || comment._id;
+    const latestVersion = await getLatestVersion(threadId);
 
-    comment.events.push(
-      createEvent({
-        type: "edited",
-        actor: req.user.id,
-        data: { previousText, newText: text.trim() },
-      }),
+    // If the latest version is pending and never analysed, replace it
+    if (
+      latestVersion.aiStatus === "pending" &&
+      latestVersion.lastAnalyzedAt === null
+    ) {
+      latestVersion.text = text.trim();
+      latestVersion.editedAt = new Date();
+      latestVersion.editCount += 1;
+      latestVersion.events.push(
+        createEvent({
+          type: "edited",
+          actor: req.user.id,
+          data: { previousText: latestVersion.text, newText: text.trim() },
+        }),
+      );
+      await latestVersion.save();
+      logger.info(`Comment updated (in‑place) : ${latestVersion._id}`);
+      return sendSuccess(res, latestVersion, "Comment updated successfully");
+    }
+
+    // Otherwise, create a new version
+    const newVersion = await createNewVersion(latestVersion, {
+      text: text.trim(),
+      actor: req.user.id,
+      reason: "user_edit",
+    });
+    logger.info(`New version created: ${newVersion._id} (was edit of ${id})`);
+    return sendSuccess(
+      res,
+      newVersion,
+      "Comment updated (new version created)",
     );
-
-    await comment.save();
-    logger.info(`Comment edited: ${comment._id}`);
-    return sendSuccess(res, comment, "Comment updated successfully");
   } catch (err) {
     logger.error({ error: err.message }, "Edit comment error");
     return sendError(
@@ -211,7 +267,7 @@ exports.editComment = async (req, res) => {
 };
 
 // =====================================================
-// DELETE COMMENT
+// DELETE COMMENT (soft delete all versions)
 // =====================================================
 exports.deleteComment = async (req, res) => {
   try {
@@ -231,11 +287,23 @@ exports.deleteComment = async (req, res) => {
     if (!isOwner && !isAdmin)
       return sendError(res, ErrorCodes.FORBIDDEN, "Unauthorized", null, 403);
 
-    comment.visibility = "deleted";
-    comment.events.push(createEvent({ type: "deleted", actor: req.user.id }));
-    await comment.save();
+    const threadId = comment.originalCommentId || comment._id;
+    const allVersions = await Comment.find({
+      $or: [{ _id: threadId }, { originalCommentId: threadId }],
+    });
 
-    logger.info(`Comment deleted: ${comment._id}`);
+    for (const ver of allVersions) {
+      ver.visibility = "deleted";
+      ver.events.push(createEvent({ type: "deleted", actor: req.user.id }));
+      if (ver.appeal?.status === "pending") {
+        ver.appeal.status = "rejected";
+        ver.appeal.resolvedAt = new Date();
+        ver.appeal.resolvedBy = req.user.id;
+      }
+      await ver.save();
+    }
+
+    logger.info(`All versions of comment thread ${threadId} deleted`);
     return sendSuccess(res, null, "Comment deleted successfully");
   } catch (err) {
     logger.error({ error: err.message }, "Delete comment error");
@@ -250,7 +318,7 @@ exports.deleteComment = async (req, res) => {
 };
 
 // =====================================================
-// RESTORE COMMENT
+// RESTORE COMMENT (restore a single version)
 // =====================================================
 exports.restoreComment = async (req, res) => {
   try {
@@ -289,7 +357,7 @@ exports.restoreComment = async (req, res) => {
 };
 
 // =====================================================
-// GET POLICY COMMENTS
+// GET POLICY COMMENTS (only latest version per thread)
 // =====================================================
 exports.getPolicyComments = async (req, res) => {
   try {
@@ -323,26 +391,40 @@ exports.getPolicyComments = async (req, res) => {
       filter.visibility = visibility;
     if (reportState) filter.reportState = reportState;
 
-    const comments = await Comment.find(filter)
-      .populate("userId", "email firstName lastName")
-      .sort(buildSortOption(sort))
-      .skip((page - 1) * limit)
-      .limit(Number(limit))
-      .lean();
+    // Only latest version per thread: group by originalCommentId (or self)
+    // Using aggregation to get the latest version for each thread
+    const pipeline = [
+      { $match: filter },
+      {
+        $sort: { versionNumber: -1, createdAt: -1 },
+      },
+      {
+        $group: {
+          _id: { $ifNull: ["$originalCommentId", "$_id"] },
+          doc: { $first: "$$ROOT" },
+        },
+      },
+      { $replaceRoot: { newRoot: "$doc" } },
+      { $sort: buildSortOption(sort) },
+      { $skip: (page - 1) * limit },
+      { $limit: Number(limit) },
+    ];
 
-    const total = await Comment.countDocuments(filter);
+    const comments = await Comment.aggregate(pipeline);
+    const total = await Comment.aggregate([
+      { $match: filter },
+      {
+        $group: {
+          _id: { $ifNull: ["$originalCommentId", "$_id"] },
+        },
+      },
+      { $count: "total" },
+    ]);
 
     const formatted = comments.map((c) => ({
       id: c._id,
       text: c.text,
-      user: c.userId
-        ? {
-            id: c.userId._id,
-            email: c.userId.email,
-            firstName: c.userId.firstName,
-            lastName: c.userId.lastName,
-          }
-        : null,
+      user: c.userId ? { id: c.userId, email: c.userEmail } : null,
       policyId: c.policyId,
       parentCommentId: c.parentCommentId,
       visibility: c.visibility,
@@ -364,10 +446,10 @@ exports.getPolicyComments = async (req, res) => {
       {
         comments: formatted,
         pagination: {
-          total,
+          total: total[0]?.total || 0,
           page: Number(page),
           limit: Number(limit),
-          pages: Math.ceil(total / limit),
+          pages: Math.ceil((total[0]?.total || 0) / limit),
         },
       },
       "Comments retrieved",
@@ -385,7 +467,7 @@ exports.getPolicyComments = async (req, res) => {
 };
 
 // =====================================================
-// GET COMMENT BY ID
+// GET COMMENT BY ID (returns the specific version)
 // =====================================================
 exports.getCommentById = async (req, res) => {
   try {
@@ -428,6 +510,8 @@ exports.getCommentById = async (req, res) => {
       editCount: comment.editCount,
       createdAt: comment.createdAt,
       updatedAt: comment.updatedAt,
+      versionNumber: comment.versionNumber,
+      originalCommentId: comment.originalCommentId,
     };
     return sendSuccess(res, formatted, "Comment retrieved");
   } catch (err) {
@@ -443,7 +527,60 @@ exports.getCommentById = async (req, res) => {
 };
 
 // =====================================================
-// GET REPLIES
+// GET ALL VERSIONS OF A COMMENT THREAD (for history)
+// =====================================================
+exports.getCommentVersions = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const comment = await Comment.findById(id);
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+
+    const threadId = comment.originalCommentId || comment._id;
+    const versions = await Comment.find({
+      $or: [{ _id: threadId }, { originalCommentId: threadId }],
+    })
+      .sort({ versionNumber: 1 })
+      .lean();
+
+    const formatted = versions.map((v) => ({
+      id: v._id,
+      versionNumber: v.versionNumber,
+      text: v.text,
+      sentiment: v.sentiment,
+      keywords: v.keywords,
+      aiStatus: v.aiStatus,
+      reviewFlags: v.reviewFlags,
+      createdAt: v.createdAt,
+      editedAt: v.editedAt,
+      editCount: v.editCount,
+    }));
+
+    return sendSuccess(
+      res,
+      { versions: formatted },
+      "Comment versions retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Get versions error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve versions",
+      null,
+      500,
+    );
+  }
+};
+
+// =====================================================
+// GET REPLIES (for a specific version – same as before)
 // =====================================================
 exports.getReplies = async (req, res) => {
   try {
@@ -524,9 +661,8 @@ exports.getReplies = async (req, res) => {
 };
 
 // =====================================================
-// REPORT COMMENT
+// REPORT COMMENT (on a specific version)
 // =====================================================
-
 exports.reportComment = async (req, res) => {
   try {
     const { commentId } = req.params;
@@ -561,7 +697,7 @@ exports.reportComment = async (req, res) => {
       );
     }
 
-    // Check for duplicate report
+    // Check duplicate report
     const alreadyReported = comment.reports.some(
       (r) => r.reporterId.toString() === req.user.id.toString(),
     );
@@ -575,7 +711,6 @@ exports.reportComment = async (req, res) => {
       );
     }
 
-    // Snapshot
     const snapshot = {
       text: comment.text,
       sentiment: comment.sentiment,
@@ -596,7 +731,6 @@ exports.reportComment = async (req, res) => {
     comment.reportCount += 1;
     if (comment.reportState === "clean") comment.reportState = "reported";
 
-    // Auto‑hide threshold
     if (comment.reportCount >= REPORT_AUTO_HIDE_THRESHOLD) {
       comment.visibility = "hidden";
       comment.reportState = "under_review";
@@ -610,7 +744,6 @@ exports.reportComment = async (req, res) => {
       comment.moderatedAt = new Date();
       comment.moderationReason = "auto_hide_reports";
 
-      // Notify the comment author that their comment has been hidden
       if (comment.userId && comment.policyId) {
         await createNotification({
           userId: comment.userId,
@@ -654,8 +787,9 @@ exports.reportComment = async (req, res) => {
     );
   }
 };
+
 // =====================================================
-// GET MY REPORTS
+// GET MY REPORTS (citizen) – unchanged
 // =====================================================
 exports.getMyReports = async (req, res) => {
   try {
@@ -714,7 +848,7 @@ exports.getMyReports = async (req, res) => {
 };
 
 // =====================================================
-// GET COMMENT REPORTS (MODERATOR)
+// GET COMMENT REPORTS (MODERATOR) – unchanged
 // =====================================================
 exports.getCommentReports = async (req, res) => {
   try {
@@ -775,7 +909,7 @@ exports.getCommentReports = async (req, res) => {
 };
 
 // =====================================================
-// MODERATE COMMENT
+// MODERATE COMMENT (on a specific version)
 // =====================================================
 exports.moderateComment = async (req, res) => {
   try {
@@ -803,9 +937,6 @@ exports.moderateComment = async (req, res) => {
       );
     }
 
-    // Permission check (already handled by route middleware, but we'll keep)
-    // For now assume user is admin or planner with appropriate permissions.
-
     switch (action) {
       case "approve":
         if (comment.visibility !== "visible") {
@@ -818,9 +949,14 @@ exports.moderateComment = async (req, res) => {
           });
         }
         comment.reportState = "actioned";
-        // Clear any review flags since comment is approved
         if (comment.reviewFlags)
           comment.reviewFlags.sentimentReviewNeeded = false;
+        // Resolve any pending appeal
+        if (comment.appeal?.status === "pending") {
+          comment.appeal.status = "approved";
+          comment.appeal.resolvedAt = new Date();
+          comment.appeal.resolvedBy = req.user.id;
+        }
         break;
       case "hide":
         if (comment.visibility !== "hidden") {
@@ -835,7 +971,6 @@ exports.moderateComment = async (req, res) => {
           comment.moderatedAt = new Date();
           comment.moderationReason = reason || "hidden_by_moderator";
 
-          // Notify the comment author
           if (comment.userId && comment.policyId) {
             await createNotification({
               userId: comment.userId,
@@ -860,6 +995,11 @@ exports.moderateComment = async (req, res) => {
         comment.moderatedBy = req.user.id;
         comment.moderatedAt = new Date();
         comment.moderationReason = reason || "removed_by_moderator";
+        if (comment.appeal?.status === "pending") {
+          comment.appeal.status = "rejected";
+          comment.appeal.resolvedAt = new Date();
+          comment.appeal.resolvedBy = req.user.id;
+        }
         break;
       case "restore":
         if (
@@ -876,7 +1016,6 @@ exports.moderateComment = async (req, res) => {
           comment.moderatedBy = null;
           comment.moderatedAt = null;
           comment.moderationReason = null;
-          // Clear review flags
           if (comment.reviewFlags)
             comment.reviewFlags.sentimentReviewNeeded = false;
         }
@@ -895,7 +1034,6 @@ exports.moderateComment = async (req, res) => {
         actor: req.user.id,
         createdAt: new Date(),
       });
-      // Clear review flag
       if (comment.reviewFlags)
         comment.reviewFlags.sentimentReviewNeeded = false;
     }
@@ -932,7 +1070,7 @@ exports.moderateComment = async (req, res) => {
 };
 
 // =====================================================
-// APPEAL COMMENT
+// APPEAL COMMENT (on a specific version)
 // =====================================================
 exports.appealComment = async (req, res) => {
   try {
@@ -967,7 +1105,6 @@ exports.appealComment = async (req, res) => {
         403,
       );
     }
-    // Only hidden comments can be appealed
     if (comment.visibility !== "hidden") {
       return sendError(
         res,
@@ -1012,7 +1149,6 @@ exports.appealComment = async (req, res) => {
     );
     await comment.save();
 
-    // Notify policy owner (planner) that an appeal was submitted
     const policy = await Policy.findById(comment.policyId);
     if (policy) {
       await createNotification({
@@ -1039,87 +1175,9 @@ exports.appealComment = async (req, res) => {
     );
   }
 };
-// // =====================================================
-// // RESOLVE APPEAL
-// // =====================================================
-// exports.resolveAppeal = async (req, res) => {
-//   try {
-//     const { commentId } = req.params;
-//     const { resolution, reason } = req.body;
-//     if (!["approved", "rejected"].includes(resolution))
-//       return sendError(
-//         res,
-//         ErrorCodes.VALIDATION,
-//         "Resolution must be 'approved' or 'rejected'",
-//         null,
-//         400,
-//       );
-
-//     const comment = await Comment.findById(commentId);
-//     if (!comment)
-//       return sendError(
-//         res,
-//         ErrorCodes.NOT_FOUND,
-//         "Comment not found",
-//         null,
-//         404,
-//       );
-//     if (!comment.appeal || comment.appeal.status !== "pending")
-//       return sendError(
-//         res,
-//         ErrorCodes.VALIDATION,
-//         "No pending appeal found",
-//         null,
-//         400,
-//       );
-
-//     comment.appeal.status = resolution;
-//     comment.appeal.resolvedAt = new Date();
-//     comment.appeal.resolvedBy = req.user.id;
-//     comment.appeal.moderatorNotes = reason || null;
-
-//     if (resolution === "approved") {
-//       comment.visibility = "visible";
-//       comment.moderationActions.push({
-//         action: "restore",
-//         reason: "appeal approved",
-//         actor: req.user.id,
-//         createdAt: new Date(),
-//       });
-//       comment.reportState = "actioned";
-//     } else {
-//       comment.moderationActions.push({
-//         action: "reject_appeal",
-//         reason: reason || "appeal rejected",
-//         actor: req.user.id,
-//         createdAt: new Date(),
-//       });
-//     }
-
-//     comment.events.push(
-//       createEvent({
-//         type: "appeal_resolved",
-//         actor: req.user.id,
-//         data: { resolution, reason },
-//       }),
-//     );
-//     await comment.save();
-
-//     return sendSuccess(res, comment.appeal, "Appeal resolved successfully");
-//   } catch (err) {
-//     logger.error({ error: err.message }, "Resolve appeal error");
-//     return sendError(
-//       res,
-//       ErrorCodes.INTERNAL,
-//       "Failed to resolve appeal",
-//       null,
-//       500,
-//     );
-//   }
-// };
 
 // =====================================================
-// GET COMMENT HISTORY
+// GET COMMENT HISTORY (event log) – unchanged
 // =====================================================
 exports.getCommentHistory = async (req, res) => {
   try {
@@ -1154,19 +1212,29 @@ exports.getCommentHistory = async (req, res) => {
   }
 };
 
-// GET /comments/needs-review
+// =====================================================
+// GET COMMENTS NEEDING REVIEW (for AI tab)
+// =====================================================
 exports.getCommentsNeedingReview = async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
 
-    // Only planners and admins can access this
     if (!["planner", "admin"].includes(req.user.role)) {
       return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
+    // Comments that are visible, have been analysed (lastAnalyzedAt not null),
+    // and either have sentimentReviewNeeded true OR are pending but have been analysed before (lastAnalyzedAt not null)
     const filter = {
-      reviewFlags: { sentimentReviewNeeded: true },
-      visibility: "visible", // still visible
+      visibility: "visible",
+      $and: [
+        {
+          $or: [
+            { "reviewFlags.sentimentReviewNeeded": true },
+            { aiStatus: "pending", lastAnalyzedAt: { $ne: null } },
+          ],
+        },
+      ],
     };
 
     const comments = await Comment.find(filter)

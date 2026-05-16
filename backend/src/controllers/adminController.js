@@ -1,5 +1,5 @@
 const User = require("../models/User");
-const Comment = require("../models/Comment");
+const Comment = require("..//models/Comment");
 const PlannerRequest = require("../models/PlannerRequest");
 const { sendEmail } = require("../utils/email");
 const crypto = require("crypto");
@@ -14,7 +14,6 @@ const {
   sendError,
   ErrorCodes,
 } = require("../utils/responseHelper");
-
 // ========== PLANNER MANAGEMENT ==========
 
 // GET /admin/planners
@@ -289,23 +288,28 @@ exports.updatePlannerStatus = async (req, res) => {
 
 // ========== COMMENT MANAGEMENT ==========
 
-// GET /admin/comments/pending – low AI confidence comments
+// GET /admin/comments/pending – comments that need AI review
+// Includes: low confidence (sentimentReviewNeeded = true) OR pending (retried/edited) that have been analysed before (lastAnalyzedAt != null)
 exports.getPendingComments = async (req, res) => {
   try {
-    const comments = await Comment.find({
-      "reviewFlags.sentimentReviewNeeded": true,
+    const filter = {
       visibility: "visible",
-    })
+      $or: [
+        { "reviewFlags.sentimentReviewNeeded": true },
+        { aiStatus: "pending", lastAnalyzedAt: { $ne: null } },
+      ],
+    };
+    const comments = await Comment.find(filter)
       .populate("policyId", "title")
       .populate("userId", "email firstName lastName")
       .sort({ createdAt: -1 });
     logger.info(
-      `Admin ${req.user.id} retrieved ${comments.length} low-confidence comments`,
+      `Admin ${req.user.id} retrieved ${comments.length} pending comments`,
     );
     return sendSuccess(
       res,
       { comments },
-      "Low-confidence comments retrieved successfully",
+      "Pending comments retrieved successfully",
     );
   } catch (err) {
     logger.error(
@@ -321,12 +325,12 @@ exports.getPendingComments = async (req, res) => {
     );
   }
 };
-
-// GET /admin/comments/flagged – reported comments
+// GET /admin/comments/flagged – reported comments (hidden)
 exports.getFlaggedComments = async (req, res) => {
   try {
     const comments = await Comment.find({
       reportState: { $in: ["reported", "under_review"] },
+      visibility: "hidden",
     })
       .populate("policyId", "title")
       .populate("userId", "email firstName lastName")
@@ -360,7 +364,6 @@ exports.updateComment = async (req, res) => {
     const { id } = req.params;
     const { sentiment, keywords } = req.body;
     const updateData = {};
-
     if (sentiment !== undefined) {
       updateData.sentiment = {
         label: sentiment.label,
@@ -369,7 +372,6 @@ exports.updateComment = async (req, res) => {
       };
     }
     if (keywords !== undefined) updateData.keywords = keywords;
-
     if (Object.keys(updateData).length === 0) {
       return sendError(
         res,
@@ -511,6 +513,90 @@ exports.retryComment = async (req, res) => {
   }
 };
 
+// Retry single comment (strict) – only for processed/failed, visible
+exports.retryComment = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const comment = await Comment.findById(id);
+    if (!comment)
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment not found",
+        null,
+        404,
+      );
+
+    if (comment.aiStatus !== "processed" && comment.aiStatus !== "failed") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Only processed or failed comments can be retried. Current: ${comment.aiStatus}`,
+        null,
+        400,
+      );
+    }
+    if (comment.visibility !== "visible") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Only visible comments can be retried.",
+        null,
+        400,
+      );
+    }
+
+    comment.aiStatus = "pending";
+    comment.sentiment = {
+      label: null,
+      confidence: null,
+      overriddenByModerator: false,
+    };
+    comment.keywords = [];
+    comment.retryCount = 0;
+    comment.nextRetry = null;
+    comment.reviewFlags.sentimentReviewNeeded = false;
+    // Keep lastAnalyzedAt unchanged (so it will appear in pending queue)
+
+    comment.events.push({
+      type: "ai_analyzed",
+      actor: req.user.id,
+      data: { action: "manual_retry" },
+      createdAt: new Date(),
+    });
+    await comment.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "RETRY_COMMENT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: { policyId: comment.policyId },
+      req,
+    });
+
+    logger.info(`Admin ${req.user.id} retried comment ${id}`);
+    return sendSuccess(
+      res,
+      { commentId: id },
+      "Comment queued for AI reprocessing.",
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Retry comment error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to queue comment for retry",
+      null,
+      500,
+    );
+  }
+};
+
 // Force retry – any comment, no checks
 exports.forceRetryComment = async (req, res) => {
   try {
@@ -535,6 +621,7 @@ exports.forceRetryComment = async (req, res) => {
     comment.retryCount = 0;
     comment.nextRetry = null;
     comment.reviewFlags.sentimentReviewNeeded = false;
+    // Keep lastAnalyzedAt unchanged
 
     comment.events.push({
       type: "ai_analyzed",
@@ -634,7 +721,6 @@ exports.bulkRetryCommentsByIds = async (req, res) => {
         createdAt: new Date(),
       });
       await comment.save();
-
       succeeded.push(id);
     }
 
@@ -684,7 +770,7 @@ exports.bulkRetryCommentsByIds = async (req, res) => {
   }
 };
 
-// DELETE /admin/comments/:id – soft delete
+// Soft delete a single comment (version)
 exports.deleteComment = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1003,7 +1089,6 @@ exports.resolveReport = async (req, res) => {
     report.resolvedBy = req.user.id;
     report.moderatorNotes = moderatorNote;
 
-    // If report is valid, optionally hide comment
     if (resolution === "valid" && comment.visibility === "visible") {
       comment.visibility = "hidden";
       comment.moderationActions.push({
