@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Comment = require("../models/Comment");
 const Policy = require("../models/Policy");
 const PolicyAssociate = require("../models/PolicyAssociate");
@@ -10,6 +11,40 @@ const {
   ErrorCodes,
 } = require("../utils/responseHelper");
 const { createNotification } = require("../services/notificationService");
+
+const commentUserId = (comment) => {
+  const user = comment.userId;
+  if (!user) return null;
+  return (user._id || user).toString();
+};
+
+const formatComment = (comment, { includePrivate = false } = {}) => {
+  const response = {
+    id: comment._id,
+    policyId: comment.policyId,
+    parentCommentId: comment.parentCommentId,
+    text: comment.text,
+    sentiment: comment.sentiment?.label,
+    keywords: comment.keywords,
+    isOfficialReply: comment.isOfficialReply,
+    createdAt: comment.createdAt,
+    userId: commentUserId(comment),
+    userEmail: comment.userId?.email,
+    visibility: comment.visibility,
+    hiddenReason: comment.hiddenReason,
+    moderationStatus: comment.moderationStatus,
+    moderationReason: comment.moderationReason,
+    isEdited: comment.editedHistory && comment.editedHistory.length > 0,
+  };
+
+  if (includePrivate) {
+    response.reportCount = comment.reportCount;
+    response.appeal = comment.appeal;
+    response.flaggedSnapshot = comment.flaggedSnapshot;
+  }
+
+  return response;
+};
 
 // ========== POST COMMENT (top‑level or reply) ==========
 exports.postComment = async (req, res) => {
@@ -73,6 +108,44 @@ exports.postComment = async (req, res) => {
       );
     }
 
+    // For top-level comments (not replies), check if user already has a comment linked to their vote
+    if (!parentCommentId) {
+      // First, find the user's vote for this policy
+      const Vote = require("../models/Vote");
+      const userVote = await Vote.findOne({
+        policyId,
+        userId: req.user.id,
+      });
+
+      // If user has a vote, check if there's already a comment linked to it
+      if (userVote) {
+        const existingComment = await Comment.findOne({
+          policyId,
+          userId: req.user.id,
+          voteId: userVote._id,
+          parentCommentId: null,
+        });
+        if (existingComment) {
+          return sendError(
+            res,
+            ErrorCodes.DUPLICATE,
+            "You have already commented on this policy",
+            null,
+            409,
+          );
+        }
+      } else {
+        // User hasn't voted yet, so they can't comment
+        return sendError(
+          res,
+          ErrorCodes.FORBIDDEN,
+          "You must vote on this policy before commenting",
+          null,
+          403,
+        );
+      }
+    }
+
     if (parentCommentId) {
       const parent = await Comment.findById(parentCommentId);
       if (!parent || parent.policyId.toString() !== policyId) {
@@ -95,9 +168,24 @@ exports.postComment = async (req, res) => {
     };
 
     const isReply = !!parentCommentId;
+
+    // For top-level comments, try to link to existing vote
+    let voteId = null;
+    if (!isReply) {
+      const Vote = require("../models/Vote");
+      const existingVote = await Vote.findOne({
+        policyId,
+        userId: req.user.id,
+      });
+      if (existingVote) {
+        voteId = existingVote._id;
+      }
+    }
+
     const comment = new Comment({
       policyId,
       userId: req.user.id,
+      voteId: voteId,
       parentCommentId: parentCommentId || null,
       text,
       demographics: demographicsSnapshot,
@@ -142,7 +230,12 @@ exports.postComment = async (req, res) => {
     });
 
     logger.info(`User ${req.user.id} posted comment on policy ${policyId}`);
-    return sendSuccess(res, { commentId: comment._id }, "Comment posted", 201);
+    return sendSuccess(
+      res,
+      { commentId: comment._id },
+      "Comment posted successfully",
+      201,
+    );
   } catch (err) {
     console.error("Full error in postComment:", err);
     logger.error({ error: err.message }, "Post comment error");
@@ -172,11 +265,14 @@ exports.getPolicyComments = async (req, res) => {
         404,
       );
 
-    // Citizens see only visible comments (any moderationStatus)
+    // Citizens see visible comments plus their own hidden comments so they can appeal.
     const filter = {
       policyId,
-      visibility: "visible",
       parentCommentId: null, // top-level only (replies fetched separately if needed)
+      $or: [
+        { visibility: "visible" },
+        { visibility: "hidden", userId: req.user.id },
+      ],
     };
 
     const comments = await Comment.find(filter)
@@ -186,16 +282,14 @@ exports.getPolicyComments = async (req, res) => {
       .populate("userId", "email")
       .lean();
 
-    const formatted = comments.map((c) => ({
-      id: c._id,
-      text: c.text,
-      sentiment: c.sentiment?.label,
-      keywords: c.keywords,
-      isOfficialReply: c.isOfficialReply,
-      createdAt: c.createdAt,
-      userId: c.userId?._id,
-      isEdited: c.editedHistory && c.editedHistory.length > 0,
-    }));
+    const isModerator =
+      req.user.role === "admin" || req.user.role === "planner";
+    const formatted = comments.map((c) =>
+      formatComment(c, {
+        includePrivate:
+          isModerator || commentUserId(c) === req.user.id.toString(),
+      }),
+    );
 
     const total = await Comment.countDocuments(filter);
 
@@ -234,8 +328,10 @@ exports.getCommentById = async (req, res) => {
     const isModerator =
       req.user.role === "admin" || req.user.role === "planner";
 
-    // Citizens can see any comment with visibility = "visible"
-    if (!isModerator && comment.visibility !== "visible") {
+    const isAuthor = commentUserId(comment) === req.user.id.toString();
+
+    // Citizens can see visible comments and their own hidden comments.
+    if (!isModerator && comment.visibility !== "visible" && !isAuthor) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -245,20 +341,9 @@ exports.getCommentById = async (req, res) => {
       );
     }
 
-    const response = {
-      id: comment._id,
-      text: comment.text,
-      sentiment: comment.sentiment?.label,
-      keywords: comment.keywords,
-      isOfficialReply: comment.isOfficialReply,
-      createdAt: comment.createdAt,
-      userId: comment.userId?._id,
-      isEdited: comment.editedHistory && comment.editedHistory.length > 0,
-      parentCommentId: comment.parentCommentId,
-      reportCount: isModerator ? comment.reportCount : undefined,
-      moderationStatus: isModerator ? comment.moderationStatus : undefined,
-      moderationReason: isModerator ? comment.moderationReason : undefined,
-    };
+    const response = formatComment(comment, {
+      includePrivate: isModerator || isAuthor,
+    });
 
     return sendSuccess(res, response, "Comment retrieved");
   } catch (err) {
@@ -267,6 +352,68 @@ exports.getCommentById = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to retrieve comment",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== GET REPLIES FOR A COMMENT ==========
+exports.getCommentReplies = async (req, res) => {
+  try {
+    const { commentId } = req.params;
+    const { page = 1, limit = 20 } = req.query;
+
+    // Verify parent comment exists
+    const parentComment = await Comment.findById(commentId);
+    if (!parentComment) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Parent comment not found",
+        null,
+        404,
+      );
+    }
+
+    // Citizens see visible replies plus their own hidden replies.
+    const filter = {
+      parentCommentId: commentId,
+      $or: [
+        { visibility: "visible" },
+        { visibility: "hidden", userId: req.user.id },
+      ],
+    };
+
+    const replies = await Comment.find(filter)
+      .sort({ createdAt: 1 }) // Replies in chronological order
+      .skip((page - 1) * limit)
+      .limit(Number(limit))
+      .populate("userId", "email")
+      .lean();
+
+    const isModerator =
+      req.user.role === "admin" || req.user.role === "planner";
+    const formatted = replies.map((c) =>
+      formatComment(c, {
+        includePrivate:
+          isModerator || commentUserId(c) === req.user.id.toString(),
+      }),
+    );
+
+    const total = await Comment.countDocuments(filter);
+
+    return sendSuccess(
+      res,
+      { replies: formatted, total, page: Number(page) },
+      "Replies retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message }, "Get comment replies error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve replies",
       null,
       500,
     );

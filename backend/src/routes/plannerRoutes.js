@@ -5,9 +5,16 @@ const auth = require("../middleware/authMiddleware");
 const limiters = require("../config/rateLimits");
 const validateObjectId = require("../middleware/validateObjectId");
 
+const optionalCitizenAuth = (req, res, next) => {
+  const token = req.header("Authorization")?.replace("Bearer ", "");
+  if (!token) return next();
+  return auth(["citizen"])(req, res, next);
+};
+
+// Citizens and non-citizens submit planner requests (rate limited by user or IP)
 router.post(
   "/request",
-  auth(["citizen"]),
+  optionalCitizenAuth,
   limiters.plannerRequest,
   plannerController.requestPlanner,
 );

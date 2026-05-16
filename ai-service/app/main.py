@@ -9,10 +9,14 @@ import logging
 import asyncio
 
 from .utils.preprocess import normalize_text
+from .middleware.authMiddleware import InternalAPIKeyMiddleware
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="AI Service for Multilingual Sentiment Analysis")
+
+# Register authentication middleware
+app.add_middleware(InternalAPIKeyMiddleware)
 
 # ---------- Mode selection ----------
 AI_MODE = os.environ.get("AI_MODE", "remote").lower()

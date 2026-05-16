@@ -14,7 +14,16 @@ const { sendEmail } = require("../utils/email");
 // ==================== CITIZEN REQUESTS TO BECOME PLANNER ====================
 exports.requestPlanner = async (req, res) => {
   try {
-    const { organization, reason, proofFile } = req.body;
+    const {
+      organization,
+      reason,
+      proofFile,
+      applicantType,
+      fullName,
+      email,
+      phone,
+      region,
+    } = req.body;
     if (!reason || reason.length < 50) {
       return sendError(
         res,
@@ -24,11 +33,26 @@ exports.requestPlanner = async (req, res) => {
         400,
       );
     }
-    const userId = req.user.id;
-    const existing = await PlannerRequest.findOne({
-      userId,
-      status: "pending",
-    });
+    const userId = req.user?.id || null;
+    const isCitizenRequest = !!userId;
+
+    if (!isCitizenRequest) {
+      if (!fullName || !email || !region) {
+        return sendError(
+          res,
+          ErrorCodes.VALIDATION,
+          "Full name, email, and region are required for planner requests without login.",
+          null,
+          400,
+        );
+      }
+    }
+
+    const existing = await PlannerRequest.findOne(
+      isCitizenRequest
+        ? { userId, status: "pending" }
+        : { email: email.trim().toLowerCase(), status: "pending" },
+    );
     if (existing) {
       return sendError(
         res,
@@ -40,18 +64,28 @@ exports.requestPlanner = async (req, res) => {
     }
     const request = new PlannerRequest({
       userId,
+      applicantType:
+        applicantType === "citizen" || isCitizenRequest
+          ? "citizen"
+          : "nonCitizen",
+      fullName: fullName || "",
+      email: email ? email.trim().toLowerCase() : "",
+      phone: phone || "",
+      region: region || "",
       organization: organization || "",
       reason,
       proofFile: proofFile || null,
     });
     await request.save();
-    await createAuditLog({
-      userId,
-      userRole: "citizen",
-      action: "PLANNER_REQUEST_CREATED",
-      details: { organization, reasonPreview: reason.slice(0, 100) },
-      req,
-    });
+    if (userId) {
+      await createAuditLog({
+        userId,
+        userRole: "citizen",
+        action: "PLANNER_REQUEST_CREATED",
+        details: { organization, reasonPreview: reason.slice(0, 100) },
+        req,
+      });
+    }
     return sendSuccess(
       res,
       { requestId: request._id },
@@ -112,6 +146,15 @@ exports.approveRequest = async (req, res) => {
         null,
         400,
       );
+    if (!request.userId) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "This request is not linked to an existing citizen account. Create the planner account manually or ask the applicant to register first.",
+        null,
+        400,
+      );
+    }
     const user = await User.findById(request.userId);
     if (!user)
       return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);

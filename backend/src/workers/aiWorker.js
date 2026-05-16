@@ -25,7 +25,7 @@ const processComment = async (comment) => {
       AI_ANALYZE_URL,
       { text: comment.text, language: null },
       {
-        timeout: 5000,
+        timeout: 60000, // 60 seconds for remote Hugging Face Spaces (cold start can take 30s)
         headers: { "X-Internal-API-Key": process.env.INTERNAL_API_KEY },
       },
     );

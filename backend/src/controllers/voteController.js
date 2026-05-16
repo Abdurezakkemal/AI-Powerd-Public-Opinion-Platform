@@ -135,11 +135,24 @@ exports.submitAppVote = async (req, res) => {
         );
       }
       const Comment = require("../models/Comment");
+      
+      // Fetch user demographics snapshot
+      const demographicsSnapshot = {
+        ageRange: user.ageRange,
+        gender: user.gender,
+        occupation: user.occupation,
+        education: user.education,
+      };
+      
       commentDoc = new Comment({
         policyId,
         userId: user._id,
+        voteId: vote._id,
         text: comment.trim(),
-        status: "processing",
+        demographics: demographicsSnapshot,
+        visibility: "visible",
+        moderationStatus: "pending_ai",
+        moderationReason: "pending_ai",
       });
       await commentDoc.save();
     }
