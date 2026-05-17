@@ -175,7 +175,7 @@ class ProfileCubit extends Cubit<ProfileState> {
       emit(
         state.copyWith(
           actionStatus: RequestStatus.success,
-          message: 'User data exported to $path',
+          message: 'Your data export has been saved successfully: $path',
         ),
       );
     } on ApiException catch (error) {

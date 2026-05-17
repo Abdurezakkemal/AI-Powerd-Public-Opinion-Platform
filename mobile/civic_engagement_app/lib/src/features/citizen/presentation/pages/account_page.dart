@@ -61,11 +61,17 @@ class _AccountPageState extends State<AccountPage> {
         }
         if (state.actionStatus == RequestStatus.success &&
             state.message != null) {
+          if (state.message!.startsWith('Your data export')) {
+            _showExportSuccess(context, state.message!);
+          }
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(SnackBar(
               content: Text(state.message!),
-              backgroundColor: Colors.green.shade600));
+              backgroundColor: Colors.green.shade600,
+              duration: state.message!.startsWith('Your data export')
+                  ? const Duration(seconds: 8)
+                  : const Duration(seconds: 4)));
           _currentPasswordController.clear();
           _newPasswordController.clear();
           _emailCodeController.clear();
@@ -645,6 +651,32 @@ class _AccountPageState extends State<AccountPage> {
     final error = await context.read<ProfileCubit>().deleteAccount();
     if (!context.mounted || error != null) return;
     context.read<AuthCubit>().logout();
+  }
+
+  Future<void> _showExportSuccess(BuildContext context, String message) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text(
+          'Export saved',
+          style: TextStyle(fontWeight: FontWeight.w800),
+        ),
+        content: SelectableText(
+          message,
+          style: const TextStyle(color: AppTheme.mutedText, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text(
+              'Done',
+              style: TextStyle(fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showMessage(String message, {bool isError = false}) {

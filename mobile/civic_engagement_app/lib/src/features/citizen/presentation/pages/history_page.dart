@@ -34,7 +34,8 @@ class HistoryPage extends StatelessWidget {
       body: BlocBuilder<HistoryCubit, HistoryState>(
         builder: (context, state) {
           if (state.status == RequestStatus.loading && state.history.isEmpty) {
-            return const Center(child: CircularProgressIndicator(color: AppTheme.primary));
+            return const Center(
+                child: CircularProgressIndicator(color: AppTheme.primary));
           }
 
           if (state.status == RequestStatus.failure && state.history.isEmpty) {
@@ -146,9 +147,6 @@ class _HistoryCard extends StatelessWidget {
                       ),
                 ),
               ),
-              const SizedBox(width: 8),
-              if (item.hasComment || item.sentiment != null)
-                _SentimentPill(sentiment: item.sentiment),
             ],
           ),
           if (item.policyCode != null) ...[
@@ -194,8 +192,10 @@ class _HistoryCard extends StatelessWidget {
               label: const Text('Add comment'),
               style: OutlinedButton.styleFrom(
                 foregroundColor: AppTheme.primary,
-                side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                side:
+                    BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
               ),
             ),
           ],
@@ -300,39 +300,6 @@ class _CommentSheetState extends State<_CommentSheet> {
           ),
         );
       },
-    );
-  }
-}
-
-class _SentimentPill extends StatelessWidget {
-  const _SentimentPill({required this.sentiment});
-
-  final String? sentiment;
-
-  @override
-  Widget build(BuildContext context) {
-    final value = sentiment ?? 'pending';
-    final color = switch (sentiment) {
-      'positive' => AppTheme.primary,
-      'negative' => const Color(0xFFE53E3E),
-      'neutral' => const Color(0xFF62748A),
-      _ => const Color(0xFFB7791F),
-    };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        value,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.w800,
-          fontSize: 12,
-        ),
-      ),
     );
   }
 }

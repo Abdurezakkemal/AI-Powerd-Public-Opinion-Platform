@@ -351,8 +351,6 @@ class _CommentCard extends StatelessWidget {
                   runSpacing: 8,
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    if (comment.sentiment != null)
-                      _SentimentChip(sentiment: comment.sentiment!),
                     if (comment.isEdited)
                       Container(
                         padding: const EdgeInsets.symmetric(
@@ -793,58 +791,6 @@ class _StatusChip extends StatelessWidget {
             fontSize: 10,
             fontWeight: FontWeight.w800,
             letterSpacing: 0.5),
-      ),
-    );
-  }
-}
-
-class _SentimentChip extends StatelessWidget {
-  const _SentimentChip({required this.sentiment});
-
-  final CommentSentiment sentiment;
-
-  @override
-  Widget build(BuildContext context) {
-    Color color;
-    IconData icon;
-    Color bgColor;
-
-    switch (sentiment.label) {
-      case 'positive':
-        color = Colors.green.shade700;
-        bgColor = Colors.green.shade50;
-        icon = Icons.sentiment_satisfied_rounded;
-      case 'negative':
-        color = Colors.red.shade700;
-        bgColor = Colors.red.shade50;
-        icon = Icons.sentiment_dissatisfied_rounded;
-      default:
-        color = Colors.grey.shade700;
-        bgColor = Colors.grey.shade100;
-        icon = Icons.sentiment_neutral_rounded;
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: bgColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.2)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, size: 14, color: color),
-          const SizedBox(width: 4),
-          Text(
-            sentiment.label.toUpperCase(),
-            style: TextStyle(
-                color: color,
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.5),
-          ),
-        ],
       ),
     );
   }

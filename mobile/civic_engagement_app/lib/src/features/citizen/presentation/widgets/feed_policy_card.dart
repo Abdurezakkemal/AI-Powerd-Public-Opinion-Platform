@@ -32,23 +32,20 @@ class FeedPolicyCard extends StatelessWidget {
                 child: Text(
                   policy.title,
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 18,
-                    height: 1.3,
-                    letterSpacing: -0.3,
-                  ),
+                        fontWeight: FontWeight.w800,
+                        fontSize: 18,
+                        height: 1.3,
+                        letterSpacing: -0.3,
+                      ),
                 ),
               ),
-              const SizedBox(width: 12),
-              _RelevanceBadge(score: policy.relevanceScore),
             ],
           ),
           const SizedBox(height: 12),
-
           Text(
             policy.description,
             style: TextStyle(
-              color: AppTheme.text.withValues(alpha: 0.7), 
+              color: AppTheme.text.withValues(alpha: 0.7),
               height: 1.5,
               fontSize: 14,
             ),
@@ -58,7 +55,6 @@ class FeedPolicyCard extends StatelessWidget {
           const SizedBox(height: 20),
           const Divider(height: 1),
           const SizedBox(height: 16),
-
           Wrap(
             spacing: 16,
             runSpacing: 12,
@@ -77,7 +73,6 @@ class FeedPolicyCard extends StatelessWidget {
               ),
             ],
           ),
-
           if (policy.targetRegions.isNotEmpty) ...[
             const SizedBox(height: 16),
             Wrap(
@@ -85,7 +80,8 @@ class FeedPolicyCard extends StatelessWidget {
               runSpacing: 8,
               children: policy.targetRegions
                   .map((region) => Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
                           color: AppTheme.background,
                           borderRadius: BorderRadius.circular(8),
@@ -125,47 +121,6 @@ class FeedPolicyCard extends StatelessWidget {
       default:
         return pollType;
     }
-  }
-}
-
-class _RelevanceBadge extends StatelessWidget {
-  const _RelevanceBadge({required this.score});
-
-  final double score;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = _getColorForScore(score);
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.auto_awesome_rounded, size: 14, color: color),
-          const SizedBox(width: 4),
-          Text(
-            score.toStringAsFixed(1),
-            style: TextStyle(
-              color: color,
-              fontWeight: FontWeight.w800,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _getColorForScore(double score) {
-    if (score >= 5.0) return Colors.green.shade600;
-    if (score >= 3.0) return Colors.orange.shade600;
-    return Colors.grey.shade600;
   }
 }
 
