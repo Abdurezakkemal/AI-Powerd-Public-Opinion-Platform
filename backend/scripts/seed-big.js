@@ -256,7 +256,6 @@ const randomComment = (sentimentLabel) => {
   return randomItem(list);
 };
 
-// Keyword pools by topic
 const keywordMap = {
   Agriculture: ["subsidies", "farming", "crops", "irrigation", "harvest"],
   Economy: ["jobs", "growth", "inflation", "taxes", "investment"],
@@ -304,7 +303,7 @@ async function seed() {
     await PolicyAssociate.deleteMany({});
     console.log("Cleanup done.");
 
-    // ===== Admin (create only if not exists) =====
+    // Admin
     let admin = await User.findOne({ email: "admin@test.com" });
     if (!admin) {
       const adminHash = await hashPassword("Admin@123");
@@ -388,6 +387,7 @@ async function seed() {
     }
     console.log(`Policies created (${createdPolicies.length}).`);
 
+    // ===== Votes and normal comments (approved, good confidence) =====
     let voteCount = 0;
     let commentCount = 0;
     for (const citizen of createdCitizens) {
@@ -429,15 +429,36 @@ async function seed() {
             userId: citizen._id,
             parentCommentId: null,
             text: commentText,
-            status: "approved",
             visibility: "visible",
-            moderationStatus: "none",
-            moderationReason: null,
-            sentiment: { label: sentimentLabel, confidence: 0.85 },
+            aiStatus: "processed",
+            sentiment: {
+              label: sentimentLabel,
+              confidence: 0.85,
+              overriddenByModerator: false,
+            },
             keywords: keywords,
+            reportState: "clean",
             reportCount: 0,
-            editedHistory: [],
-            flaggedSnapshot: null,
+            reports: [],
+            reviewFlags: {
+              sentimentReviewNeeded: false,
+              moderationReviewNeeded: false,
+            },
+            lastAnalyzedAt: new Date(),
+            events: [
+              {
+                type: "created",
+                actor: citizen._id,
+                data: { text: commentText },
+                createdAt: new Date(),
+              },
+              {
+                type: "ai_analyzed",
+                actor: null,
+                data: { sentiment: sentimentLabel, confidence: 0.85, keywords },
+                createdAt: new Date(),
+              },
+            ],
             createdAt: new Date(Date.now() - randomInt(1, 60) * 86400000),
           });
           await comment.save();
@@ -448,6 +469,217 @@ async function seed() {
     console.log(`Votes created: ${voteCount}`);
     console.log(`Comments created: ${commentCount}`);
 
+    // === Moderatable comments (low confidence, reported, appeal) ===
+    console.log("Creating moderatable test comments...");
+    const allCitizens = createdCitizens;
+    const somePolicies = createdPolicies.slice(0, 2);
+    const now = new Date();
+
+    // Low‑confidence comments (processed AI but low confidence)
+    for (let i = 0; i < 3; i++) {
+      const citizen = randomItem(allCitizens);
+      const policy = randomItem(somePolicies);
+      const comment = new Comment({
+        policyId: policy._id,
+        userId: citizen._id,
+        parentCommentId: null,
+        text: `This is a low‑confidence test comment #${i + 1}. The AI is uncertain about the sentiment.`,
+        visibility: "visible",
+        aiStatus: "processed",
+        sentiment: {
+          label: "neutral",
+          confidence: 0.45,
+          overriddenByModerator: false,
+        },
+        keywords: ["test", "uncertain"],
+        reportState: "clean",
+        reportCount: 0,
+        reports: [],
+        reviewFlags: {
+          sentimentReviewNeeded: true,
+          moderationReviewNeeded: false,
+        },
+        lastAnalyzedAt: new Date(),
+        events: [
+          {
+            type: "created",
+            actor: citizen._id,
+            data: {
+              text: `This is a low‑confidence test comment #${i + 1}. The AI is uncertain about the sentiment.`,
+            },
+            createdAt: new Date(),
+          },
+          {
+            type: "ai_analyzed",
+            actor: null,
+            data: {
+              sentiment: { label: "neutral", confidence: 0.45 },
+              keywords: ["test", "uncertain"],
+            },
+            createdAt: new Date(),
+          },
+        ],
+        createdAt: new Date(now - randomInt(1, 10) * 86400000),
+      });
+      await comment.save();
+      console.log(
+        `   Low‑confidence comment created for policy ${policy.title}`,
+      );
+    }
+
+    // Reported comments (hidden due to reports)
+    for (let i = 0; i < 3; i++) {
+      const citizen = randomItem(allCitizens);
+      const policy = randomItem(somePolicies);
+      const originalText = `This comment was reported by users. Original offensive content.`;
+      const comment = new Comment({
+        policyId: policy._id,
+        userId: citizen._id,
+        parentCommentId: null,
+        text: originalText,
+        visibility: "hidden",
+        aiStatus: "processed",
+        sentiment: {
+          label: "negative",
+          confidence: 0.92,
+          overriddenByModerator: false,
+        },
+        keywords: ["offensive"],
+        reportState: "reported",
+        reportCount: 3,
+        reports: [
+          {
+            reporterId: allCitizens[randomInt(0, allCitizens.length - 1)]._id,
+            reason: "inappropriate",
+            status: "pending",
+            createdAt: new Date(now - randomInt(1, 3) * 86400000),
+            snapshot: {
+              text: originalText,
+              sentiment: { label: "negative", confidence: 0.92 },
+              keywords: ["offensive"],
+              visibility: "visible",
+              aiStatus: "processed",
+              reportCount: 0,
+            },
+          },
+          {
+            reporterId: allCitizens[randomInt(0, allCitizens.length - 1)]._id,
+            reason: "hate speech",
+            status: "pending",
+            createdAt: new Date(now - randomInt(1, 3) * 86400000),
+            snapshot: {
+              text: originalText,
+              sentiment: { label: "negative", confidence: 0.92 },
+              keywords: ["offensive"],
+              visibility: "visible",
+              aiStatus: "processed",
+              reportCount: 1,
+            },
+          },
+          {
+            reporterId: allCitizens[randomInt(0, allCitizens.length - 1)]._id,
+            reason: "spam",
+            status: "pending",
+            createdAt: new Date(now - randomInt(1, 3) * 86400000),
+            snapshot: {
+              text: originalText,
+              sentiment: { label: "negative", confidence: 0.92 },
+              keywords: ["offensive"],
+              visibility: "visible",
+              aiStatus: "processed",
+              reportCount: 2,
+            },
+          },
+        ],
+        reviewFlags: {
+          sentimentReviewNeeded: false,
+          moderationReviewNeeded: true,
+        },
+        moderationActions: [
+          {
+            action: "hide",
+            reason: "auto_hide_reports",
+            actor: null,
+            createdAt: new Date(),
+          },
+        ],
+        events: [
+          {
+            type: "created",
+            actor: citizen._id,
+            data: { text: originalText },
+            createdAt: new Date(),
+          },
+          {
+            type: "reported",
+            actor: null,
+            data: { reason: "auto_hide_reports", reportCount: 3 },
+            createdAt: new Date(),
+          },
+        ],
+        createdAt: new Date(now - randomInt(1, 5) * 86400000),
+      });
+      await comment.save();
+      console.log(`   Reported comment created for policy ${policy.title}`);
+    }
+
+    // Comment with pending appeal
+    const appealCitizen = randomItem(allCitizens);
+    const appealPolicy = randomItem(somePolicies);
+    const appealComment = new Comment({
+      policyId: appealPolicy._id,
+      userId: appealCitizen._id,
+      parentCommentId: null,
+      text: "This comment was moderated and I disagree.",
+      visibility: "hidden",
+      aiStatus: "processed",
+      sentiment: {
+        label: "neutral",
+        confidence: 0.5,
+        overriddenByModerator: false,
+      },
+      keywords: ["appeal"],
+      reportState: "clean",
+      reportCount: 0,
+      reports: [],
+      reviewFlags: {
+        sentimentReviewNeeded: false,
+        moderationReviewNeeded: true,
+      },
+      appeal: {
+        appellantId: appealCitizen._id,
+        reason: "I believe my comment was incorrectly moderated.",
+        status: "pending",
+        createdAt: new Date(),
+        snapshot: {
+          text: "This comment was moderated and I disagree.",
+          visibility: "hidden",
+          reportState: "clean",
+          reportCount: 0,
+        },
+      },
+      events: [
+        {
+          type: "created",
+          actor: appealCitizen._id,
+          data: { text: "This comment was moderated and I disagree." },
+          createdAt: new Date(),
+        },
+        {
+          type: "appealed",
+          actor: appealCitizen._id,
+          data: { reason: "I believe my comment was incorrectly moderated." },
+          createdAt: new Date(),
+        },
+      ],
+      createdAt: new Date(now - 2 * 86400000),
+    });
+    await appealComment.save();
+    console.log(
+      `   Appeal pending comment created for policy ${appealPolicy.title}`,
+    );
+
+    // ===== SMS subscriptions and SMS votes =====
     const smsPhones = ["+251911234567", "+251922345678", "+251933456789"];
     for (const phone of smsPhones) {
       const phoneHash = hashPhone(phone);
@@ -481,6 +713,7 @@ async function seed() {
     }
     console.log(`SMS votes created: ${smsVoteCount}`);
 
+    // ===== Generate JWT tokens =====
     console.log("\nGenerating JWT tokens for seeded users...");
     const tokens = [];
     const generateToken = (user) => {
