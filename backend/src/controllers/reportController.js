@@ -88,7 +88,10 @@ exports.getDashboardStats = async (req, res) => {
         },
       },
     ]);
-    const avgRatingOverall = ratingAgg.length && ratingAgg[0].avg !== null ? parseFloat(ratingAgg[0].avg.toFixed(2)) : 0;
+    const avgRatingOverall =
+      ratingAgg.length && ratingAgg[0].avg !== null
+        ? parseFloat(ratingAgg[0].avg.toFixed(2))
+        : 0;
 
     const aiHealth = await getAIHealth();
 
@@ -189,7 +192,6 @@ exports.getTrends = async (req, res) => {
         $group: {
           _id: { $dateToString: { format: groupFormat, date: "$createdAt" } },
           count: { $sum: 1 },
-          avgRating: { $avg: "$rating" },
         },
       },
       { $sort: { _id: 1 } },
@@ -214,7 +216,6 @@ exports.getTrends = async (req, res) => {
       trendMap.set(v._id, {
         date: v._id,
         votes: v.count,
-        avgRating: v.avgRating,
         newUsers: 0,
       });
     }
@@ -225,7 +226,6 @@ exports.getTrends = async (req, res) => {
         trendMap.set(u._id, {
           date: u._id,
           votes: 0,
-          avgRating: 0,
           newUsers: u.newUsers,
         });
       }
@@ -240,12 +240,6 @@ exports.getTrends = async (req, res) => {
       (sum, item) => sum + (item.newUsers || 0),
       0,
     );
-    const averageRating = totalVotes
-      ? data.reduce(
-          (sum, item) => sum + (item.votes || 0) * (item.avgRating || 0),
-          0,
-        ) / totalVotes
-      : 0;
 
     return sendSuccess(
       res,
@@ -254,8 +248,6 @@ exports.getTrends = async (req, res) => {
         data,
         totalVotes,
         newUsers: totalNewUsers,
-        averageRating: parseFloat(averageRating.toFixed(2)),
-        votesTimeSeries: data,
       },
       "Trends retrieved successfully",
     );

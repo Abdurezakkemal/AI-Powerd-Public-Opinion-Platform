@@ -101,6 +101,12 @@ const { startAutoCloseWorker } = require("./src/workers/autoCloseWorker");
 const { startAutoActivateWorker } = require("./src/workers/autoActivateWorker");
 const { startAutoRetryWorker } = require("./src/workers/autoRetryWorker");
 const { startCleanupWorker } = require("./src/workers/cleanupUnverifiedUsers");
+const {
+  startExpireInvitationsWorker,
+} = require("./src/workers/expireInvitationsWorker");
+const {
+  startRemindExpiringInvitationsWorker,
+} = require("./src/workers/remindExpiringInvitationsWorker");
 
 startWorker();
 startAutoCloseWorker();
@@ -108,6 +114,8 @@ startAutoActivateWorker();
 startEmergingTopicsWorker();
 startAutoRetryWorker();
 startCleanupWorker();
+startExpireInvitationsWorker();
+startRemindExpiringInvitationsWorker();
 
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {

@@ -1,7 +1,6 @@
 const mongoose = require("mongoose");
 
 const userSchema = new mongoose.Schema({
-  // Existing fields
   email: { type: String, required: true, unique: true },
   passwordHash: { type: String, required: true },
   phoneHash: { type: String, unique: true, sparse: true, default: null },
@@ -15,7 +14,7 @@ const userSchema = new mongoose.Schema({
   active: { type: Boolean, default: true },
   createdAt: { type: Date, default: Date.now },
 
-  // Demographics (mandatory at registration)
+  // Demographics
   ageRange: {
     type: String,
     enum: ["18-24", "25-34", "35-44", "45-54", "55+"],
@@ -23,7 +22,7 @@ const userSchema = new mongoose.Schema({
   },
   gender: {
     type: String,
-    enum: ["male", "female", "non-binary", "prefer-not-to-say"],
+    enum: ["male", "female", "prefer-not-to-say"],
     required: true,
   },
   occupation: {
@@ -52,14 +51,12 @@ const userSchema = new mongoose.Schema({
     required: true,
   },
 
-  // Translation preference for citizens
   preferredLanguage: {
     type: String,
     enum: ["am", "om", "ti", "en"],
     default: "en",
   },
 
-  // Planner-specific fields
   languagesSpoken: {
     type: [String],
     enum: ["am", "om", "ti", "en"],
@@ -68,10 +65,25 @@ const userSchema = new mongoose.Schema({
   trainingCompletedAt: { type: Date, default: null },
   twoFactorEnabled: { type: Boolean, default: false },
   totpSecret: { type: String, default: null },
-  tokenVersion: { type: Number, default: 0 }, // for JWT invalidation
+  tokenVersion: { type: Number, default: 0 },
 
-  // Soft delete
   deletedAt: { type: Date, default: null },
+
+  // NEW: displayName for public view (auto‑generated)
+  displayName: { type: String, unique: true, sparse: true },
+});
+
+// Auto‑generate displayName if missing
+userSchema.pre("save", async function () {
+  if (!this.displayName) {
+    let base = `User_${Math.random().toString(36).substring(2, 10)}`;
+    let unique = base;
+    let counter = 1;
+    while (await mongoose.model("User").findOne({ displayName: unique })) {
+      unique = `${base}_${counter++}`;
+    }
+    this.displayName = unique;
+  }
 });
 
 module.exports = mongoose.model("User", userSchema);

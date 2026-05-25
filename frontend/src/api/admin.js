@@ -25,6 +25,7 @@ export const adminApi = {
   listPlanners(params = {}) {
     return apiClient.get("/admin/planners", { params });
   },
+  getPlanner: (id) => apiClient.get(`/admin/planners/${id}`),
   createPlanner(payload) {
     return apiClient.post("/admin/planners", payload);
   },
@@ -105,5 +106,13 @@ export const adminApi = {
       decision,
       moderatorNote,
     });
+  },
+
+  // Emerging topics
+  getEmergingTopics() {
+    return apiClient.get("/admin/emerging-topics");
+  },
+  searchPlanners(query) {
+    return apiClient.get("/admin/planners/search", { params: { q: query } });
   },
 };

@@ -49,15 +49,16 @@ router.get(
   analyticsController.getDemographicBreakdown,
 );
 
+// ✅ Open analytics: any planner can view (no associate permission required)
 router.get(
   "/:policyId",
   auth(["planner", "admin"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
-  hasAssociatePermission("view_analytics"),
   analyticsController.getAnalytics,
 );
 
+// Export still requires export_data permission
 router.get(
   "/:policyId/export",
   auth(["planner", "admin"]),
@@ -67,12 +68,12 @@ router.get(
   analyticsController.exportAnalytics,
 );
 
+// Comments list still requires moderate_comments permission
 router.get(
   "/:policyId/comments",
   auth(["planner", "admin"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
-  hasAssociatePermission("moderate_comments"),
   analyticsController.getComments,
 );
 

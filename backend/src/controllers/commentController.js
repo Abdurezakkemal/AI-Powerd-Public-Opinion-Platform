@@ -51,7 +51,7 @@ const getLatestVersion = async (originalCommentId) => {
   return latest;
 };
 
-// Helper to create a new version
+// Helper to create a new version (copy aiStatus and demographics)
 const createNewVersion = async (originalComment, updates) => {
   const latestVersion = await getLatestVersion(originalComment._id);
   const newVersionNumber = (latestVersion?.versionNumber || 0) + 1;
@@ -63,7 +63,7 @@ const createNewVersion = async (originalComment, updates) => {
     parentCommentId: originalComment.parentCommentId,
     text: updates.text,
     visibility: "visible",
-    aiStatus: "pending",
+    aiStatus: originalComment.aiStatus, // preserve aiStatus (e.g., "skipped" for replies)
     reportState: "clean",
     reports: [],
     appeal: null,
@@ -72,6 +72,7 @@ const createNewVersion = async (originalComment, updates) => {
       sentimentReviewNeeded: false,
       moderationReviewNeeded: false,
     },
+    demographics: originalComment.demographics, // preserve demographics snapshot
     events: [
       createEvent({
         type: "version_created",
@@ -87,9 +88,7 @@ const createNewVersion = async (originalComment, updates) => {
   return newVersion;
 };
 
-// =====================================================
 // POST COMMENT (first version)
-// =====================================================
 exports.postComment = async (req, res) => {
   try {
     const { policyId, text, parentCommentId = null } = req.body;
@@ -135,6 +134,7 @@ exports.postComment = async (req, res) => {
       }
     }
 
+    const user = req.user;
     const comment = new Comment({
       userId: req.user.id,
       policyId,
@@ -143,9 +143,15 @@ exports.postComment = async (req, res) => {
       originalCommentId: null,
       versionNumber: 1,
       visibility: "visible",
-      aiStatus: "pending",
+      aiStatus: parentCommentId ? "skipped" : "pending",
       reportState: "clean",
       reports: [],
+      demographics: {
+        ageRange: user.ageRange,
+        gender: user.gender,
+        occupation: user.occupation,
+        education: user.education,
+      },
       events: [
         createEvent({
           type: "created",
@@ -174,7 +180,6 @@ exports.postComment = async (req, res) => {
     );
   }
 };
-
 // =====================================================
 // EDIT COMMENT (with versioning)
 // =====================================================
@@ -391,13 +396,9 @@ exports.getPolicyComments = async (req, res) => {
       filter.visibility = visibility;
     if (reportState) filter.reportState = reportState;
 
-    // Only latest version per thread: group by originalCommentId (or self)
-    // Using aggregation to get the latest version for each thread
     const pipeline = [
       { $match: filter },
-      {
-        $sort: { versionNumber: -1, createdAt: -1 },
-      },
+      { $sort: { versionNumber: -1, createdAt: -1 } },
       {
         $group: {
           _id: { $ifNull: ["$originalCommentId", "$_id"] },
@@ -413,18 +414,31 @@ exports.getPolicyComments = async (req, res) => {
     const comments = await Comment.aggregate(pipeline);
     const total = await Comment.aggregate([
       { $match: filter },
-      {
-        $group: {
-          _id: { $ifNull: ["$originalCommentId", "$_id"] },
-        },
-      },
+      { $group: { _id: { $ifNull: ["$originalCommentId", "$_id"] } } },
       { $count: "total" },
     ]);
+
+    // Fetch user displayNames for all comment userIds
+    const userIds = [
+      ...new Set(comments.map((c) => c.userId).filter((id) => id)),
+    ];
+    let userMap = new Map();
+    if (userIds.length) {
+      const users = await User.find({ _id: { $in: userIds } })
+        .select("displayName")
+        .lean();
+      userMap = new Map(users.map((u) => [u._id.toString(), u.displayName]));
+    }
 
     const formatted = comments.map((c) => ({
       id: c._id,
       text: c.text,
-      user: c.userId ? { id: c.userId, email: c.userEmail } : null,
+      user: c.userId
+        ? {
+            id: c.userId,
+            displayName: userMap.get(c.userId.toString()) || "Anonymous",
+          }
+        : null,
       policyId: c.policyId,
       parentCommentId: c.parentCommentId,
       visibility: c.visibility,
@@ -474,7 +488,7 @@ exports.getCommentById = async (req, res) => {
     const { id } = req.params;
     const filter = { _id: id, ...buildVisibilityFilter(req.user) };
     const comment = await Comment.findOne(filter)
-      .populate("userId", "email firstName lastName")
+      .populate("userId", "displayName") // only displayName
       .lean();
     if (!comment)
       return sendError(
@@ -491,9 +505,7 @@ exports.getCommentById = async (req, res) => {
       user: comment.userId
         ? {
             id: comment.userId._id,
-            email: comment.userId.email,
-            firstName: comment.userId.firstName,
-            lastName: comment.userId.lastName,
+            displayName: comment.userId.displayName,
           }
         : null,
       policyId: comment.policyId,
@@ -602,7 +614,7 @@ exports.getReplies = async (req, res) => {
       ...buildVisibilityFilter(req.user),
     };
     const replies = await Comment.find(filter)
-      .populate("userId", "email firstName lastName")
+      .populate("userId", "displayName")
       .sort(buildSortOption(sort))
       .skip((page - 1) * limit)
       .limit(Number(limit))
@@ -615,9 +627,7 @@ exports.getReplies = async (req, res) => {
       user: r.userId
         ? {
             id: r.userId._id,
-            email: r.userId.email,
-            firstName: r.userId.firstName,
-            lastName: r.userId.lastName,
+            displayName: r.userId.displayName,
           }
         : null,
       parentCommentId: r.parentCommentId,
@@ -914,7 +924,7 @@ exports.getCommentReports = async (req, res) => {
 exports.moderateComment = async (req, res) => {
   try {
     const { commentId } = req.params;
-    const { action, reason, sentimentOverride, keywordsOverride } = req.body;
+    const { action, reason, sentimentOverride } = req.body; // removed keywordsOverride
     const allowedActions = ["approve", "hide", "remove", "restore"];
     if (!allowedActions.includes(action)) {
       return sendError(
@@ -937,6 +947,14 @@ exports.moderateComment = async (req, res) => {
       );
     }
 
+    const isAssociate = !!req.associate;
+    let auditDetails = {
+      action,
+      reason,
+      hadSentimentOverride: !!sentimentOverride,
+    };
+    if (isAssociate) auditDetails.associateId = req.associate._id;
+
     switch (action) {
       case "approve":
         if (comment.visibility !== "visible") {
@@ -951,7 +969,6 @@ exports.moderateComment = async (req, res) => {
         comment.reportState = "actioned";
         if (comment.reviewFlags)
           comment.reviewFlags.sentimentReviewNeeded = false;
-        // Resolve any pending appeal
         if (comment.appeal?.status === "pending") {
           comment.appeal.status = "approved";
           comment.appeal.resolvedAt = new Date();
@@ -970,7 +987,6 @@ exports.moderateComment = async (req, res) => {
           comment.moderatedBy = req.user.id;
           comment.moderatedAt = new Date();
           comment.moderationReason = reason || "hidden_by_moderator";
-
           if (comment.userId && comment.policyId) {
             await createNotification({
               userId: comment.userId,
@@ -1036,25 +1052,27 @@ exports.moderateComment = async (req, res) => {
       });
       if (comment.reviewFlags)
         comment.reviewFlags.sentimentReviewNeeded = false;
-    }
-    if (keywordsOverride) {
-      comment.keywords = keywordsOverride;
-      comment.moderationActions.push({
-        action: "override_keywords",
-        reason: "manual override",
-        actor: req.user.id,
-        createdAt: new Date(),
-      });
+      auditDetails.sentimentOverride = sentimentOverride;
     }
 
-    comment.events.push(
-      createEvent({
-        type: "moderated",
-        actor: req.user.id,
-        data: { action, reason, sentimentOverride, keywordsOverride },
-      }),
-    );
+    comment.events.push({
+      type: "moderated",
+      actor: req.user.id,
+      data: { action, reason, sentimentOverride },
+      createdAt: new Date(),
+    });
+
     await comment.save();
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "MODERATE_COMMENT",
+      targetType: "Comment",
+      targetId: comment._id,
+      details: auditDetails,
+      req,
+    });
 
     return sendSuccess(res, comment, "Comment moderated successfully");
   } catch (err) {
@@ -1068,7 +1086,6 @@ exports.moderateComment = async (req, res) => {
     );
   }
 };
-
 // =====================================================
 // APPEAL COMMENT (on a specific version)
 // =====================================================
@@ -1184,7 +1201,7 @@ exports.getCommentHistory = async (req, res) => {
     const { id } = req.params;
     const comment = await Comment.findById(id).populate(
       "events.actor",
-      "email role",
+      "displayName role",
     );
     if (!comment)
       return sendError(
@@ -1223,8 +1240,6 @@ exports.getCommentsNeedingReview = async (req, res) => {
       return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 
-    // Comments that are visible, have been analysed (lastAnalyzedAt not null),
-    // and either have sentimentReviewNeeded true OR are pending but have been analysed before (lastAnalyzedAt not null)
     const filter = {
       visibility: "visible",
       $and: [
@@ -1238,7 +1253,7 @@ exports.getCommentsNeedingReview = async (req, res) => {
     };
 
     const comments = await Comment.find(filter)
-      .populate("userId", "email firstName lastName")
+      .populate("userId", "displayName")
       .populate("policyId", "title policyCode")
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
@@ -1247,10 +1262,17 @@ exports.getCommentsNeedingReview = async (req, res) => {
 
     const total = await Comment.countDocuments(filter);
 
+    // Transform to remove user object and just keep displayName
+    const transformedComments = comments.map((c) => ({
+      ...c,
+      userDisplayName: c.userId?.displayName || "Anonymous",
+      userId: undefined, // remove the full user object
+    }));
+
     return sendSuccess(
       res,
       {
-        comments,
+        comments: transformedComments,
         pagination: {
           total,
           page: Number(page),

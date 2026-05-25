@@ -50,4 +50,8 @@ export const policyApi = {
   suggestTopics(text) {
     return apiClient.post("/policies/suggest-topics", { text });
   },
+  // In policyApi.js, add this method after the existing ones
+  getCategorizedPolicies(params) {
+    return apiClient.get("/policies/categorized", { params });
+  },
 };

@@ -1,5 +1,6 @@
-import { CheckCheck } from "lucide-react";
-import { useEffect, useState } from "react";
+import { ArrowLeft } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../api/client";
 import { userApi } from "../api/user";
 import { readStoredAuth } from "../lib/storage";
@@ -10,15 +11,16 @@ import { PageHeader } from "../components/PageHeader";
 import { formatDate, getErrorMessage } from "../lib/format";
 
 export function NotificationsPage() {
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useState([]);
-  const [unreadOnly, setUnreadOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const observerRef = useRef(null);
 
   async function loadNotifications() {
     setError("");
     try {
-      const result = await userApi.getNotifications({ limit: 50, unreadOnly });
+      const result = await userApi.getNotifications({ limit: 100 });
       setNotifications(result.notifications || []);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to load notifications"));
@@ -32,16 +34,17 @@ export function NotificationsPage() {
     loadNotifications();
     const interval = setInterval(loadNotifications, 30000);
     return () => clearInterval(interval);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [unreadOnly]);
+  }, []);
 
   useEffect(() => {
     const userId = readStoredAuth()?.userId;
-    if (!userId) return undefined;
+    if (!userId) return;
 
     const apiUrl = new URL(API_BASE_URL);
     const protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(`${protocol}//${apiUrl.host}/socket.io/?EIO=4&transport=websocket`);
+    const socket = new WebSocket(
+      `${protocol}//${apiUrl.host}/socket.io/?EIO=4&transport=websocket`,
+    );
 
     socket.addEventListener("message", (event) => {
       const payload = String(event.data);
@@ -55,54 +58,141 @@ export function NotificationsPage() {
     });
 
     return () => socket.close();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function markRead(id) {
-    await userApi.markNotificationRead(id);
-    await loadNotifications();
-  }
+  // Auto-mark as read when card becomes visible
+  useEffect(() => {
+    if (observerRef.current) observerRef.current.disconnect();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(async (entry) => {
+          if (entry.isIntersecting) {
+            const id = entry.target.getAttribute("data-id");
+            const notification = notifications.find((n) => n._id === id);
+            if (notification && !notification.read) {
+              await userApi.markNotificationRead(id);
+              setNotifications((prev) =>
+                prev.map((n) => (n._id === id ? { ...n, read: true } : n)),
+              );
+            }
+          }
+        });
+      },
+      { threshold: 0.5 },
+    );
+    const elements = document.querySelectorAll(".notification-card");
+    elements.forEach((el) => observer.observe(el));
+    observerRef.current = observer;
+    return () => observer.disconnect();
+  }, [notifications]);
 
-  async function markAllRead() {
-    await userApi.markAllNotificationsRead();
-    await loadNotifications();
-  }
+  const handleNotificationClick = (notification) => {
+    const { type, data } = notification;
+    const policyId = data?.policyId;
+    const associateId = data?.associateId;
+
+    switch (type) {
+      case "POLICY_ACTIVATED":
+      case "POLICY_CLOSED":
+      case "POLICY_EXTENDED":
+        if (policyId) navigate(`/policies/${policyId}`);
+        break;
+      case "ASSOCIATE_ACCEPTED":
+      case "ASSOCIATE_REJECTED":
+      case "ASSOCIATE_PERMISSIONS_UPDATED":
+      case "ASSOCIATE_REVOKED":
+      case "ASSOCIATE_SELF_REVOKED":
+        if (policyId) navigate(`/policies/${policyId}?tab=associates`);
+        break;
+      case "ASSOCIATE_INVITED":
+      case "INVITATION_EXPIRING_SOON":
+        if (associateId)
+          navigate(`/associates/invitations?highlight=${associateId}`);
+        break;
+      case "INVITATION_EXPIRED_RECEIVER":
+      case "INVITATION_EXPIRED":
+        navigate("/associates/invitations");
+        break;
+      case "MESSAGE_RECEIVED":
+        navigate("/messages");
+        break;
+      case "COMMENT_REPLY":
+      case "COMMENT_FLAGGED":
+      case "COMMENT_APPEAL":
+      case "APPEAL_RESOLVED":
+        if (policyId) navigate(`/policies/${policyId}?tab=comments`);
+        break;
+      case "VOTE_SURGE":
+      case "RATING_DROP":
+      case "EMERGING_TOPIC":
+        if (policyId) navigate(`/policies/${policyId}/analytics`);
+        else navigate("/trends");
+        break;
+      case "PLANNER_APPROVED":
+        navigate("/dashboard");
+        break;
+      default:
+        break;
+    }
+  };
 
   return (
     <div>
-      <PageHeader
-        title="Notifications"
-        description="Review system alerts, collaboration updates, and policy events."
-        actions={
-          <>
-            <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm font-bold text-slate-700">
-              <input type="checkbox" className="h-4 w-4 accent-teal-700" checked={unreadOnly} onChange={(event) => setUnreadOnly(event.target.checked)} />
-              Unread only
-            </label>
-            <button type="button" onClick={markAllRead} className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800"><CheckCheck className="h-4 w-4" />Mark all read</button>
-          </>
-        }
-      />
+      <div className="mb-4 flex items-start justify-between">
+        <PageHeader
+          title="Notifications"
+          description="Review system alerts, collaboration updates, and policy events."
+          className="flex-1"
+        />
+        <button
+          onClick={() => navigate(-1)}
+          className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 ml-4 mt-1"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </button>
+      </div>
       <ErrorAlert message={error} />
-      {loading ? <LoadingState label="Loading notifications" /> : notifications.length ? (
+      {loading ? (
+        <LoadingState label="Loading notifications" />
+      ) : notifications.length ? (
         <div className="space-y-3">
           {notifications.map((notification) => (
-            <article key={notification._id} className={`rounded-lg border p-4 shadow-sm ${notification.read ? "border-slate-200 bg-white" : "border-teal-200 bg-teal-50"}`}>
+            <article
+              key={notification._id}
+              data-id={notification._id}
+              className={`notification-card cursor-pointer rounded-lg border p-4 shadow-sm transition hover:bg-slate-50 ${
+                notification.read
+                  ? "border-slate-200 bg-white"
+                  : "border-teal-200 bg-teal-50"
+              }`}
+              onClick={() => handleNotificationClick(notification)}
+            >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">{notification.type}</p>
-                  <h3 className="mt-1 font-bold text-slate-950">{notification.title}</h3>
+                  <p className="text-xs font-bold uppercase tracking-wide text-slate-500">
+                    {notification.type}
+                  </p>
+                  <h3 className="mt-1 font-bold text-slate-950">
+                    {notification.title}
+                  </h3>
                 </div>
-                <span className="text-xs text-slate-500">{formatDate(notification.createdAt)}</span>
+                <span className="text-xs text-slate-500">
+                  {formatDate(notification.createdAt)}
+                </span>
               </div>
-              <p className="mt-2 text-sm leading-6 text-slate-700">{notification.message}</p>
-              {!notification.read ? (
-                <button type="button" onClick={() => markRead(notification._id)} className="mt-3 rounded-lg border border-teal-200 bg-white px-3 py-1.5 text-xs font-bold text-teal-700 hover:bg-teal-50">Mark read</button>
-              ) : null}
+              <p className="mt-2 text-sm leading-6 text-slate-700">
+                {notification.message}
+              </p>
             </article>
           ))}
         </div>
-      ) : <EmptyState title="No notifications" description="New alerts and updates will appear here." />}
+      ) : (
+        <EmptyState
+          title="No notifications"
+          description="New alerts and updates will appear here."
+        />
+      )}
     </div>
   );
 }

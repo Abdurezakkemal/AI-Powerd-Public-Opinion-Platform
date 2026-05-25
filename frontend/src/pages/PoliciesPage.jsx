@@ -1,21 +1,16 @@
 import {
   BarChart3,
-  CalendarClock,
-  Copy,
-  Edit,
   FilePlus,
   History,
-  Pause,
-  Play,
-  Power,
-  RefreshCw,
-  Archive,
-  RotateCcw,
+  Edit,
   Search,
-  Trash2,
+  XCircle,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useEffect, useState } from "react";
+import { Link, useLocation, useNavigate } from "react-router-dom"; // added useNavigate
+import CreatableSelect from "react-select/creatable";
 import { policyApi } from "../api/policies";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorAlert } from "../components/ErrorAlert";
@@ -23,10 +18,58 @@ import { LoadingState } from "../components/LoadingState";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
+import { formatAuditDetails } from "../utils/auditFormatter";
 import { ETHIOPIAN_REGIONS, POLICY_STATUSES } from "../constants/regions";
 import { formatDate, getErrorMessage, toIsoFromDateInput } from "../lib/format";
+import { useAuth } from "../auth/AuthContext";
+import { useDebounce } from "../hooks/useDebounce";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
+
+const PREDEFINED_TOPICS = [
+  "Agriculture",
+  "Health",
+  "Education",
+  "Infrastructure",
+  "Economy",
+  "Security",
+  "Environment",
+  "Transport",
+  "Technology",
+  "Social Welfare",
+  "Taxation",
+  "Housing",
+  "Water Supply",
+  "Electricity",
+  "Employment",
+  "Tourism",
+  "Mining",
+  "Trade",
+  "Justice",
+  "Defense",
+  "Diaspora",
+];
+
+const topicOptions = PREDEFINED_TOPICS.map((t) => ({ value: t, label: t }));
+
+const defaultFilters = {
+  status: "",
+  region: "",
+  pollType: "",
+  search: "",
+  startDate: "",
+  endDate: "",
+  topics: [],
+  relevance: {
+    women: false,
+    youth: false,
+    farmers: false,
+    urban: false,
+    rural: false,
+    privateSector: false,
+    government: false,
+  },
+};
 
 function Button({ children, icon: Icon, variant = "secondary", ...props }) {
   const classes =
@@ -35,7 +78,6 @@ function Button({ children, icon: Icon, variant = "secondary", ...props }) {
       : variant === "danger"
         ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
         : "border border-slate-200 bg-white text-slate-700 hover:bg-slate-50";
-
   return (
     <button
       type="button"
@@ -49,80 +91,188 @@ function Button({ children, icon: Icon, variant = "secondary", ...props }) {
 }
 
 export function PoliciesPage() {
-  const [policies, setPolicies] = useState([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState("");
+  const { role } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate(); // for cloning redirect
+
+  const [activeTab, setActiveTab] = useState("my");
+  const [myPage, setMyPage] = useState(1);
+  const [delegatedPage, setDelegatedPage] = useState(1);
+  const [otherPage, setOtherPage] = useState(1);
+
+  const [dataPerTab, setDataPerTab] = useState({
+    my: [],
+    delegated: [],
+    other: [],
+  });
+  const [filtersPerTab, setFiltersPerTab] = useState({
+    my: { ...defaultFilters },
+    delegated: { ...defaultFilters },
+    other: { ...defaultFilters },
+  });
+  const [filters, setFilters] = useState({ ...defaultFilters });
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [actionLoading, setActionLoading] = useState("");
   const [historyPolicy, setHistoryPolicy] = useState(null);
   const [historyEvents, setHistoryEvents] = useState([]);
-  const [filters, setFilters] = useState({
-    status: "",
-    region: "",
-    search: "",
-    startDate: "",
-    endDate: "",
-    topic: "",
-    includeArchived: false,
-  });
 
-  const loadPolicies = async () => {
-    setLoading(true);
-    setError("");
+  const debouncedSearch = useDebounce(filters.search, 500);
+
+  const getStatusOptions = () => {
+    if (activeTab === "my") {
+      return ["draft", "published", "active", "paused", "closed", "archived"];
+    }
+    if (activeTab === "delegated") {
+      return ["draft", "published", "active", "paused", "closed"];
+    }
+    if (activeTab === "other") {
+      if (role === "admin") {
+        return ["draft", "published", "active", "paused", "closed", "archived"];
+      } else {
+        return ["active", "paused", "closed"];
+      }
+    }
+    return [];
+  };
+
+  const updateFilter = (key, value) => {
+    setFilters((prev) => ({ ...prev, [key]: value }));
+    setFiltersPerTab((prev) => ({
+      ...prev,
+      [activeTab]: { ...prev[activeTab], [key]: value },
+    }));
+  };
+
+  const updateRelevance = (factor, checked) => {
+    const newRelevance = { ...filters.relevance, [factor]: checked };
+    updateFilter("relevance", newRelevance);
+  };
+
+  const getRelevanceString = (relevance) =>
+    Object.entries(relevance)
+      .filter(([, v]) => v === true)
+      .map(([k]) => k)
+      .join(",");
+
+  const loadDataForTab = async (tab) => {
+    const tabFilters = filtersPerTab[tab];
+    const params = {};
+    if (tabFilters.status) params.status = tabFilters.status;
+    if (tabFilters.region) params.region = tabFilters.region;
+    if (tabFilters.pollType) params.pollType = tabFilters.pollType;
+    if (tabFilters.search) params.search = tabFilters.search;
+    if (tabFilters.startDate) params.startDate = tabFilters.startDate;
+    if (tabFilters.endDate) params.endDate = tabFilters.endDate;
+    if (tabFilters.topics.length) {
+      params.topics = tabFilters.topics.map((t) => t.value);
+    }
+    const relevanceStr = getRelevanceString(tabFilters.relevance);
+    if (relevanceStr) params.relevanceFactors = relevanceStr;
+
     try {
-      const result = await policyApi.list({
-        status: filters.status || undefined,
-        region: filters.region || undefined,
-        topic: filters.topic || undefined,
-        includeArchived:
-          filters.includeArchived || filters.status === "archived"
-            ? true
-            : undefined,
-        owner: "me",
-        page,
-        limit: PAGE_SIZE,
-      });
-      setPolicies(result.policies || []);
-      setTotal(result.total || 0);
+      const result = await policyApi.getCategorizedPolicies(params);
+      let dataArray = [];
+      if (tab === "my") dataArray = result.owned || [];
+      else if (tab === "delegated") dataArray = result.delegated || [];
+      else dataArray = result.other || [];
+      dataArray = dataArray.map((p) => ({ ...p, id: p.id || p._id }));
+      setDataPerTab((prev) => ({ ...prev, [tab]: dataArray }));
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to load policies"));
-    } finally {
-      setLoading(false);
+      if (tab === activeTab)
+        setError(getErrorMessage(err, "Failed to load policies"));
     }
   };
 
+  const loadDataForActiveTab = async (showInitial = false) => {
+    if (showInitial) setInitialLoading(true);
+    else setRefreshing(true);
+    setError("");
+    const tabFilters = filters;
+    const params = {};
+    if (tabFilters.status) params.status = tabFilters.status;
+    if (tabFilters.region) params.region = tabFilters.region;
+    if (tabFilters.pollType) params.pollType = tabFilters.pollType;
+    if (debouncedSearch) params.search = debouncedSearch;
+    if (tabFilters.startDate) params.startDate = tabFilters.startDate;
+    if (tabFilters.endDate) params.endDate = tabFilters.endDate;
+    if (tabFilters.topics.length) {
+      params.topics = tabFilters.topics.map((t) => t.value);
+    }
+    const relevanceStr = getRelevanceString(tabFilters.relevance);
+    if (relevanceStr) params.relevanceFactors = relevanceStr;
+
+    try {
+      const result = await policyApi.getCategorizedPolicies(params);
+      let dataArray = [];
+      if (activeTab === "my") dataArray = result.owned || [];
+      else if (activeTab === "delegated") dataArray = result.delegated || [];
+      else dataArray = result.other || [];
+      dataArray = dataArray.map((p) => ({ ...p, id: p.id || p._id }));
+      setDataPerTab((prev) => ({ ...prev, [activeTab]: dataArray }));
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to load policies"));
+    } finally {
+      if (showInitial) setInitialLoading(false);
+      else setRefreshing(false);
+    }
+  };
+
+  const handleTabChange = (newTab) => {
+    if (newTab === activeTab) return;
+    setFiltersPerTab((prev) => ({ ...prev, [activeTab]: filters }));
+    const newFilters = filtersPerTab[newTab];
+    setFilters(newFilters);
+    setActiveTab(newTab);
+    setMyPage(1);
+    setDelegatedPage(1);
+    setOtherPage(1);
+    if (dataPerTab[newTab].length === 0) loadDataForTab(newTab);
+  };
+
   useEffect(() => {
-    loadPolicies();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    loadDataForActiveTab(true);
+  }, []);
+
+  useEffect(() => {
+    if (!initialLoading) loadDataForActiveTab();
   }, [
     filters.status,
     filters.region,
-    filters.topic,
-    filters.includeArchived,
-    page,
+    filters.pollType,
+    debouncedSearch,
+    filters.startDate,
+    filters.endDate,
+    filters.topics,
+    filters.relevance,
   ]);
 
-  const filteredPolicies = useMemo(() => {
-    const query = filters.search.trim().toLowerCase();
-    const start = filters.startDate ? new Date(filters.startDate) : null;
-    const end = filters.endDate ? new Date(filters.endDate) : null;
+  useEffect(() => {
+    if (!initialLoading) {
+      const tabs = ["my", "delegated", "other"].filter((t) => t !== activeTab);
+      tabs.forEach((tab) => {
+        if (dataPerTab[tab].length === 0) loadDataForTab(tab);
+      });
+    }
+  }, [initialLoading]);
 
-    return policies.filter((policy) => {
-      const text = `${policy.title} ${policy.policyCode}`.toLowerCase();
-      const matchesSearch = !query || text.includes(query);
-      const policyStart = new Date(policy.startDate);
-      const policyEnd = new Date(policy.endDate);
-      const matchesStart = !start || policyStart >= start;
-      const matchesEnd = !end || policyEnd <= end;
-      return matchesSearch && matchesStart && matchesEnd;
-    });
-  }, [filters.search, filters.startDate, filters.endDate, policies]);
+  const paginate = (items, page) =>
+    items.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  const resetToFirstPage = (field, value) => {
-    setPage(1);
-    setFilters((current) => ({ ...current, [field]: value }));
+  const clearFilters = () => {
+    const newFilters = { ...defaultFilters };
+    updateFilter("status", newFilters.status);
+    updateFilter("region", newFilters.region);
+    updateFilter("pollType", newFilters.pollType);
+    updateFilter("search", newFilters.search);
+    updateFilter("startDate", newFilters.startDate);
+    updateFilter("endDate", newFilters.endDate);
+    updateFilter("topics", newFilters.topics);
+    updateFilter("relevance", { ...newFilters.relevance });
   };
 
   const runAction = async (key, action, successMessage) => {
@@ -132,7 +282,11 @@ export function PoliciesPage() {
     try {
       await action();
       setNotice(successMessage);
-      await loadPolicies();
+      await loadDataForActiveTab();
+      const otherTabs = ["my", "delegated", "other"].filter(
+        (t) => t !== activeTab,
+      );
+      await Promise.all(otherTabs.map((tab) => loadDataForTab(tab)));
     } catch (err) {
       setError(getErrorMessage(err, "Action failed"));
     } finally {
@@ -140,27 +294,13 @@ export function PoliciesPage() {
     }
   };
 
-  const showHistory = async (policy) => {
-    setActionLoading(`history-${policy.id}`);
-    setError("");
-    try {
-      const result = await policyApi.history(policy.id);
-      setHistoryPolicy(policy);
-      setHistoryEvents(result.events || []);
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to load policy history"));
-    } finally {
-      setActionLoading("");
-    }
-  };
-
   const extendPolicy = async (policy) => {
-    const value = window.prompt("Enter the new end date as YYYY-MM-DD", "");
-    if (!value) return;
+    const newEnd = window.prompt("Enter new end date (YYYY-MM-DD)", "");
+    if (!newEnd) return;
     await runAction(
       `extend-${policy.id}`,
-      () => policyApi.extend(policy.id, toIsoFromDateInput(value, true)),
-      "Policy end date updated.",
+      () => policyApi.extend(policy.id, toIsoFromDateInput(newEnd, true)),
+      "End date updated.",
     );
   };
 
@@ -174,412 +314,488 @@ export function PoliciesPage() {
   };
 
   const clonePolicy = async (policy) => {
-    await runAction(
-      `clone-${policy.id}`,
-      () => policyApi.clone(policy.id),
-      "Policy cloned as a new draft.",
-    );
+    setActionLoading(`clone-${policy.id}`);
+    setError("");
+    try {
+      const result = await policyApi.clone(policy.id);
+      setNotice(`Policy cloned as a new draft. Redirecting to edit...`);
+      navigate(`/policies/${result.id}/edit`);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to clone policy"));
+    } finally {
+      setActionLoading("");
+    }
   };
 
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const showHistory = async (policy) => {
+    setActionLoading(`history-${policy.id}`);
+    try {
+      const result = await policyApi.history(policy.id);
+      setHistoryPolicy(policy);
+      setHistoryEvents(result.events || []);
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to load history"));
+    } finally {
+      setActionLoading("");
+    }
+  };
 
-  return (
-    <div>
-      <PageHeader
-        title="Policies"
-        description="Create draft policies, manage lifecycle states, and open analytics for active, paused, or closed policies."
-        actions={
-          <Link
-            className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800"
-            to="/policies/new"
-          >
-            <FilePlus className="h-4 w-4" />
-            Create New Policy
-          </Link>
-        }
-      />
+  const getCreatorEmail = (policy) => {
+    if (policy.createdBy && typeof policy.createdBy === "object")
+      return policy.createdBy.email;
+    if (typeof policy.createdBy === "string") return policy.createdBy;
+    return "Unknown";
+  };
 
-      <div className="space-y-3">
-        <ErrorAlert message={error} />
-        {notice ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-            {notice}
-          </div>
-        ) : null}
-      </div>
-
-      <section className="mt-5 rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
-        <div className="grid gap-3 md:grid-cols-[1.2fr_repeat(5,minmax(0,1fr))]">
-          <label className="relative block">
-            <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
-            <input
-              className="w-full rounded-lg border border-slate-300 py-2.5 pl-9 pr-3 text-sm outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
-              placeholder="Search by title or code"
-              value={filters.search}
-              onChange={(event) =>
-                resetToFirstPage("search", event.target.value)
-              }
-            />
-          </label>
-
-          <select
-            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600"
-            value={filters.status}
-            onChange={(event) => resetToFirstPage("status", event.target.value)}
-          >
-            <option value="">All statuses</option>
-            {POLICY_STATUSES.map((status) => (
-              <option key={status} value={status}>
-                {status}
-              </option>
-            ))}
-          </select>
-
-          <select
-            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600"
-            value={filters.region}
-            onChange={(event) => resetToFirstPage("region", event.target.value)}
-          >
-            <option value="">All regions</option>
-            {ETHIOPIAN_REGIONS.map((region) => (
-              <option key={region} value={region}>
-                {region}
-              </option>
-            ))}
-          </select>
-
-          <input
-            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600"
-            type="date"
-            value={filters.startDate}
-            onChange={(event) =>
-              resetToFirstPage("startDate", event.target.value)
-            }
-            aria-label="Filter by start date"
-          />
-
-          <input
-            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600"
-            type="date"
-            value={filters.endDate}
-            onChange={(event) =>
-              resetToFirstPage("endDate", event.target.value)
-            }
-            aria-label="Filter by end date"
-          />
-
-          <input
-            className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600"
-            placeholder="Topic"
-            value={filters.topic}
-            onChange={(event) => resetToFirstPage("topic", event.target.value)}
-          />
+  const renderPolicyTable = (policies, tab, page, setPage) => {
+    const totalPages = Math.ceil(policies.length / PAGE_SIZE);
+    const paginated = paginate(policies, page);
+    if (!policies.length)
+      return (
+        <div className="py-8 text-center text-slate-500">
+          No policies match your filters.
         </div>
-        <label className="mt-3 flex items-center gap-2 text-sm font-semibold text-slate-700">
-          <input
-            type="checkbox"
-            className="h-4 w-4 accent-teal-700"
-            checked={filters.includeArchived}
-            onChange={(event) =>
-              resetToFirstPage("includeArchived", event.target.checked)
-            }
-          />
-          Include archived policies
-        </label>
-      </section>
+      );
 
-      {loading ? (
-        <LoadingState label="Loading policies" />
-      ) : filteredPolicies.length ? (
-        <section className="mt-5 overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
-              <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3 font-bold">Title</th>
-                  <th className="px-4 py-3 font-bold">Policy Code</th>
-                  <th className="px-4 py-3 font-bold">Status</th>
-                  <th className="px-4 py-3 font-bold">Target Regions</th>
-                  <th className="px-4 py-3 font-bold">Dates</th>
-                  <th className="px-4 py-3 font-bold">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredPolicies.map((policy) => {
-                  const busy = actionLoading.endsWith(policy.id);
-                  const analyticsAllowed = [
-                    "active",
-                    "paused",
-                    "closed",
-                  ].includes(policy.status);
-                  return (
-                    <tr key={policy.id} className="align-top">
-                      <td className="max-w-xs px-4 py-4">
-                        <p className="font-bold text-slate-950">
+    return (
+      <>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Title</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3">Dates</th>
+                {tab === "delegated" && (
+                  <>
+                    <th className="px-4 py-3">Permissions</th>
+                    <th className="px-4 py-3">Invited By</th>
+                  </>
+                )}
+                {role === "admin" && tab === "other" && (
+                  <th className="px-4 py-3">Creator</th>
+                )}
+                <th className="px-4 py-3">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {paginated.map((policy) => {
+                const busy = actionLoading.endsWith(policy.id);
+                const analyticsAllowed = [
+                  "active",
+                  "paused",
+                  "closed",
+                  "archived",
+                ].includes(policy.status);
+                const modifyAllowed = tab === "my" || role === "admin";
+                return (
+                  <tr key={policy.id} className="align-top">
+                    <td className="px-4 py-4">
+                      {tab === "my" && (
+                        <Link
+                          to={
+                            policy.status === "draft"
+                              ? `/policies/${policy.id}/edit`
+                              : `/policies/${policy.id}`
+                          }
+                          className="font-bold hover:text-teal-700"
+                        >
                           {policy.title}
-                        </p>
-                        <p className="mt-1 line-clamp-2 text-xs text-slate-500">
-                          {policy.description}
-                        </p>
-                      </td>
-                      <td className="px-4 py-4 font-mono text-xs font-bold text-slate-700">
+                        </Link>
+                      )}
+                      {tab === "delegated" && (
+                        <Link
+                          to={`/policies/${policy.id}/delegated`}
+                          state={{ permissions: policy.delegatedPermissions }}
+                          className="font-bold hover:text-teal-700"
+                        >
+                          {policy.title}
+                        </Link>
+                      )}
+                      {tab === "other" && (
+                        <Link
+                          to={
+                            role === "admin"
+                              ? `/policies/${policy.id}`
+                              : `/policies/${policy.id}/readonly`
+                          }
+                          className="font-bold hover:text-teal-700"
+                        >
+                          {policy.title}
+                        </Link>
+                      )}
+                      <p className="mt-1 text-xs text-slate-400">
                         {policy.policyCode}
-                      </td>
+                      </p>
+                    </td>
+                    <td className="px-4 py-4">
+                      <StatusBadge status={policy.status} />
+                    </td>
+                    <td className="px-4 py-4 text-slate-600 whitespace-nowrap">
+                      <div>{formatDate(policy.startDate)}</div>
+                      <div className="text-xs text-slate-400">
+                        {formatDate(policy.endDate)}
+                      </div>
+                    </td>
+                    {tab === "delegated" && (
+                      <>
+                        <td className="px-4 py-4">
+                          {policy.delegatedPermissions?.join(", ") || "—"}
+                        </td>
+                        <td className="px-4 py-4">{policy.invitedBy}</td>
+                      </>
+                    )}
+                    {role === "admin" && tab === "other" && (
                       <td className="px-4 py-4">
-                        <StatusBadge status={policy.status} />
+                        <Link
+                          to={`/planners/${policy.createdBy?._id || policy.createdBy}`}
+                          state={{
+                            from: {
+                              pathname: "/policies",
+                              search: location.search,
+                              label: "Policies",
+                            },
+                          }}
+                          className="text-teal-700 hover:underline"
+                        >
+                          {getCreatorEmail(policy)}
+                        </Link>
                       </td>
-                      <td className="max-w-xs px-4 py-4 text-slate-600">
-                        {policy.targetRegions?.join(", ") || "None"}
-                      </td>
-                      <td className="px-4 py-4 text-slate-600">
-                        <div className="min-w-40">
-                          {formatDate(policy.startDate)}
-                        </div>
-                        <div>{formatDate(policy.endDate)}</div>
-                      </td>
-                      <td className="min-w-[23rem] px-4 py-4">
-                        <div className="flex flex-wrap gap-2">
-                          {analyticsAllowed ? (
-                            <Link
-                              className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
-                              to={`/policies/${policy.id}/analytics`}
-                            >
-                              <BarChart3 className="h-4 w-4" />
-                              Analytics
-                            </Link>
-                          ) : null}
-                          {policy.status === "draft" ? (
-                            <Link
-                              className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
-                              to={`/policies/${policy.id}/edit`}
-                            >
-                              <Edit className="h-4 w-4" />
-                              Edit
-                            </Link>
-                          ) : null}
-                          {policy.status === "draft" ? (
-                            <Button
-                              disabled={busy}
-                              icon={Power}
-                              onClick={() =>
-                                runAction(
-                                  `publish-${policy.id}`,
-                                  () => policyApi.publish(policy.id),
-                                  "Policy published.",
-                                )
-                              }
-                            >
-                              Publish
-                            </Button>
-                          ) : null}
-                          {policy.status === "published" ? (
-                            <Button
-                              disabled={busy}
-                              icon={RefreshCw}
-                              onClick={() =>
-                                runAction(
-                                  `unpublish-${policy.id}`,
-                                  () => policyApi.unpublish(policy.id),
-                                  "Policy unpublished.",
-                                )
-                              }
-                            >
-                              Unpublish
-                            </Button>
-                          ) : null}
-                          {policy.status === "active" ? (
-                            <Button
-                              disabled={busy}
-                              icon={Pause}
-                              onClick={() =>
-                                runAction(
-                                  `pause-${policy.id}`,
-                                  () => policyApi.pause(policy.id),
-                                  "Policy paused.",
-                                )
-                              }
-                            >
-                              Pause
-                            </Button>
-                          ) : null}
-                          {policy.status === "paused" ? (
-                            <Button
-                              disabled={busy}
-                              icon={Play}
-                              onClick={() =>
-                                runAction(
-                                  `resume-${policy.id}`,
-                                  () => policyApi.resume(policy.id),
-                                  "Policy resumed.",
-                                )
-                              }
-                            >
-                              Resume
-                            </Button>
-                          ) : null}
-                          {["active", "paused"].includes(policy.status) ? (
-                            <>
-                              <Button
-                                disabled={busy}
-                                icon={CalendarClock}
-                                onClick={() => extendPolicy(policy)}
-                              >
-                                Extend
-                              </Button>
-                              <Button
-                                disabled={busy}
-                                icon={Power}
-                                variant="danger"
-                                onClick={() =>
-                                  runAction(
-                                    `close-${policy.id}`,
-                                    () => policyApi.close(policy.id),
-                                    "Policy closed.",
-                                  )
-                                }
-                              >
-                                Close
-                              </Button>
-                            </>
-                          ) : null}
-                          {["draft", "published"].includes(policy.status) ? (
-                            <Button
-                              disabled={busy}
-                              icon={Trash2}
-                              variant="danger"
-                              onClick={() => deletePolicy(policy)}
-                            >
-                              Delete
-                            </Button>
-                          ) : null}
-                          {policy.status !== "draft" &&
-                          policy.status !== "archived" ? (
-                            <Button
-                              disabled={busy}
-                              icon={Archive}
-                              variant="danger"
-                              onClick={() =>
-                                runAction(
-                                  `archive-${policy.id}`,
-                                  () => policyApi.archive(policy.id),
-                                  "Policy archived.",
-                                )
-                              }
-                            >
-                              Archive
-                            </Button>
-                          ) : null}
-                          {policy.status === "archived" ? (
-                            <Button
-                              disabled={busy}
-                              icon={RotateCcw}
-                              onClick={() =>
-                                runAction(
-                                  `restore-${policy.id}`,
-                                  () => policyApi.restore(policy.id),
-                                  "Policy restored to draft.",
-                                )
-                              }
-                            >
-                              Restore
-                            </Button>
-                          ) : null}
-                          <Button
-                            disabled={busy}
-                            icon={Copy}
-                            onClick={() => clonePolicy(policy)}
+                    )}
+                    <td className="min-w-[12rem] px-4 py-4">
+                      <div className="flex flex-wrap gap-2">
+                        {analyticsAllowed && (
+                          <Link
+                            to={`/policies/${policy.id}/analytics`}
+                            className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
                           >
-                            Clone
-                          </Button>
+                            <BarChart3 className="h-4 w-4" /> Analytics
+                          </Link>
+                        )}
+                        {tab === "my" &&
+                          modifyAllowed &&
+                          policy.status === "draft" && (
+                            <Link
+                              to={`/policies/${policy.id}/edit`}
+                              className="inline-flex min-h-9 items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                            >
+                              <Edit className="h-4 w-4" /> Edit
+                            </Link>
+                          )}
+                        {tab === "my" && (
                           <Button
-                            disabled={busy}
                             icon={History}
                             onClick={() => showHistory(policy)}
+                            disabled={busy}
                           >
                             History
                           </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex items-center justify-between border-t border-slate-200 px-4 py-3 text-sm text-slate-600">
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+        {totalPages > 1 && (
+          <div className="flex justify-between items-center px-4 py-3 text-sm">
             <span>
               Page {page} of {totalPages}
             </span>
             <div className="flex gap-2">
               <Button
                 disabled={page <= 1}
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
+                onClick={() => setPage((p) => p - 1)}
               >
                 Previous
               </Button>
               <Button
                 disabled={page >= totalPages}
-                onClick={() => setPage((current) => current + 1)}
+                onClick={() => setPage((p) => p + 1)}
               >
                 Next
               </Button>
             </div>
           </div>
-        </section>
-      ) : (
-        <div className="mt-5">
-          <EmptyState
-            title="No policies match your filters"
-            description="Adjust the status, region, date range, or search query to find policies."
-            action={
-              <Link
-                className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800"
-                to="/policies/new"
-              >
-                Create New Policy
-              </Link>
-            }
-          />
+        )}
+      </>
+    );
+  };
+
+  if (initialLoading) return <LoadingState label="Loading policies" />;
+
+  return (
+    <div>
+      <PageHeader
+        title="Policies"
+        description="Create and manage policy drafts, view analytics for active/paused/closed/archived."
+        actions={
+          <Link
+            to="/policies/new"
+            className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800"
+          >
+            <FilePlus className="h-4 w-4" /> Create New Policy
+          </Link>
+        }
+      />
+      <ErrorAlert message={error} />
+      {notice && (
+        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">
+          {notice}
         </div>
       )}
 
-      {historyPolicy ? (
+      <div className="mt-5 border-b">
+        <nav className="flex gap-4">
+          <button
+            onClick={() => handleTabChange("my")}
+            className={`px-4 py-2 text-sm font-medium ${activeTab === "my" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}`}
+          >
+            My Policies ({dataPerTab.my.length})
+          </button>
+          {role === "planner" && (
+            <button
+              onClick={() => handleTabChange("delegated")}
+              className={`px-4 py-2 text-sm font-medium ${activeTab === "delegated" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}`}
+            >
+              Delegated Policies ({dataPerTab.delegated.length})
+            </button>
+          )}
+          <button
+            onClick={() => handleTabChange("other")}
+            className={`px-4 py-2 text-sm font-medium ${activeTab === "other" ? "border-b-2 border-teal-700 text-teal-700" : "text-slate-500"}`}
+          >
+            Other Policies ({dataPerTab.other.length})
+          </button>
+        </nav>
+      </div>
+
+      {/* Filters section */}
+      <section className="mt-5 rounded-lg border p-4 bg-white shadow-sm">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
+          <div className="md:col-span-2">
+            <label className="relative block">
+              <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-400" />
+              <input
+                className="w-full rounded-lg border border-slate-300 py-2.5 pl-9 pr-3 text-sm"
+                placeholder="Search by title or code"
+                value={filters.search}
+                onChange={(e) => updateFilter("search", e.target.value)}
+              />
+            </label>
+          </div>
+          <select
+            className="rounded-lg border px-3 py-2.5 text-sm"
+            value={filters.status}
+            onChange={(e) => updateFilter("status", e.target.value)}
+          >
+            <option value="">All statuses</option>
+            {getStatusOptions().map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
+          </select>
+          <select
+            className="rounded-lg border px-3 py-2.5 text-sm"
+            value={filters.region}
+            onChange={(e) => updateFilter("region", e.target.value)}
+          >
+            <option value="">All regions</option>
+            {ETHIOPIAN_REGIONS.map((r) => (
+              <option key={r} value={r}>
+                {r}
+              </option>
+            ))}
+          </select>
+          <select
+            className="rounded-lg border px-3 py-2.5 text-sm"
+            value={filters.pollType}
+            onChange={(e) => updateFilter("pollType", e.target.value)}
+          >
+            <option value="">All poll types</option>
+            <option value="binary">Binary</option>
+            <option value="multipleChoice">Multiple Choice</option>
+            <option value="likert">Likert</option>
+            <option value="approval">Approval</option>
+            <option value="rating">Rating</option>
+            <option value="rankedChoice">Ranked Choice</option>
+          </select>
+        </div>
+
+        <div className="mt-3">
+          <button
+            onClick={() => setAdvancedOpen(!advancedOpen)}
+            className="flex items-center gap-1 text-sm font-semibold"
+          >
+            {advancedOpen ? (
+              <ChevronUp className="h-4 w-4" />
+            ) : (
+              <ChevronDown className="h-4 w-4" />
+            )}{" "}
+            Advanced filters
+          </button>
+          {advancedOpen && (
+            <div className="mt-3 space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium">
+                    Start date
+                  </label>
+                  <input
+                    type="date"
+                    className="w-full rounded-lg border px-3 py-2"
+                    value={filters.startDate}
+                    onChange={(e) => updateFilter("startDate", e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium">End date</label>
+                  <input
+                    type="date"
+                    className="w-full rounded-lg border px-3 py-2"
+                    value={filters.endDate}
+                    onChange={(e) => updateFilter("endDate", e.target.value)}
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium">Topics</label>
+                <CreatableSelect
+                  isMulti
+                  options={topicOptions}
+                  value={filters.topics}
+                  onChange={(selected) =>
+                    updateFilter("topics", selected || [])
+                  }
+                />
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                <span className="font-semibold col-span-full">
+                  Target audience:
+                </span>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={filters.relevance.women}
+                    onChange={(e) => updateRelevance("women", e.target.checked)}
+                  />{" "}
+                  Women
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={filters.relevance.youth}
+                    onChange={(e) => updateRelevance("youth", e.target.checked)}
+                  />{" "}
+                  Youth
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={filters.relevance.farmers}
+                    onChange={(e) =>
+                      updateRelevance("farmers", e.target.checked)
+                    }
+                  />{" "}
+                  Farmers
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={filters.relevance.urban}
+                    onChange={(e) => updateRelevance("urban", e.target.checked)}
+                  />{" "}
+                  Urban
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={filters.relevance.rural}
+                    onChange={(e) => updateRelevance("rural", e.target.checked)}
+                  />{" "}
+                  Rural
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={filters.relevance.privateSector}
+                    onChange={(e) =>
+                      updateRelevance("privateSector", e.target.checked)
+                    }
+                  />{" "}
+                  Private sector
+                </label>
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={filters.relevance.government}
+                    onChange={(e) =>
+                      updateRelevance("government", e.target.checked)
+                    }
+                  />{" "}
+                  Government
+                </label>
+              </div>
+              <div>
+                <Button icon={XCircle} onClick={clearFilters}>
+                  Clear all filters
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      <div className="mt-5 rounded-lg border bg-white shadow-sm relative">
+        {refreshing && (
+          <div className="absolute inset-0 bg-white/60 flex items-center justify-center z-10 rounded-lg">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-teal-600 border-t-transparent" />
+          </div>
+        )}
+        {activeTab === "my" &&
+          renderPolicyTable(dataPerTab.my, "my", myPage, setMyPage)}
+        {activeTab === "delegated" &&
+          role === "planner" &&
+          renderPolicyTable(
+            dataPerTab.delegated,
+            "delegated",
+            delegatedPage,
+            setDelegatedPage,
+          )}
+        {activeTab === "other" &&
+          renderPolicyTable(dataPerTab.other, "other", otherPage, setOtherPage)}
+      </div>
+
+      {historyPolicy && (
         <Modal
           title={`History: ${historyPolicy.title}`}
           onClose={() => setHistoryPolicy(null)}
         >
           {historyEvents.length ? (
             <ol className="space-y-3">
-              {historyEvents.map((event, index) => (
-                <li
-                  key={`${event.action}-${event.timestamp}-${index}`}
-                  className="rounded-lg border border-slate-200 p-3"
-                >
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="font-bold text-slate-950">{event.action}</p>
-                    <p className="text-xs text-slate-500">
-                      {formatDate(event.timestamp)}
-                    </p>
+              {historyEvents.map((event, idx) => (
+                <li key={idx} className="border p-3 rounded">
+                  <div className="flex justify-between">
+                    <span className="font-bold">{event.action}</span>
+                    <span>{formatDate(event.timestamp)}</span>
                   </div>
-                  <p className="mt-1 text-xs uppercase tracking-wide text-slate-500">
-                    {event.userRole || "unknown role"}
-                  </p>
-                  {event.details ? (
-                    <pre className="mt-2 overflow-x-auto rounded-lg bg-slate-950 p-3 text-xs text-slate-100">
-                      {JSON.stringify(event.details, null, 2)}
-                    </pre>
-                  ) : null}
+                  <p className="text-xs uppercase">{event.userRole}</p>
+                  {event.details && (
+                    <div className="mt-2 text-xs bg-slate-100 p-2 rounded overflow-auto">
+                      {formatAuditDetails(event)}
+                    </div>
+                  )}
                 </li>
               ))}
             </ol>
           ) : (
-            <EmptyState
-              title="No history events"
-              description="This policy does not have audit events yet."
-            />
+            <EmptyState title="No history" description="No audit events." />
           )}
         </Modal>
-      ) : null}
+      )}
     </div>
   );
 }

@@ -126,6 +126,36 @@ const CommentSchema = new mongoose.Schema(
       default: null,
       index: true,
     },
+    demographics: {
+      ageRange: {
+        type: String,
+        enum: ["18-24", "25-34", "35-44", "45-54", "55+"],
+      },
+      gender: { type: String, enum: ["male", "female", "prefer-not-to-say"] },
+      occupation: {
+        type: String,
+        enum: [
+          "student",
+          "farmer",
+          "merchant",
+          "government-employee",
+          "private-sector",
+          "unemployed",
+          "other",
+        ],
+      },
+      education: {
+        type: String,
+        enum: [
+          "no-formal",
+          "primary",
+          "secondary",
+          "diploma",
+          "bachelors",
+          "postgraduate",
+        ],
+      },
+    },
 
     text: { type: String, required: true, trim: true, maxlength: 5000 },
     language: { type: String, default: null },
@@ -135,7 +165,7 @@ const CommentSchema = new mongoose.Schema(
     // AI layer
     aiStatus: {
       type: String,
-      enum: ["pending", "processed", "failed", "stale"],
+      enum: ["pending", "processed", "failed", "stale", "skipped"],
       default: "pending",
       index: true,
     },

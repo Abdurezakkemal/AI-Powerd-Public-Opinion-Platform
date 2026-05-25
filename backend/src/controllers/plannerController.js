@@ -11,6 +11,16 @@ const {
 } = require("../utils/responseHelper");
 const { sendEmail } = require("../utils/email");
 
+// Helper: convert permission keys to user‑friendly labels
+const formatPermissions = (perms) => {
+  const map = {
+    moderate_comments: "Moderate Comments",
+    reply_official: "Official Replies",
+    export_data: "Export Data",
+  };
+  return perms.map((p) => map[p] || p).join(", ");
+};
+
 // ==================== CITIZEN REQUESTS TO BECOME PLANNER ====================
 exports.requestPlanner = async (req, res) => {
   try {
@@ -323,7 +333,6 @@ exports.searchPlannersByLanguage = async (req, res) => {
 
     let query = { role: "planner", active: true, deletedAt: null };
 
-    // If language is specified and not "all", filter by language
     if (
       language &&
       language !== "all" &&
@@ -348,11 +357,13 @@ exports.searchPlannersByLanguage = async (req, res) => {
   }
 };
 
-// ========== ADD ASSOCIATE ==========
+// ========== ASSOCIATE ==========
+
 exports.addAssociate = async (req, res) => {
   try {
     const { policyId } = req.params;
     const { plannerEmail, permissions } = req.body;
+
     if (!plannerEmail || !permissions || !permissions.length) {
       return sendError(
         res,
@@ -362,8 +373,9 @@ exports.addAssociate = async (req, res) => {
         400,
       );
     }
+
     const policy = await Policy.findById(policyId);
-    if (!policy)
+    if (!policy) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -371,14 +383,14 @@ exports.addAssociate = async (req, res) => {
         null,
         404,
       );
+    }
 
-    // FIX: use .toString() on both sides
     const isOwner = policy.createdBy.toString() === req.user.id.toString();
     if (req.user.role !== "admin" && !isOwner) {
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
-        "Only policy owner can add associates",
+        "Only the policy owner or an admin can add associates",
         null,
         403,
       );
@@ -389,7 +401,7 @@ exports.addAssociate = async (req, res) => {
       role: "planner",
       active: true,
     });
-    if (!associateUser)
+    if (!associateUser) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -397,6 +409,8 @@ exports.addAssociate = async (req, res) => {
         null,
         404,
       );
+    }
+
     if (
       associateUser._id.toString() === req.user.id.toString() &&
       req.user.role !== "admin"
@@ -413,13 +427,13 @@ exports.addAssociate = async (req, res) => {
     const existing = await PolicyAssociate.findOne({
       policyId,
       plannerId: associateUser._id,
-      revokedAt: null,
+      invitationStatus: { $in: ["pending", "accepted"] },
     });
     if (existing) {
       return sendError(
         res,
         ErrorCodes.DUPLICATE,
-        "This planner is already an associate (active). Update permissions instead.",
+        `This planner already has a ${existing.invitationStatus} invitation/association for this policy.`,
         null,
         409,
       );
@@ -433,26 +447,28 @@ exports.addAssociate = async (req, res) => {
     });
     await associate.save();
 
-    // Notifications (skip if not ready)
-    try {
-      const { createNotification } = require("../services/notificationService");
-      await createNotification({
-        userId: associateUser._id,
-        type: "ASSOCIATE_ASSIGNED",
-        title: "Policy Associate Role",
-        message: `You have been assigned as an associate on policy "${policy.title}" with permissions: ${permissions.join(", ")}.`,
-        data: { policyId, permissions },
-        severity: "info",
-        source: "system",
-      });
-    } catch (notifErr) {
-      console.error("Notification skipped:", notifErr.message);
-    }
+    // In‑app notification with formatted permissions
+    await createNotification({
+      userId: associateUser._id,
+      type: "ASSOCIATE_INVITED",
+      title: "Policy Associate Invitation",
+      message: `You have been invited to become an associate on policy "${policy.title}" with permissions: ${formatPermissions(permissions)}. It expires on ${associate.expiresAt.toLocaleDateString()}.`,
+      data: { policyId, associateId: associate._id, permissions },
+      severity: "info",
+      source: "system",
+    });
 
+    // Email with formatted permissions
+    const acceptUrl = `${process.env.FRONTEND_URL}/associates/invitation/${associate._id}?action=accept`;
+    const rejectUrl = `${process.env.FRONTEND_URL}/associates/invitation/${associate._id}?action=reject`;
     await sendEmail({
       to: associateUser.email,
-      subject: `You are now an associate for policy: ${policy.title}`,
-      html: `<p>You have been assigned by ${req.user.id} to help manage policy "${policy.title}".</p><p>Permissions: ${permissions.join(", ")}.</p>`,
+      subject: `Invitation to become an associate for policy: ${policy.title}`,
+      html: `<p>You have been invited by ${req.user.email} to help manage policy "${policy.title}".</p>
+             <p>Permissions: ${formatPermissions(permissions)}.</p>
+             <p>This invitation expires on ${associate.expiresAt.toLocaleDateString()}.</p>
+             <p><a href="${acceptUrl}">Accept Invitation</a> | <a href="${rejectUrl}">Reject Invitation</a></p>
+             <p>If you accept, you will be able to act according to the permissions above. If you reject, no further action is needed.</p>`,
     });
 
     await createAuditLog({
@@ -461,11 +477,20 @@ exports.addAssociate = async (req, res) => {
       action: "ADD_ASSOCIATE",
       targetType: "PolicyAssociate",
       targetId: associate._id,
-      details: { policyId, plannerId: associateUser._id, permissions },
+      details: {
+        policyId,
+        plannerId: associateUser._id,
+        permissions,
+        expiresAt: associate.expiresAt,
+      },
       req,
     });
 
-    return sendSuccess(res, associate, "Associate added successfully");
+    return sendSuccess(
+      res,
+      { associateId: associate._id, expiresAt: associate.expiresAt },
+      "Invitation sent. The associate must accept before it expires.",
+    );
   } catch (err) {
     console.error(err);
     return sendError(
@@ -478,12 +503,12 @@ exports.addAssociate = async (req, res) => {
   }
 };
 
-// ========== LIST ASSOCIATES ==========
+// ========== LIST ASSOCIATES (for a policy) ==========
 exports.listAssociates = async (req, res) => {
   try {
     const { policyId } = req.params;
     const policy = await Policy.findById(policyId);
-    if (!policy)
+    if (!policy) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -491,20 +516,32 @@ exports.listAssociates = async (req, res) => {
         null,
         404,
       );
+    }
+
     const isOwner = policy.createdBy.toString() === req.user.id.toString();
     if (req.user.role !== "admin" && !isOwner) {
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
-        "Only policy owner can view associates",
+        "Only the policy owner or an admin can view associates",
         null,
         403,
       );
     }
-    const associates = await PolicyAssociate.find({ policyId, revokedAt: null })
-      .populate("plannerId", "email region languagesSpoken")
-      .populate("assignedBy", "email");
-    return sendSuccess(res, associates, "Associates retrieved");
+
+    const associates = await PolicyAssociate.find({ policyId })
+      .populate("plannerId", "email region languagesSpoken firstName lastName")
+      .populate("assignedBy", "email firstName lastName")
+      .populate("revokedBy", "email")
+      .sort({ createdAt: -1 });
+
+    const enriched = associates.map((a) => ({
+      ...a.toObject(),
+      displayStatus: a.displayStatus,
+      daysRemaining: a.isPending ? a.daysRemaining : null,
+    }));
+
+    return sendSuccess(res, enriched, "Associates retrieved");
   } catch (err) {
     console.error(err);
     return sendError(
@@ -522,7 +559,8 @@ exports.updateAssociatePermissions = async (req, res) => {
   try {
     const { policyId, associateId } = req.params;
     const { permissions } = req.body;
-    if (!permissions || !permissions.length)
+
+    if (!permissions || !permissions.length) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -530,8 +568,10 @@ exports.updateAssociatePermissions = async (req, res) => {
         null,
         400,
       );
+    }
+
     const policy = await Policy.findById(policyId);
-    if (!policy)
+    if (!policy) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -539,31 +579,35 @@ exports.updateAssociatePermissions = async (req, res) => {
         null,
         404,
       );
+    }
+
     const isOwner = policy.createdBy.toString() === req.user.id.toString();
     if (req.user.role !== "admin" && !isOwner) {
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
-        "Only policy owner can update permissions",
+        "Only the policy owner or an admin can update permissions",
         null,
         403,
       );
     }
+
     const associate = await PolicyAssociate.findOne({
       _id: associateId,
       policyId,
-      revokedAt: null,
     });
-    if (!associate)
+    if (!associate) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
-        "Active associate not found",
+        "Associate record not found",
         null,
         404,
       );
-    associate.permissions = permissions;
-    await associate.save();
+    }
+
+    await associate.updatePermissions(permissions, req.user.id);
+
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
@@ -574,12 +618,11 @@ exports.updateAssociatePermissions = async (req, res) => {
       req,
     });
 
-    // In‑app notification to associate
     await createNotification({
       userId: associate.plannerId,
       type: "ASSOCIATE_PERMISSIONS_UPDATED",
       title: "Permissions Updated",
-      message: `Your permissions for policy "${policy.title}" have been updated to: ${permissions.join(", ")}.`,
+      message: `Your permissions for policy "${policy.title}" have been updated to: ${formatPermissions(permissions)}.`,
       data: { policyId, permissions },
       severity: "info",
       source: "system",
@@ -588,22 +631,17 @@ exports.updateAssociatePermissions = async (req, res) => {
     return sendSuccess(res, associate, "Permissions updated");
   } catch (err) {
     console.error(err);
-    return sendError(
-      res,
-      ErrorCodes.INTERNAL,
-      "Failed to update permissions",
-      null,
-      500,
-    );
+    const message = err.message || "Failed to update permissions";
+    return sendError(res, ErrorCodes.INTERNAL, message, null, 500);
   }
 };
 
-// ========== REVOKE ASSOCIATE ==========
+// ========== REVOKE ASSOCIATE (owner or admin) ==========
 exports.revokeAssociate = async (req, res) => {
   try {
     const { policyId, associateId } = req.params;
     const policy = await Policy.findById(policyId);
-    if (!policy)
+    if (!policy) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -611,59 +649,435 @@ exports.revokeAssociate = async (req, res) => {
         null,
         404,
       );
+    }
+
     const isOwner = policy.createdBy.toString() === req.user.id.toString();
     if (req.user.role !== "admin" && !isOwner) {
       return sendError(
         res,
         ErrorCodes.FORBIDDEN,
-        "Only policy owner can revoke associates",
+        "Only the policy owner or an admin can revoke associates",
         null,
         403,
       );
     }
+
     const associate = await PolicyAssociate.findOne({
       _id: associateId,
       policyId,
-      revokedAt: null,
     });
-    if (!associate)
+    if (!associate) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
-        "Active associate not found",
+        "Associate record not found",
         null,
         404,
       );
-    associate.revokedAt = new Date();
-    await associate.save();
+    }
+
+    const wasPending = associate.invitationStatus === "pending";
+    const revocationReason =
+      req.user.role === "admin" ? "admin_revoked" : "owner_revoked";
+    await associate.revoke(req.user.id, revocationReason);
+
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,
       action: "REVOKE_ASSOCIATE",
       targetType: "PolicyAssociate",
       targetId: associate._id,
-      details: { policyId, plannerId: associate.plannerId },
+      details: {
+        policyId,
+        plannerId: associate.plannerId,
+        reason: revocationReason,
+        wasPending,
+      },
       req,
     });
 
-    // In‑app notification to associate
-    await createNotification({
-      userId: associate.plannerId,
-      type: "ASSOCIATE_REVOKED",
-      title: "Associate Role Revoked",
-      message: `You have been removed as an associate from policy "${policy.title}".`,
-      data: { policyId },
-      severity: "info",
-      source: "system",
-    });
+    if (wasPending) {
+      await createNotification({
+        userId: associate.plannerId,
+        type: "ASSOCIATE_INVITATION_CANCELLED",
+        title: "Invitation Cancelled",
+        message: `Your invitation to become an associate for policy "${policy.title}" has been cancelled by the policy owner.`,
+        data: { policyId: policy._id, associateId: associate._id },
+        severity: "info",
+        source: "system",
+      });
+    } else {
+      await createNotification({
+        userId: associate.plannerId,
+        type: "ASSOCIATE_REVOKED",
+        title: "Associate Role Revoked",
+        message: `You have been removed as an associate from policy "${policy.title}".`,
+        data: { policyId },
+        severity: "info",
+        source: "system",
+      });
+    }
 
-    return sendSuccess(res, null, "Associate revoked");
+    const successMessage = wasPending
+      ? "Invitation cancelled"
+      : "Associate revoked successfully";
+    return sendSuccess(res, null, successMessage);
   } catch (err) {
     console.error(err);
     return sendError(
       res,
       ErrorCodes.INTERNAL,
       "Failed to revoke associate",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== ACCEPT INVITATION ==========
+exports.acceptAssociateInvitation = async (req, res) => {
+  try {
+    const { associateId } = req.params;
+
+    const associate = await PolicyAssociate.findOne({
+      _id: associateId,
+      plannerId: req.user.id,
+    }).populate("policyId");
+
+    if (!associate) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Invitation not found",
+        null,
+        404,
+      );
+    }
+
+    if (!associate.isPending) {
+      let msg = `Invitation cannot be accepted. Current status: ${associate.displayStatus}`;
+      if (associate.displayStatus === "expired")
+        msg = "This invitation has expired.";
+      return sendError(res, ErrorCodes.VALIDATION, msg, null, 400);
+    }
+
+    await associate.accept(req.user.id);
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "ACCEPT_ASSOCIATE_INVITATION",
+      targetType: "PolicyAssociate",
+      targetId: associate._id,
+      details: { policyId: associate.policyId._id },
+      req,
+    });
+
+    if (associate.policyId) {
+      await createNotification({
+        userId: associate.policyId.createdBy,
+        type: "ASSOCIATE_ACCEPTED",
+        title: "Associate Accepted Invitation",
+        message: `${req.user.email} has accepted the invitation for policy "${associate.policyId.title}".`,
+        data: { policyId: associate.policyId._id, associateId: associate._id },
+        severity: "info",
+        source: "system",
+      });
+    }
+
+    return sendSuccess(
+      res,
+      null,
+      "Invitation accepted. You now have access to the policy.",
+    );
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      err.message || "Failed to accept invitation",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== REJECT INVITATION ==========
+exports.rejectAssociateInvitation = async (req, res) => {
+  try {
+    const { associateId } = req.params;
+    const { rejectionReason } = req.body;
+
+    const associate = await PolicyAssociate.findOne({
+      _id: associateId,
+      plannerId: req.user.id,
+    }).populate("policyId");
+
+    if (!associate) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Invitation not found",
+        null,
+        404,
+      );
+    }
+
+    if (!associate.isPending) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Invitation cannot be rejected. Current status: ${associate.displayStatus}`,
+        null,
+        400,
+      );
+    }
+
+    await associate.reject(req.user.id, rejectionReason || null);
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "REJECT_ASSOCIATE_INVITATION",
+      targetType: "PolicyAssociate",
+      targetId: associate._id,
+      details: { policyId: associate.policyId._id, reason: rejectionReason },
+      req,
+    });
+
+    if (associate.policyId) {
+      await createNotification({
+        userId: associate.policyId.createdBy,
+        type: "ASSOCIATE_REJECTED",
+        title: "Associate Rejected Invitation",
+        message: `${req.user.email} has declined the invitation for policy "${associate.policyId.title}".`,
+        data: { policyId: associate.policyId._id },
+        severity: "info",
+        source: "system",
+      });
+    }
+
+    return sendSuccess(res, null, "Invitation rejected.");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      err.message || "Failed to reject invitation",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== SELF REVOKE (associate leaves) ==========
+exports.revokeSelfAsAssociate = async (req, res) => {
+  try {
+    const { associateId } = req.params;
+
+    const associate = await PolicyAssociate.findOne({
+      _id: associateId,
+      plannerId: req.user.id,
+      invitationStatus: "accepted",
+      revokedAt: null,
+    }).populate("policyId");
+
+    if (!associate) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Active associate record not found",
+        null,
+        404,
+      );
+    }
+
+    await associate.revoke(req.user.id, "self_revoked");
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "SELF_REVOKE_ASSOCIATE",
+      targetType: "PolicyAssociate",
+      targetId: associate._id,
+      details: { policyId: associate.policyId._id },
+      req,
+    });
+
+    if (associate.policyId) {
+      await createNotification({
+        userId: associate.policyId.createdBy,
+        type: "ASSOCIATE_SELF_REVOKED",
+        title: "Associate Left",
+        message: `${req.user.email} has removed themselves as an associate from policy "${associate.policyId.title}".`,
+        data: { policyId: associate.policyId._id },
+        severity: "info",
+        source: "system",
+      });
+    }
+
+    return sendSuccess(res, null, "You have been removed as an associate.");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      err.message || "Failed to revoke associate status",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== GET POLICIES WHERE USER IS AN ACCEPTED ASSOCIATE ==========
+exports.getMyAssociatePolicies = async (req, res) => {
+  try {
+    const associates = await PolicyAssociate.find({
+      plannerId: req.user.id,
+      invitationStatus: "accepted",
+      revokedAt: null,
+    })
+      .populate(
+        "policyId",
+        "title policyCode status targetRegions pollType createdAt",
+      )
+      .populate("assignedBy", "email firstName lastName")
+      .sort({ acceptedAt: -1 });
+
+    const policies = associates.map((assoc) => ({
+      associateId: assoc._id,
+      policy: assoc.policyId,
+      permissions: assoc.permissions,
+      assignedBy: assoc.assignedBy,
+      acceptedAt: assoc.acceptedAt,
+    }));
+
+    return sendSuccess(res, policies, "Delegated policies retrieved");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve delegated policies",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== GET PENDING INVITATIONS FOR CURRENT PLANNER ==========
+exports.getPendingInvitations = async (req, res) => {
+  try {
+    const invitations = await PolicyAssociate.findPendingInvitations(
+      req.user.id,
+    );
+    return sendSuccess(res, invitations, "Pending invitations retrieved");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve pending invitations",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== GET SINGLE INVITATION DETAILS (for preview) ==========
+exports.getInvitationDetails = async (req, res) => {
+  try {
+    const { invitationId } = req.params;
+
+    const invitation = await PolicyAssociate.findOne({
+      _id: invitationId,
+      plannerId: req.user.id,
+      invitationStatus: "pending",
+      expiresAt: { $gt: new Date() },
+    })
+      .populate(
+        "policyId",
+        "title description policyCode status startDate endDate pollType",
+      )
+      .populate("assignedBy", "email firstName lastName");
+
+    if (!invitation) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Invitation not found, already processed, or expired",
+        null,
+        404,
+      );
+    }
+
+    const enriched = {
+      ...invitation.toObject(),
+      daysRemaining: invitation.daysRemaining,
+      isExpired: invitation.isExpired,
+    };
+
+    return sendSuccess(res, enriched, "Invitation details retrieved");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve invitation details",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== SEARCH ACTIVE PLANNERS (for inviting associates) ==========
+exports.searchActivePlanners = async (req, res) => {
+  try {
+    const { search = "", region, language, page = 1, limit = 20 } = req.query;
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+
+    const query = {
+      role: "planner",
+      active: true,
+      deletedAt: null,
+      _id: { $ne: req.user.id },
+    };
+
+    if (search.trim()) {
+      query.email = { $regex: search.trim(), $options: "i" };
+    }
+    if (region && region !== "") {
+      query.region = region;
+    }
+    if (language && language !== "") {
+      query.languagesSpoken = language;
+    }
+
+    const [planners, total] = await Promise.all([
+      User.find(query)
+        .select("email firstName lastName region languagesSpoken")
+        .skip(skip)
+        .limit(parseInt(limit))
+        .lean(),
+      User.countDocuments(query),
+    ]);
+
+    return sendSuccess(
+      res,
+      {
+        planners,
+        total,
+        page: parseInt(page),
+        totalPages: Math.ceil(total / parseInt(limit)),
+      },
+      "Active planners retrieved",
+    );
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to fetch planners",
       null,
       500,
     );

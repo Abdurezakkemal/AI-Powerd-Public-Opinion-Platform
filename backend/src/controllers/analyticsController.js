@@ -133,25 +133,8 @@ const checkAnalyticsAccess = async (policy, user) => {
       statusCode: 403,
     };
   }
-  const isOwner = policy.createdBy.toString() === user.id.toString();
-  if (isOwner) return { allowed: true };
-
-  // Check if user is an active associate with view_analytics permission
-  const PolicyAssociate = require("../models/PolicyAssociate");
-  const associate = await PolicyAssociate.findOne({
-    policyId: policy._id,
-    plannerId: user.id,
-    revokedAt: null,
-    permissions: "view_analytics",
-  });
-  if (associate) return { allowed: true };
-
-  return {
-    allowed: false,
-    errorCode: "NOT_FOUND",
-    errorMessage: "Policy not found",
-    statusCode: 404,
-  };
+  // Any planner can view analytics (policy status already filtered in main controller)
+  return { allowed: true };
 };
 
 // Helper to generate cache key from query parameters
@@ -237,6 +220,7 @@ exports.getAnalytics = async (req, res) => {
         policyId: policy._id,
         visibility: "visible",
         aiStatus: "processed",
+        parentCommentId: null, // ← add this
         $or: [
           { "reviewFlags.sentimentReviewNeeded": false },
           { "sentiment.overriddenByModerator": true },
@@ -495,6 +479,7 @@ exports.getTimeseries = async (req, res) => {
       policyId: policy._id,
       visibility: "visible",
       aiStatus: "processed",
+      parentCommentId: null, // ← add this
       $or: [
         { "reviewFlags.sentimentReviewNeeded": false },
         { "sentiment.overriddenByModerator": true },
@@ -806,6 +791,7 @@ exports.getDemographicBreakdown = async (req, res) => {
       policyId: policy._id,
       visibility: "visible",
       aiStatus: "processed",
+      parentCommentId: null, // ← add this
       $or: [
         { "reviewFlags.sentimentReviewNeeded": false },
         { "sentiment.overriddenByModerator": true },
@@ -958,7 +944,7 @@ exports.exportAnalytics = async (req, res) => {
     const end = parseDate(endDate, "endDate");
 
     const policy = await Policy.findById(policyId);
-    if (!policy)
+    if (!policy) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -966,16 +952,33 @@ exports.exportAnalytics = async (req, res) => {
         null,
         404,
       );
+    }
 
-    const access = await checkAnalyticsAccess(policy, req.user);
-    if (!access.allowed)
+    // Authorization: admin, owner, or associate with export_data permission
+    const isAdmin = req.user.role === "admin";
+    const isOwner = policy.createdBy.toString() === req.user.id.toString();
+    let canExport = isAdmin || isOwner;
+
+    if (!canExport && req.user.role === "planner") {
+      const associate = await PolicyAssociate.findOne({
+        policyId: policy._id,
+        plannerId: req.user.id,
+        invitationStatus: "accepted",
+        revokedAt: null,
+        permissions: "export_data",
+      });
+      canExport = !!associate;
+    }
+
+    if (!canExport) {
       return sendError(
         res,
-        access.errorCode,
-        access.errorMessage,
+        ErrorCodes.FORBIDDEN,
+        "You don't have permission to export data",
         null,
-        access.statusCode,
+        403,
       );
+    }
 
     let voteFilter = { policyId: policy._id };
     if (start) voteFilter.createdAt = { $gte: start };
@@ -1084,13 +1087,11 @@ exports.getComments = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit))
-      .populate("userId", "email")
+      .populate("userId", "displayName")
       .lean();
-
     const total = await Comment.countDocuments(filter);
 
     const formatted = comments.map((c) => {
-      // Compute old moderationStatus for backward compatibility
       let moderationStatus;
       if (c.aiStatus === "pending") {
         moderationStatus = "pending_ai";
@@ -1113,11 +1114,10 @@ exports.getComments = async (req, res) => {
         visibility: c.visibility,
         isOfficialReply: c.isOfficialReply,
         createdAt: c.createdAt,
-        userEmail: c.userId?.email,
+        userDisplayName: c.userId?.displayName || "Anonymous",
         isEdited: (c.editedHistory && c.editedHistory.length > 0) || false,
       };
     });
-
     return sendSuccess(
       res,
       { comments: formatted, total, page: Number(page) },
@@ -1426,6 +1426,7 @@ exports.getHeatmap = async (req, res) => {
       policyId: policy._id,
       visibility: "visible",
       aiStatus: "processed",
+      parentCommentId: null, // ← add this
       $or: [
         { "reviewFlags.sentimentReviewNeeded": false },
         { "sentiment.overriddenByModerator": true },

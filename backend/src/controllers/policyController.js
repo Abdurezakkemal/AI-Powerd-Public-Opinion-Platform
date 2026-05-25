@@ -1,6 +1,7 @@
 const Policy = require("../models/Policy");
 const AuditLog = require("../models/AuditLog");
 const Notification = require("../models/Notification");
+const PolicyAssociate = require("../models/PolicyAssociate");
 const mongoose = require("mongoose");
 const { customAlphabet } = require("nanoid");
 const logger = require("../utils/logger");
@@ -25,15 +26,22 @@ const generatePolicyCode = (title) => {
 const shouldHideFromPlanner = (policy, user) => {
   if (user.role === "admin") return false;
   if (user.role !== "planner") return false;
-  const isOwner = policy.createdBy.toString() === user.id.toString();
-  if (isOwner) return false;
-  const isVisibleStatus = ["active", "paused", "closed"].includes(
-    policy.status,
-  );
-  return !isVisibleStatus;
-};
 
-// GET /api/policies
+  // Extract owner ID (works whether createdBy is populated or just an ID)
+  let ownerId;
+  if (policy.createdBy && typeof policy.createdBy === "object") {
+    ownerId = policy.createdBy._id
+      ? policy.createdBy._id.toString()
+      : policy.createdBy.toString();
+  } else {
+    ownerId = policy.createdBy ? policy.createdBy.toString() : null;
+  }
+  const isOwner = ownerId === user.id.toString();
+  if (isOwner) return false;
+
+  const visibleStatuses = ["active", "paused", "closed"];
+  return !visibleStatuses.includes(policy.status);
+};
 exports.getAll = async (req, res) => {
   try {
     const {
@@ -45,14 +53,12 @@ exports.getAll = async (req, res) => {
       includeArchived,
       topic,
     } = req.query;
-    const filter = {};
+    let filter = {}; // use let instead of const for reassignment clarity
 
-    // If a specific status is requested, apply it first (overrides later defaults)
     if (status) filter.status = status;
 
     // Role‑specific filters
     if (req.user.role === "citizen") {
-      // Citizens see only active/paused policies in their region.
       const citizenStatuses = ["active", "paused"];
       filter.status =
         status && citizenStatuses.includes(status)
@@ -60,7 +66,6 @@ exports.getAll = async (req, res) => {
           : { $in: citizenStatuses };
       filter.targetRegions = req.user.region;
     } else if (req.user.role === "planner") {
-      // If owner=me, only policies created by this planner
       if (owner === "me") {
         filter.createdBy = new mongoose.Types.ObjectId(req.user.id);
       } else {
@@ -69,23 +74,26 @@ exports.getAll = async (req, res) => {
           { status: { $in: ["active", "paused", "closed"] } },
         ];
       }
-      // Unless a status is explicitly requested (e.g., ?status=archived), exclude archived policies
       if (!status && includeArchived !== "true") {
         filter.status = { $ne: "archived" };
       }
     } else if (req.user.role === "admin") {
+      if (owner === "me") {
+        filter.createdBy = new mongoose.Types.ObjectId(req.user.id);
+      } else if (owner && mongoose.Types.ObjectId.isValid(owner)) {
+        filter.createdBy = new mongoose.Types.ObjectId(owner);
+      }
       if (!status && includeArchived !== "true") {
         filter.status = { $ne: "archived" };
       }
       if (region) filter.targetRegions = region;
     }
 
-    // If region was provided for planner (and not already handled)
+    // Region for planner (if not already handled)
     if (region && req.user.role !== "citizen" && req.user.role !== "admin") {
       filter.targetRegions = region;
     }
 
-    // Topic filter (if provided)
     if (topic) {
       const topics = Array.isArray(topic) ? topic : [topic];
       filter.topics = { $in: topics };
@@ -113,6 +121,9 @@ exports.getAll = async (req, res) => {
       pollType: p.pollType,
       averageRating: 0,
       totalVotes: 0,
+      createdBy: p.createdBy
+        ? { _id: p.createdBy._id, email: p.createdBy.email }
+        : null,
     }));
 
     logger.info(
@@ -134,6 +145,7 @@ exports.getAll = async (req, res) => {
     );
   }
 };
+// ========== GET ONE POLICY ==========
 // GET /api/policies/:id
 exports.getOne = async (req, res) => {
   try {
@@ -141,7 +153,7 @@ exports.getOne = async (req, res) => {
       "createdBy",
       "email",
     );
-    if (!policy)
+    if (!policy) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -149,6 +161,8 @@ exports.getOne = async (req, res) => {
         null,
         404,
       );
+    }
+
     if (shouldHideFromPlanner(policy, req.user)) {
       return sendError(
         res,
@@ -158,6 +172,7 @@ exports.getOne = async (req, res) => {
         404,
       );
     }
+
     if (req.user.role === "citizen") {
       const allowedStatuses = ["active", "paused"];
       if (
@@ -173,6 +188,7 @@ exports.getOne = async (req, res) => {
         );
       }
     }
+
     const response = {
       id: policy._id,
       title: policy.title,
@@ -190,7 +206,7 @@ exports.getOne = async (req, res) => {
       relevanceFactors: policy.relevanceFactors,
       citizenAnalyticsVisibility: policy.citizenAnalyticsVisibility,
       topics: policy.topics,
-      createdBy: policy.createdBy.email,
+      createdBy: policy.createdBy?.email || "Unknown",
       createdAt: policy.createdAt,
     };
     return sendSuccess(res, response, "Policy retrieved");
@@ -205,7 +221,6 @@ exports.getOne = async (req, res) => {
     );
   }
 };
-
 // POST /api/policies
 exports.create = async (req, res) => {
   try {
@@ -1381,7 +1396,11 @@ exports.clone = async (req, res) => {
       action: "CLONE_POLICY",
       targetType: "Policy",
       targetId: newPolicy._id,
-      details: { originalPolicyId: original._id },
+      details: {
+        originalPolicyId: original._id, // keep for backward compatibility
+        originalPolicyCode: original.policyCode,
+        newPolicyCode: newPolicy.policyCode,
+      },
       req,
     });
     logger.info(
@@ -1568,6 +1587,283 @@ exports.restore = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to restore policy",
+      null,
+      500,
+    );
+  }
+};
+// Get current user's associate permissions for a policy (if any)
+exports.getAssociatePermissions = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const associate = await PolicyAssociate.findOne({
+      policyId: id,
+      plannerId: userId,
+      invitationStatus: "accepted",
+      revokedAt: null,
+    });
+
+    if (!associate) {
+      return sendSuccess(res, { permissions: null }, "Not an associate");
+    }
+
+    return sendSuccess(
+      res,
+      { permissions: associate.permissions },
+      "Associate permissions retrieved",
+    );
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve associate permissions",
+      null,
+      500,
+    );
+  }
+};
+
+// ========== GET CATEGORIZED POLICIES (owned, delegated, other) ==========
+exports.getCategorizedPolicies = async (req, res) => {
+  try {
+    const { role, id: userId } = req.user;
+    const { category = "all" } = req.query;
+
+    const {
+      status,
+      region,
+      search,
+      startDate,
+      endDate,
+      topics,
+      pollType,
+      relevanceFactors,
+    } = req.query;
+
+    // Helper: Build filter for standard policy queries (used for owned and admin other)
+    const buildPolicyFilter = (additionalConditions = {}) => {
+      const filter = { ...additionalConditions };
+      if (status && status !== "all") filter.status = status;
+      if (region) filter.targetRegions = region;
+      if (pollType) filter.pollType = pollType;
+      if (startDate) filter.startDate = { $gte: new Date(startDate) };
+      if (endDate) filter.endDate = { $lte: new Date(endDate) };
+      if (search) {
+        filter.$or = [
+          { title: { $regex: search, $options: "i" } },
+          { policyCode: { $regex: search, $options: "i" } },
+        ];
+      }
+      if (topics) {
+        const topicsArray = Array.isArray(topics) ? topics : [topics];
+        filter.topics = { $in: topicsArray };
+      }
+      if (relevanceFactors) {
+        const factors = relevanceFactors.split(",");
+        const relevanceFilter = {};
+        for (const factor of factors) {
+          if (
+            [
+              "women",
+              "youth",
+              "farmers",
+              "urban",
+              "rural",
+              "privateSector",
+              "government",
+            ].includes(factor)
+          ) {
+            relevanceFilter[`relevanceFactors.${factor}`] = true;
+          }
+        }
+        if (Object.keys(relevanceFilter).length) {
+          filter.$and = [relevanceFilter];
+        }
+      }
+      return filter;
+    };
+
+    // ========== 1. Owned policies ==========
+    const ownedFilter = buildPolicyFilter({ createdBy: userId });
+    const ownedPolicies = await Policy.find(ownedFilter)
+      .select(
+        "title description policyCode status targetRegions startDate endDate pollType topics relevanceFactors createdBy",
+      )
+      .sort({ createdAt: -1 })
+      .lean();
+    const owned = ownedPolicies.map((p) => ({ ...p, id: p._id }));
+
+    // ========== 2. Delegated policies (only for planners) ==========
+    let delegated = [];
+    if (role === "planner") {
+      const delegatedMatch = {
+        plannerId: userId,
+        invitationStatus: "accepted",
+        revokedAt: null,
+      };
+
+      let delegatedPolicyFilter = {};
+      if (status && status !== "all") {
+        delegatedPolicyFilter["policy.status"] = status;
+      } else {
+        delegatedPolicyFilter["policy.status"] = {
+          $in: ["active", "paused", "closed"],
+        };
+      }
+      if (region) delegatedPolicyFilter["policy.targetRegions"] = region;
+      if (pollType) delegatedPolicyFilter["policy.pollType"] = pollType;
+      if (startDate)
+        delegatedPolicyFilter["policy.startDate"] = {
+          $gte: new Date(startDate),
+        };
+      if (endDate)
+        delegatedPolicyFilter["policy.endDate"] = { $lte: new Date(endDate) };
+      if (search) {
+        delegatedPolicyFilter.$or = [
+          { "policy.title": { $regex: search, $options: "i" } },
+          { "policy.policyCode": { $regex: search, $options: "i" } },
+        ];
+      }
+      if (topics) {
+        const topicsArray = Array.isArray(topics) ? topics : [topics];
+        delegatedPolicyFilter["policy.topics"] = { $in: topicsArray };
+      }
+      if (relevanceFactors) {
+        const factors = relevanceFactors.split(",");
+        const relevanceConditions = factors.map((f) => ({
+          [`policy.relevanceFactors.${f}`]: true,
+        }));
+        if (relevanceConditions.length) {
+          delegatedPolicyFilter.$and = relevanceConditions;
+        }
+      }
+
+      const pipeline = [
+        { $match: delegatedMatch },
+        {
+          $lookup: {
+            from: "policies",
+            localField: "policyId",
+            foreignField: "_id",
+            as: "policy",
+          },
+        },
+        { $unwind: "$policy" },
+        { $match: delegatedPolicyFilter },
+        {
+          $lookup: {
+            from: "users",
+            localField: "assignedBy",
+            foreignField: "_id",
+            as: "assignedByUser",
+          },
+        },
+        {
+          $unwind: {
+            path: "$assignedByUser",
+            preserveNullAndEmptyArrays: true,
+          },
+        },
+        {
+          $project: {
+            id: "$policy._id",
+            title: "$policy.title",
+            description: "$policy.description",
+            policyCode: "$policy.policyCode",
+            status: "$policy.status",
+            targetRegions: "$policy.targetRegions",
+            startDate: "$policy.startDate",
+            endDate: "$policy.endDate",
+            pollType: "$policy.pollType",
+            topics: "$policy.topics",
+            relevanceFactors: "$policy.relevanceFactors",
+            associateId: "$_id",
+            delegatedPermissions: "$permissions",
+            invitedBy: "$assignedByUser.email",
+            acceptedAt: "$acceptedAt",
+          },
+        },
+      ];
+      const delegatedRaw = await PolicyAssociate.aggregate(pipeline);
+      delegated = delegatedRaw.map((d) => ({
+        ...d,
+        invitedBy: d.invitedBy || "Unknown",
+      }));
+    }
+
+    // ========== 3. Other policies ==========
+    let otherFilter = {};
+    if (role === "planner") {
+      if (status && status !== "all") {
+        otherFilter.status = status;
+      } else {
+        otherFilter.status = { $in: ["active", "paused", "closed"] };
+      }
+    } else {
+      otherFilter = buildPolicyFilter({});
+    }
+    if (region) otherFilter.targetRegions = region;
+    if (pollType) otherFilter.pollType = pollType;
+    if (startDate) otherFilter.startDate = { $gte: new Date(startDate) };
+    if (endDate) otherFilter.endDate = { $lte: new Date(endDate) };
+    if (search) {
+      otherFilter.$or = [
+        { title: { $regex: search, $options: "i" } },
+        { policyCode: { $regex: search, $options: "i" } },
+      ];
+    }
+    if (topics) {
+      const topicsArray = Array.isArray(topics) ? topics : [topics];
+      otherFilter.topics = { $in: topicsArray };
+    }
+    if (relevanceFactors) {
+      const factors = relevanceFactors.split(",");
+      const relevanceFilter = {};
+      for (const f of factors) {
+        if (
+          [
+            "women",
+            "youth",
+            "farmers",
+            "urban",
+            "rural",
+            "privateSector",
+            "government",
+          ].includes(f)
+        ) {
+          relevanceFilter[`relevanceFactors.${f}`] = true;
+        }
+      }
+      if (Object.keys(relevanceFilter).length)
+        otherFilter.$and = [relevanceFilter];
+    }
+    const ownedIds = owned.map((p) => p.id);
+    const delegatedIds = delegated.map((p) => p.id);
+    otherFilter._id = { $nin: [...ownedIds, ...delegatedIds] };
+    let otherPolicies = await Policy.find(otherFilter)
+      .select(
+        "title description policyCode status targetRegions startDate endDate pollType topics relevanceFactors createdBy",
+      )
+      .sort({ createdAt: -1 })
+      .lean();
+    const other = otherPolicies.map((p) => ({ ...p, id: p._id }));
+
+    let responseData;
+    if (category === "owned") responseData = { owned };
+    else if (category === "delegated") responseData = { delegated };
+    else if (category === "other") responseData = { other };
+    else responseData = { owned, delegated, other };
+
+    return sendSuccess(res, responseData, "Categorized policies retrieved");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve categorized policies",
       null,
       500,
     );
