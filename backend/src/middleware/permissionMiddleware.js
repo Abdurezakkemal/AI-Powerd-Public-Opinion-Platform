@@ -5,7 +5,15 @@ const hasAssociatePermission = (requiredPermission) => {
   return async (req, res, next) => {
     const policyId =
       req.params.policyId || req.body.policyId || req.query.policyId;
-    if (!policyId) return next();
+    if (!policyId) {
+      return res.status(400).json({
+        status: "error",
+        error: {
+          code: "BAD_REQUEST",
+          message: "Policy ID is required",
+        },
+      });
+    }
 
     const policy = await Policy.findById(policyId).select("createdBy");
     if (!policy) return next();
@@ -29,6 +37,7 @@ const hasAssociatePermission = (requiredPermission) => {
       policyId,
       plannerId: req.user.id,
       revokedAt: null,
+      acceptedAt: { $ne: null }, // only if accepted
       permissions: requiredPermission,
     });
     if (associate) {

@@ -1,4 +1,12 @@
-import { ArrowLeft, Lightbulb, Loader2, Save } from "lucide-react";
+import {
+  ArrowLeft,
+  Lightbulb,
+  Loader2,
+  Save,
+  Rocket,
+  Copy,
+  Trash2,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -21,16 +29,8 @@ import { getErrorMessage, toIsoFromDateInput } from "../lib/format";
 
 const policySchema = z
   .object({
-    title: z
-      .string()
-      .trim()
-      .min(1, "Title is required")
-      .max(200, "Title must be 200 characters or less"),
-    description: z
-      .string()
-      .trim()
-      .min(1, "Description is required")
-      .max(2000, "Description must be 2000 characters or less"),
+    title: z.string().trim().min(1, "Title is required").max(200),
+    description: z.string().trim().min(1, "Description is required").max(2000),
     targetRegions: z
       .array(z.string())
       .min(1, "Select at least one target region"),
@@ -46,7 +46,11 @@ const policySchema = z
     ]),
     pollOptions: z
       .array(
-        z.object({ id: z.string(), text: z.string(), shortCode: z.string() }),
+        z.object({
+          id: z.string(),
+          text: z.string(),
+          shortCode: z.string().optional(),
+        }),
       )
       .optional(),
     maxSelections: z.coerce.number().min(1).optional(),
@@ -118,6 +122,7 @@ export function PolicyFormPage({ mode }) {
   const [loading, setLoading] = useState(isEdit);
   const [submitting, setSubmitting] = useState(false);
   const [serverError, setServerError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
   const [createdCode, setCreatedCode] = useState("");
   const [aiSuggestions, setAiSuggestions] = useState([]);
   const [aiLoading, setAiLoading] = useState(false);
@@ -234,7 +239,17 @@ export function PolicyFormPage({ mode }) {
 
   const submit = async (values) => {
     setServerError("");
+    setSuccessMessage("");
     setCreatedCode("");
+
+    // Ensure poll options have id and text; shortCode can be empty or undefined
+    let pollOptionsToSend = (values.pollOptions || []).map((opt) => ({
+      id: opt.id,
+      text: opt.text,
+      shortCode: opt.shortCode || "",
+    }));
+    values.pollOptions = pollOptionsToSend;
+
     const parsed = policySchema.safeParse(values);
     if (!parsed.success) {
       parsed.error.issues.forEach((issue) => {
@@ -255,10 +270,10 @@ export function PolicyFormPage({ mode }) {
       title: parsed.data.title,
       description: parsed.data.description,
       targetRegions: parsed.data.targetRegions,
-      startDate: toIsoFromDateInput(parsed.data.startDate.toISOString()),
-      endDate: toIsoFromDateInput(parsed.data.endDate.toISOString(), true),
+      startDate: parsed.data.startDate.toISOString(),
+      endDate: parsed.data.endDate.toISOString(),
       pollType: parsed.data.pollType,
-      pollOptions: parsed.data.pollOptions,
+      pollOptions: parsed.data.pollOptions || [],
       maxSelections: parsed.data.maxSelections,
       likertLabels: parsed.data.likertLabels,
       rankedChoiceMaxRank: parsed.data.rankedChoiceMaxRank,
@@ -271,14 +286,62 @@ export function PolicyFormPage({ mode }) {
       setSubmitting(true);
       if (isEdit) {
         await policyApi.update(id, payload);
-        navigate("/policies", { replace: true });
+        setSuccessMessage(
+          "Policy updated successfully. You can continue editing or publish.",
+        );
       } else {
         const result = await policyApi.create(payload);
         setCreatedCode(result.policyCode);
-        navigate("/policies", { replace: true });
+        navigate(`/policies/${result.id}/edit`);
       }
     } catch (err) {
       setServerError(getErrorMessage(err, "Failed to save policy"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handlePublish = async () => {
+    if (!id) return;
+    setSubmitting(true);
+    setServerError("");
+    try {
+      await policyApi.publish(id);
+      navigate(`/policies/${id}`);
+    } catch (err) {
+      setServerError(getErrorMessage(err, "Failed to publish policy"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleClone = async () => {
+    if (!id) return;
+    setSubmitting(true);
+    setServerError("");
+    try {
+      const result = await policyApi.clone(id);
+      navigate(`/policies/${result.id}/edit`);
+    } catch (err) {
+      setServerError(getErrorMessage(err, "Failed to clone policy"));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!id) return;
+    if (
+      !window.confirm("Are you sure you want to permanently delete this draft?")
+    )
+      return;
+    setSubmitting(true);
+    setServerError("");
+    try {
+      await policyApi.delete(id);
+      navigate("/policies", { state: { notice: "Draft policy deleted." } });
+    } catch (err) {
+      setServerError(getErrorMessage(err, "Failed to delete policy"));
     } finally {
       setSubmitting(false);
     }
@@ -290,7 +353,7 @@ export function PolicyFormPage({ mode }) {
     <div>
       <PageHeader
         title={title}
-        description="Draft policies can be edited before publishing. The backend generates the policy code after create."
+        description="Draft policies can be edited before publishing. After creation you'll be taken to the edit page."
         actions={
           <Link
             className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
@@ -304,6 +367,11 @@ export function PolicyFormPage({ mode }) {
 
       <div className="space-y-3">
         <ErrorAlert message={serverError} />
+        {successMessage && (
+          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
+            {successMessage}
+          </div>
+        )}
         {createdCode ? (
           <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
             Policy created. Generated code:{" "}
@@ -385,7 +453,7 @@ export function PolicyFormPage({ mode }) {
             )}
           </div>
 
-          {/* Dates with react-datepicker */}
+          {/* Dates */}
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="text-sm font-semibold text-slate-700">
@@ -434,7 +502,7 @@ export function PolicyFormPage({ mode }) {
             </label>
           </div>
 
-          {/* Poll Type with tooltip */}
+          {/* Poll Type */}
           <label className="block">
             <span className="text-sm font-semibold text-slate-700">
               Poll Type
@@ -457,7 +525,7 @@ export function PolicyFormPage({ mode }) {
             </select>
           </label>
 
-          {/* Poll Options Editor */}
+          {/* Poll Options Editor (simplified – only text fields) */}
           {["multipleChoice", "rankedChoice"].includes(pollType) && (
             <div>
               <span className="text-sm font-semibold text-slate-700">
@@ -529,7 +597,7 @@ export function PolicyFormPage({ mode }) {
             </div>
           )}
 
-          {/* Topics – TagInput */}
+          {/* Topics */}
           <div>
             <span className="text-sm font-semibold text-slate-700">Topics</span>
             <TagInput
@@ -651,6 +719,37 @@ export function PolicyFormPage({ mode }) {
                 ? "Save changes"
                 : "Create policy"}
           </button>
+          {isEdit && policy?.status === "draft" && (
+            <>
+              <button
+                type="button"
+                onClick={handlePublish}
+                disabled={submitting}
+                className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white hover:bg-emerald-700 disabled:opacity-50"
+              >
+                <Rocket className="h-4 w-4" />
+                Publish
+              </button>
+              <button
+                type="button"
+                onClick={handleClone}
+                disabled={submitting}
+                className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                <Copy className="h-4 w-4" />
+                Clone Draft
+              </button>
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={submitting}
+                className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-bold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete Draft
+              </button>
+            </>
+          )}
         </div>
       </form>
     </div>

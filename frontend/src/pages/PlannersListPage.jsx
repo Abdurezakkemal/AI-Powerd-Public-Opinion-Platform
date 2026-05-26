@@ -1,4 +1,6 @@
+import { Lock, Info } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { adminApi } from "../api/admin";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
@@ -6,96 +8,91 @@ import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { formatDate, getErrorMessage } from "../lib/format";
 
-export function CitizenManagementPage() {
-  const [citizens, setCitizens] = useState([]);
-  const [totalCitizens, setTotalCitizens] = useState(0);
+export function PlannersListPage() {
+  const location = useLocation();
+  const [planners, setPlanners] = useState([]);
+  const [totalPlanners, setTotalPlanners] = useState(0);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState({});
   const [error, setError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [activeFilter, setActiveFilter] = useState("");
   const [searchEmail, setSearchEmail] = useState("");
   const [resetModalOpen, setResetModalOpen] = useState(false);
-  const [selectedCitizen, setSelectedCitizen] = useState(null);
+  const [selectedPlanner, setSelectedPlanner] = useState(null);
   const [modalMessage, setModalMessage] = useState(null);
 
-  const loadCitizens = async () => {
+  const loadPlanners = async () => {
     setLoading(true);
     setError("");
     try {
-      const result = await adminApi.listCitizens({
+      const result = await adminApi.listPlanners({
         page,
         limit: 20,
         active: activeFilter === "" ? undefined : activeFilter === "true",
       });
-      setCitizens(result.citizens || []);
-      setTotalCitizens(result.total || 0);
+      setPlanners(result.planners || []);
+      setTotalPlanners(result.total || 0);
       setTotalPages(result.pages || 1);
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to load citizens"));
+      setError(getErrorMessage(err, "Failed to load planners"));
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadCitizens();
+    loadPlanners();
   }, [page, activeFilter]);
 
   const filtered = searchEmail.trim()
-    ? citizens.filter((c) =>
-        c.email.toLowerCase().includes(searchEmail.toLowerCase()),
+    ? planners.filter((p) =>
+        p.email.toLowerCase().includes(searchEmail.toLowerCase()),
       )
-    : citizens;
+    : planners;
 
-  const toggleStatus = async (citizen) => {
+  const toggleStatus = async (planner) => {
     setError("");
-    setSuccessMessage("");
-    setActionLoading((prev) => ({ ...prev, [citizen._id]: true }));
+    setActionLoading((prev) => ({ ...prev, [planner._id]: true }));
     try {
-      const updatedActive = !citizen.active;
-      await adminApi.updateCitizenStatus(citizen._id, updatedActive);
-      setCitizens((prev) =>
-        prev.map((c) =>
-          c._id === citizen._id ? { ...c, active: updatedActive } : c,
+      const updatedActive = !planner.active;
+      await adminApi.setPlannerStatus(planner._id, updatedActive);
+      setPlanners((prev) =>
+        prev.map((p) =>
+          p._id === planner._id ? { ...p, active: updatedActive } : p,
         ),
       );
-      setSuccessMessage(
-        `${citizen.email} ${updatedActive ? "activated" : "deactivated"}.`,
-      );
-      setTimeout(() => setSuccessMessage(""), 3000);
     } catch (err) {
-      setError(getErrorMessage(err, "Failed to update citizen status"));
+      setError(getErrorMessage(err, "Failed to update planner status"));
     } finally {
-      setActionLoading((prev) => ({ ...prev, [citizen._id]: false }));
+      setActionLoading((prev) => ({ ...prev, [planner._id]: false }));
     }
   };
 
-  const openResetModal = (citizen) => {
-    setSelectedCitizen(citizen);
+  const openResetModal = (planner) => {
+    setSelectedPlanner(planner);
     setModalMessage(null);
     setResetModalOpen(true);
   };
 
   const handlePasswordReset = async () => {
-    if (!selectedCitizen) return;
+    if (!selectedPlanner) return;
     setError("");
     setModalMessage(null);
     setActionLoading((prev) => ({
       ...prev,
-      [`reset-${selectedCitizen._id}`]: true,
+      [`reset-${selectedPlanner._id}`]: true,
     }));
     try {
-      await adminApi.initiatePasswordReset(selectedCitizen._id);
+      await adminApi.initiatePasswordReset(selectedPlanner._id);
       setModalMessage({
         type: "success",
         text: "Reset email sent successfully!",
       });
       setTimeout(() => {
         setResetModalOpen(false);
-        setSelectedCitizen(null);
+        setSelectedPlanner(null);
         setModalMessage(null);
       }, 2000);
     } catch (err) {
@@ -106,26 +103,21 @@ export function CitizenManagementPage() {
     } finally {
       setActionLoading((prev) => ({
         ...prev,
-        [`reset-${selectedCitizen._id}`]: false,
+        [`reset-${selectedPlanner._id}`]: false,
       }));
     }
   };
 
-  if (loading) return <LoadingState label="Loading citizens" />;
+  if (loading) return <LoadingState label="Loading planners" />;
 
   return (
     <div>
       <PageHeader
-        title="Citizen Management"
-        description="View, filter, and manage citizen accounts. Activate or deactivate users and send password reset emails."
+        title="Planner accounts"
+        description="View, filter, and manage planner accounts. Activate or deactivate users and send password reset emails."
       />
       <div className="space-y-5">
         <ErrorAlert message={error} />
-        {successMessage && (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-            {successMessage}
-          </div>
-        )}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex-1">
             <input
@@ -138,7 +130,7 @@ export function CitizenManagementPage() {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-slate-700">
-              Total citizens: {totalCitizens}
+              Total planners: {totalPlanners}
             </span>
             <select
               value={activeFilter}
@@ -156,7 +148,7 @@ export function CitizenManagementPage() {
         </div>
         {filtered.length === 0 ? (
           <div className="rounded-lg border border-slate-200 bg-white px-8 py-12 text-center">
-            <p className="text-slate-600">No citizens found.</p>
+            <p className="text-slate-600">No planners found.</p>
           </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -167,13 +159,10 @@ export function CitizenManagementPage() {
                     Email
                   </th>
                   <th className="px-5 py-3 text-left font-bold text-slate-700">
-                    Verified
-                  </th>
-                  <th className="px-5 py-3 text-left font-bold text-slate-700">
                     Status
                   </th>
                   <th className="px-5 py-3 text-left font-bold text-slate-700">
-                    Joined
+                    Created At
                   </th>
                   <th className="px-5 py-3 text-right font-bold text-slate-700">
                     Actions
@@ -181,62 +170,63 @@ export function CitizenManagementPage() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((citizen) => (
+                {filtered.map((planner) => (
                   <tr
-                    key={citizen._id}
+                    key={planner._id}
                     className="border-b border-slate-100 hover:bg-slate-50"
                   >
-                    <td className="px-5 py-3 font-medium text-slate-950">
-                      {citizen.email}
+                    <td className="px-5 py-3">
+                      <Link
+                        to={`/planners/${planner._id}`}
+                        state={{
+                          from: {
+                            pathname: "/planners",
+                            search: location.search,
+                            label: "Planners",
+                          },
+                        }}
+                        className="font-medium text-slate-950 hover:text-teal-700 hover:underline"
+                      >
+                        {planner.email}
+                      </Link>
                     </td>
                     <td className="px-5 py-3">
                       <span
                         className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-bold ${
-                          citizen.verified
+                          planner.active
                             ? "bg-emerald-100 text-emerald-700"
                             : "bg-slate-100 text-slate-600"
                         }`}
                       >
-                        {citizen.verified ? "Yes" : "No"}
-                      </span>
-                    </td>
-                    <td className="px-5 py-3">
-                      <span
-                        className={`inline-flex items-center rounded-full px-2 py-1 text-xs font-bold ${
-                          citizen.active
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-slate-100 text-slate-600"
-                        }`}
-                      >
-                        {citizen.active ? "Active" : "Inactive"}
+                        {planner.active ? "Active" : "Inactive"}
                       </span>
                     </td>
                     <td className="px-5 py-3 text-slate-600 text-xs">
-                      {formatDate(citizen.createdAt)}
+                      {formatDate(planner.createdAt)}
                     </td>
                     <td className="px-5 py-3">
                       <div className="flex justify-end gap-2">
                         <button
-                          onClick={() => toggleStatus(citizen)}
-                          disabled={actionLoading[citizen._id]}
+                          onClick={() => toggleStatus(planner)}
+                          disabled={actionLoading[planner._id]}
                           className={`rounded-lg px-3 py-1.5 text-xs font-bold ${
-                            citizen.active
+                            planner.active
                               ? "border border-rose-200 text-rose-700 hover:bg-rose-50"
                               : "border border-emerald-200 text-emerald-700 hover:bg-emerald-100"
                           } disabled:opacity-50`}
                         >
-                          {actionLoading[citizen._id]
+                          {actionLoading[planner._id]
                             ? "..."
-                            : citizen.active
+                            : planner.active
                               ? "Deactivate"
                               : "Activate"}
                         </button>
                         <button
-                          onClick={() => openResetModal(citizen)}
-                          disabled={actionLoading[`reset-${citizen._id}`]}
+                          onClick={() => openResetModal(planner)}
+                          disabled={actionLoading[`reset-${planner._id}`]}
                           className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                         >
-                          {actionLoading[`reset-${citizen._id}`]
+                          {actionLoading[`reset-${planner._id}`]
                             ? "Sending..."
                             : "Reset password"}
                         </button>
@@ -272,7 +262,7 @@ export function CitizenManagementPage() {
           </div>
         )}
       </div>
-      {resetModalOpen && selectedCitizen && (
+      {resetModalOpen && selectedPlanner && (
         <Modal title="Reset Password" onClose={() => setResetModalOpen(false)}>
           <div className="space-y-4">
             {modalMessage && (
@@ -290,7 +280,7 @@ export function CitizenManagementPage() {
               <>
                 <p className="text-sm text-slate-600">
                   Send a password reset email to{" "}
-                  <strong>{selectedCitizen.email}</strong>?
+                  <strong>{selectedPlanner.email}</strong>?
                 </p>
                 <p className="text-sm text-slate-500">
                   They will receive an email with a link to create a new
@@ -309,11 +299,11 @@ export function CitizenManagementPage() {
               {!modalMessage && (
                 <button
                   onClick={handlePasswordReset}
-                  disabled={actionLoading[`reset-${selectedCitizen._id}`]}
+                  disabled={actionLoading[`reset-${selectedPlanner._id}`]}
                   type="button"
                   className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-50"
                 >
-                  {actionLoading[`reset-${selectedCitizen._id}`]
+                  {actionLoading[`reset-${selectedPlanner._id}`]
                     ? "Sending..."
                     : "Send reset email"}
                 </button>

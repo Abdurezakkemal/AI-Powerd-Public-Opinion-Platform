@@ -1,6 +1,8 @@
 const User = require("../models/User");
 const Comment = require("..//models/Comment");
 const PlannerRequest = require("../models/PlannerRequest");
+const Policy = require("../models/Policy");
+const PolicyAssociate = require("../models/PolicyAssociate");
 const { sendEmail } = require("../utils/email");
 const crypto = require("crypto");
 const mongoose = require("mongoose");
@@ -62,6 +64,76 @@ exports.listPlanners = async (req, res) => {
   }
 };
 
+// GET /admin/planners/:id
+exports.getPlannerById = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const planner = await User.findOne({ _id: id, role: "planner" }).select(
+      "-passwordHash -phoneHash",
+    );
+    if (!planner) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Planner not found",
+        null,
+        404,
+      );
+    }
+
+    // Fetch owned policies (policies created by this planner)
+    const ownedPolicies = await Policy.find({ createdBy: id })
+      .select(
+        "title policyCode status targetRegions pollType createdAt endDate",
+      )
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Fetch delegated policies (where this planner is an accepted associate)
+    const delegatedAssociations = await PolicyAssociate.find({
+      plannerId: id,
+      invitationStatus: "accepted",
+      revokedAt: null,
+    })
+      .populate(
+        "policyId",
+        "title policyCode status targetRegions pollType createdAt endDate",
+      )
+      .populate("assignedBy", "email firstName lastName")
+      .sort({ acceptedAt: -1 })
+      .lean();
+
+    const delegatedPolicies = delegatedAssociations.map((assoc) => ({
+      policy: assoc.policyId,
+      permissions: assoc.permissions,
+      invitedBy: assoc.assignedBy,
+      acceptedAt: assoc.acceptedAt,
+      associateId: assoc._id,
+    }));
+
+    // Build enriched response
+    const response = {
+      ...planner.toObject(),
+      ownedPolicies,
+      delegatedPolicies,
+      stats: {
+        ownedCount: ownedPolicies.length,
+        delegatedCount: delegatedPolicies.length,
+      },
+    };
+
+    return sendSuccess(res, response, "Planner retrieved with policies");
+  } catch (err) {
+    logger.error({ error: err.message }, "Get planner by ID error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve planner",
+      null,
+      500,
+    );
+  }
+};
 // POST /admin/planners
 exports.createPlanner = async (req, res) => {
   try {
@@ -288,29 +360,78 @@ exports.updatePlannerStatus = async (req, res) => {
 
 // ========== COMMENT MANAGEMENT ==========
 
-// GET /admin/comments/pending – comments that need AI review
-// Includes: low confidence (sentimentReviewNeeded = true) OR pending (retried/edited) that have been analysed before (lastAnalyzedAt != null)
+// GET /admin/comments/pending – AI low confidence comments (visible)
 exports.getPendingComments = async (req, res) => {
   try {
-    const filter = {
+    const { policyId } = req.query;
+    const user = req.user;
+    const isAdmin = user.role === "admin";
+
+    let filter = {
       visibility: "visible",
       $or: [
         { "reviewFlags.sentimentReviewNeeded": true },
         { aiStatus: "pending", lastAnalyzedAt: { $ne: null } },
       ],
     };
+
+    // If a specific policyId is provided, check permissions
+    if (policyId && mongoose.Types.ObjectId.isValid(policyId)) {
+      const policy = await Policy.findById(policyId).select("createdBy");
+      if (!policy) {
+        return sendError(
+          res,
+          ErrorCodes.NOT_FOUND,
+          "Policy not found",
+          null,
+          404,
+        );
+      }
+
+      const isOwner = policy.createdBy.toString() === user.id.toString();
+      const isAssociate = await PolicyAssociate.findOne({
+        policyId,
+        plannerId: user.id,
+        invitationStatus: "accepted",
+        permissions: { $in: ["moderate_comments"] },
+      });
+
+      if (!isAdmin && !isOwner && !isAssociate) {
+        return sendError(
+          res,
+          ErrorCodes.FORBIDDEN,
+          "You do not have permission to view pending comments for this policy",
+          null,
+          403,
+        );
+      }
+      filter.policyId = new mongoose.Types.ObjectId(policyId);
+    } else if (!isAdmin) {
+      // No policyId, planner: only show comments from policies they own or are associated with
+      const ownedPolicies = await Policy.find({ createdBy: user.id }).distinct(
+        "_id",
+      );
+      const associatedPolicies = await PolicyAssociate.find({
+        plannerId: user.id,
+        invitationStatus: "accepted",
+      }).distinct("policyId");
+      const allowedPolicyIds = [...ownedPolicies, ...associatedPolicies];
+      if (allowedPolicyIds.length === 0) {
+        // No accessible policies, return empty result
+        return sendSuccess(res, { comments: [] }, "No accessible policies");
+      }
+      filter.policyId = { $in: allowedPolicyIds };
+    }
+
     const comments = await Comment.find(filter)
       .populate("policyId", "title")
       .populate("userId", "email firstName lastName")
       .sort({ createdAt: -1 });
+
     logger.info(
-      `Admin ${req.user.id} retrieved ${comments.length} pending comments`,
+      `User ${user.id} retrieved ${comments.length} pending comments`,
     );
-    return sendSuccess(
-      res,
-      { comments },
-      "Pending comments retrieved successfully",
-    );
+    return sendSuccess(res, { comments }, "Pending comments retrieved");
   } catch (err) {
     logger.error(
       { error: err.message, stack: err.stack },
@@ -328,21 +449,70 @@ exports.getPendingComments = async (req, res) => {
 // GET /admin/comments/flagged – reported comments (hidden)
 exports.getFlaggedComments = async (req, res) => {
   try {
-    const comments = await Comment.find({
+    const { policyId } = req.query;
+    const user = req.user;
+    const isAdmin = user.role === "admin";
+
+    let filter = {
       reportState: { $in: ["reported", "under_review"] },
       visibility: "hidden",
-    })
+    };
+
+    if (policyId && mongoose.Types.ObjectId.isValid(policyId)) {
+      const policy = await Policy.findById(policyId).select("createdBy");
+      if (!policy) {
+        return sendError(
+          res,
+          ErrorCodes.NOT_FOUND,
+          "Policy not found",
+          null,
+          404,
+        );
+      }
+
+      const isOwner = policy.createdBy.toString() === user.id.toString();
+      const isAssociate = await PolicyAssociate.findOne({
+        policyId,
+        plannerId: user.id,
+        invitationStatus: "accepted",
+        permissions: "moderate_comments",
+      });
+
+      if (!isAdmin && !isOwner && !isAssociate) {
+        return sendError(
+          res,
+          ErrorCodes.FORBIDDEN,
+          "You do not have permission to view flagged comments for this policy",
+          null,
+          403,
+        );
+      }
+      filter.policyId = new mongoose.Types.ObjectId(policyId);
+    } else if (!isAdmin) {
+      const ownedPolicies = await Policy.find({ createdBy: user.id }).distinct(
+        "_id",
+      );
+      const associatedPolicies = await PolicyAssociate.find({
+        plannerId: user.id,
+        invitationStatus: "accepted",
+        permissions: "moderate_comments",
+      }).distinct("policyId");
+      const allowedPolicyIds = [...ownedPolicies, ...associatedPolicies];
+      if (allowedPolicyIds.length === 0) {
+        return sendSuccess(res, { comments: [] }, "No accessible policies");
+      }
+      filter.policyId = { $in: allowedPolicyIds };
+    }
+
+    const comments = await Comment.find(filter)
       .populate("policyId", "title")
       .populate("userId", "email firstName lastName")
       .sort({ createdAt: -1 });
+
     logger.info(
-      `Admin ${req.user.id} retrieved ${comments.length} flagged comments`,
+      `User ${user.id} retrieved ${comments.length} flagged comments`,
     );
-    return sendSuccess(
-      res,
-      { comments },
-      "Flagged comments retrieved successfully",
-    );
+    return sendSuccess(res, { comments }, "Flagged comments retrieved");
   } catch (err) {
     logger.error(
       { error: err.message, stack: err.stack },
@@ -357,7 +527,6 @@ exports.getFlaggedComments = async (req, res) => {
     );
   }
 };
-
 // PUT /admin/comments/:id – manual override (sentiment & keywords only)
 exports.updateComment = async (req, res) => {
   try {
@@ -430,12 +599,12 @@ exports.updateComment = async (req, res) => {
   }
 };
 
-// Normal retry – only for comments that have been AI processed (or failed) and are visible
+// Retry AI analysis for a comment (force re‑analysis)
 exports.retryComment = async (req, res) => {
   try {
     const { id } = req.params;
     const comment = await Comment.findById(id);
-    if (!comment)
+    if (!comment) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -443,26 +612,9 @@ exports.retryComment = async (req, res) => {
         null,
         404,
       );
-
-    if (comment.aiStatus !== "processed" && comment.aiStatus !== "failed") {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        `Only processed or failed comments can be retried. Current: ${comment.aiStatus}`,
-        null,
-        400,
-      );
-    }
-    if (comment.visibility !== "visible") {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Only visible comments can be retried.",
-        null,
-        400,
-      );
     }
 
+    // Reset AI status to pending and clear previous analysis
     comment.aiStatus = "pending";
     comment.sentiment = {
       label: null,
@@ -470,127 +622,36 @@ exports.retryComment = async (req, res) => {
       overriddenByModerator: false,
     };
     comment.keywords = [];
-    comment.retryCount = 0;
-    comment.nextRetry = null;
+    comment.aiAnalysis = { raw: null, version: null, analyzedAt: null };
+    comment.lastAnalyzedAt = null;
     comment.reviewFlags.sentimentReviewNeeded = false;
+    comment.retryCount = 0;
+    comment.nextRetry = new Date(); // trigger immediately
 
+    // Push an event
     comment.events.push({
-      type: "ai_analyzed",
+      type: "ai_failed", // or "ai_retry" – we can add new type, but existing is fine
       actor: req.user.id,
-      data: { action: "manual_retry" },
+      data: { reason: "manual_retry" },
       createdAt: new Date(),
     });
+
     await comment.save();
 
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "RETRY_COMMENT",
-      targetType: "Comment",
-      targetId: comment._id,
-      details: { policyId: comment.policyId },
-      req,
-    });
-
-    logger.info(`Admin ${req.user.id} retried comment ${id}`);
+    logger.info(
+      `Comment ${id} manually reset for AI retry by user ${req.user.id}`,
+    );
     return sendSuccess(
       res,
-      { commentId: id },
-      "Comment queued for AI reprocessing.",
+      { commentId: comment._id },
+      "Comment queued for AI retry",
     );
   } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Retry comment error",
-    );
+    logger.error(`Retry comment error: ${err.message}`);
     return sendError(
       res,
       ErrorCodes.INTERNAL,
-      "Failed to queue comment for retry",
-      null,
-      500,
-    );
-  }
-};
-
-// Retry single comment (strict) – only for processed/failed, visible
-exports.retryComment = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const comment = await Comment.findById(id);
-    if (!comment)
-      return sendError(
-        res,
-        ErrorCodes.NOT_FOUND,
-        "Comment not found",
-        null,
-        404,
-      );
-
-    if (comment.aiStatus !== "processed" && comment.aiStatus !== "failed") {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        `Only processed or failed comments can be retried. Current: ${comment.aiStatus}`,
-        null,
-        400,
-      );
-    }
-    if (comment.visibility !== "visible") {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "Only visible comments can be retried.",
-        null,
-        400,
-      );
-    }
-
-    comment.aiStatus = "pending";
-    comment.sentiment = {
-      label: null,
-      confidence: null,
-      overriddenByModerator: false,
-    };
-    comment.keywords = [];
-    comment.retryCount = 0;
-    comment.nextRetry = null;
-    comment.reviewFlags.sentimentReviewNeeded = false;
-    // Keep lastAnalyzedAt unchanged (so it will appear in pending queue)
-
-    comment.events.push({
-      type: "ai_analyzed",
-      actor: req.user.id,
-      data: { action: "manual_retry" },
-      createdAt: new Date(),
-    });
-    await comment.save();
-
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "RETRY_COMMENT",
-      targetType: "Comment",
-      targetId: comment._id,
-      details: { policyId: comment.policyId },
-      req,
-    });
-
-    logger.info(`Admin ${req.user.id} retried comment ${id}`);
-    return sendSuccess(
-      res,
-      { commentId: id },
-      "Comment queued for AI reprocessing.",
-    );
-  } catch (err) {
-    logger.error(
-      { error: err.message, stack: err.stack },
-      "Retry comment error",
-    );
-    return sendError(
-      res,
-      ErrorCodes.INTERNAL,
-      "Failed to queue comment for retry",
+      "Failed to retry comment",
       null,
       500,
     );
@@ -867,22 +928,25 @@ exports.listCitizens = async (req, res) => {
   }
 };
 
-// PUT /admin/users/:id/status
 exports.updateCitizenStatus = async (req, res) => {
   try {
     const { id } = req.params;
     const { active } = req.body;
+
+    console.log("updateCitizenStatus called with id:", id, "active:", active);
+
     if (active === undefined) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "active field is required (true/false)",
+        "active field is required",
         null,
         400,
       );
     }
 
     const user = await User.findOne({ _id: id, role: "citizen" });
+
     if (!user) {
       return sendError(
         res,
@@ -894,32 +958,23 @@ exports.updateCitizenStatus = async (req, res) => {
     }
 
     user.active = active;
+
     await user.save();
 
-    await createAuditLog({
-      userId: req.user.id,
-      userRole: req.user.role,
-      action: "UPDATE_CITIZEN_STATUS",
-      targetType: "User",
-      targetId: user._id,
-      details: { email: user.email, active: user.active },
-      req,
+    // IMPORTANT: send response
+    return res.status(200).json({
+      success: true,
+      message: `Citizen ${active ? "activated" : "deactivated"}`,
+      user,
     });
-
-    const statusText = active ? "activated" : "deactivated";
-    logger.info(
-      `Admin ${req.user.id} ${statusText} citizen: ${user.email} (${user._id})`,
-    );
-    return sendSuccess(
-      res,
-      { userId: user._id, active: user.active },
-      `Citizen account ${statusText} successfully`,
-    );
   } catch (err) {
+    console.error("Full error:", err);
+
     logger.error(
       { error: err.message, stack: err.stack },
       "Update citizen status error",
     );
+
     return sendError(
       res,
       ErrorCodes.INTERNAL,
@@ -1136,8 +1191,62 @@ exports.resolveReport = async (req, res) => {
 // GET /admin/appeals
 exports.getAppeals = async (req, res) => {
   try {
-    const { status = "pending", page = 1, limit = 20 } = req.query;
-    const filter = { "appeal.status": status };
+    const { status = "pending", page = 1, limit = 20, policyId } = req.query;
+    const user = req.user;
+    const isAdmin = user.role === "admin";
+
+    let filter = { "appeal.status": status };
+
+    if (policyId && mongoose.Types.ObjectId.isValid(policyId)) {
+      const policy = await Policy.findById(policyId).select("createdBy");
+      if (!policy) {
+        return sendError(
+          res,
+          ErrorCodes.NOT_FOUND,
+          "Policy not found",
+          null,
+          404,
+        );
+      }
+
+      const isOwner = policy.createdBy.toString() === user.id.toString();
+      const isAssociate = await PolicyAssociate.findOne({
+        policyId,
+        plannerId: user.id,
+        invitationStatus: "accepted",
+        permissions: "moderate_comments",
+      });
+
+      if (!isAdmin && !isOwner && !isAssociate) {
+        return sendError(
+          res,
+          ErrorCodes.FORBIDDEN,
+          "You do not have permission to view appeals for this policy",
+          null,
+          403,
+        );
+      }
+      filter.policyId = new mongoose.Types.ObjectId(policyId);
+    } else if (!isAdmin) {
+      const ownedPolicies = await Policy.find({ createdBy: user.id }).distinct(
+        "_id",
+      );
+      const associatedPolicies = await PolicyAssociate.find({
+        plannerId: user.id,
+        invitationStatus: "accepted",
+        permissions: "moderate_comments",
+      }).distinct("policyId");
+      const allowedPolicyIds = [...ownedPolicies, ...associatedPolicies];
+      if (allowedPolicyIds.length === 0) {
+        return sendSuccess(
+          res,
+          { appeals: [], pagination: { total: 0, page: 1, limit, pages: 0 } },
+          "No accessible policies",
+        );
+      }
+      filter.policyId = { $in: allowedPolicyIds };
+    }
+
     const comments = await Comment.find(filter)
       .populate("userId", "email firstName lastName")
       .populate("policyId", "title")
@@ -1198,8 +1307,11 @@ exports.resolveAppeal = async (req, res) => {
       );
     }
 
-    const comment = await Comment.findById(commentId);
-    if (!comment)
+    const comment = await Comment.findById(commentId).populate(
+      "policyId",
+      "createdBy",
+    );
+    if (!comment) {
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -1207,6 +1319,8 @@ exports.resolveAppeal = async (req, res) => {
         null,
         404,
       );
+    }
+
     if (!comment.appeal || comment.appeal.status !== "pending") {
       return sendError(
         res,
@@ -1214,6 +1328,45 @@ exports.resolveAppeal = async (req, res) => {
         "No pending appeal found",
         null,
         400,
+      );
+    }
+
+    const user = req.user;
+    const isAdmin = user.role === "admin";
+    const policy = comment.policyId;
+    if (!policy) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Policy not found",
+        null,
+        404,
+      );
+    }
+
+    // Check permissions: admin, policy owner, or associate with moderate_comments
+    let isAuthorized = isAdmin;
+    if (!isAuthorized && policy.createdBy) {
+      const isOwner = policy.createdBy.toString() === user.id.toString();
+      if (isOwner) isAuthorized = true;
+      else {
+        const associate = await PolicyAssociate.findOne({
+          policyId: policy._id,
+          plannerId: user.id,
+          invitationStatus: "accepted",
+          permissions: "moderate_comments",
+        });
+        if (associate) isAuthorized = true;
+      }
+    }
+
+    if (!isAuthorized) {
+      return sendError(
+        res,
+        ErrorCodes.FORBIDDEN,
+        "You do not have permission to resolve appeals on this policy",
+        null,
+        403,
       );
     }
 
@@ -1258,6 +1411,19 @@ exports.resolveAppeal = async (req, res) => {
       req,
     });
 
+    // Notify the appellant about the resolution
+    if (comment.appeal.appellantId) {
+      await createNotification({
+        userId: comment.appeal.appellantId,
+        type: "APPEAL_RESOLVED",
+        title: `Appeal ${decision}`,
+        message: `Your appeal on a comment has been ${decision}. ${moderatorNote ? `Note: ${moderatorNote}` : ""}`,
+        data: { commentId: comment._id, decision },
+        severity: decision === "approved" ? "info" : "warning",
+        source: "system",
+      });
+    }
+
     return sendSuccess(res, comment.appeal, "Appeal resolved");
   } catch (err) {
     logger.error({ error: err.message }, "Resolve appeal error");
@@ -1265,6 +1431,124 @@ exports.resolveAppeal = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to resolve appeal",
+      null,
+      500,
+    );
+  }
+};
+
+// GET /admin/appeals – pending appeals (with optional policyId)
+exports.getPendingAppeals = async (req, res) => {
+  try {
+    const { policyId } = req.query;
+    const filter = { "appeal.status": "pending" };
+    if (policyId && mongoose.Types.ObjectId.isValid(policyId)) {
+      filter.policyId = new mongoose.Types.ObjectId(policyId);
+    }
+    const comments = await Comment.find(filter)
+      .populate("policyId", "title")
+      .populate("userId", "email firstName lastName")
+      .populate("appeal.appellantId", "email firstName lastName")
+      .sort({ createdAt: -1 });
+    const appeals = comments.map((c) => ({
+      commentId: c._id,
+      text: c.text,
+      policyTitle: c.policyId?.title || "Unknown",
+      author: c.userId ? { email: c.userId.email } : null,
+      appealReason: c.appeal?.reason,
+      appellant: c.appeal?.appellantId
+        ? { email: c.appeal.appellantId.email }
+        : null,
+      createdAt: c.createdAt,
+    }));
+    return sendSuccess(res, appeals, "Pending appeals retrieved");
+  } catch (err) {
+    logger.error({ error: err.message }, "Get pending appeals error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve appeals",
+      null,
+      500,
+    );
+  }
+};
+// GET /admin/emerging-topics
+exports.getEmergingTopics = async (req, res) => {
+  try {
+    // Get the baseline (current 24h counts) – the worker stores it as "emerging:baseline"
+    // But that's the baseline for comparison. We need the actual emerging topics from the last run.
+    // The worker doesn't store the emerging list. Let's compute on demand or store it.
+    // Simpler: recompute on demand for the last 24h.
+
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const recentComments = await Comment.find({
+      status: "approved",
+      createdAt: { $gte: twentyFourHoursAgo },
+    }).lean();
+
+    const keywordCount = {};
+    recentComments.forEach((c) => {
+      if (c.keywords && Array.isArray(c.keywords)) {
+        c.keywords.forEach((kw) => {
+          const normalized = kw.toLowerCase().trim();
+          keywordCount[normalized] = (keywordCount[normalized] || 0) + 1;
+        });
+      }
+    });
+
+    const baselineKey = "emerging:baseline";
+    let baseline = await redisClient.get(baselineKey);
+    baseline = baseline ? JSON.parse(baseline) : {};
+
+    const emerging = [];
+    for (const [keyword, count] of Object.entries(keywordCount)) {
+      const prevCount = baseline[keyword] || 0;
+      if (prevCount > 0) {
+        const increase = (count - prevCount) / prevCount;
+        if (increase > 2.0 && count > 5) {
+          emerging.push({
+            keyword,
+            currentCount: count,
+            previousCount: prevCount,
+            increasePercentage: Math.round(increase * 100),
+          });
+        }
+      }
+    }
+
+    emerging.sort((a, b) => b.increasePercentage - a.increasePercentage);
+    return sendSuccess(res, emerging, "Emerging topics retrieved");
+  } catch (err) {
+    logger.error({ error: err.message }, "Get emerging topics error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve emerging topics",
+      null,
+      500,
+    );
+  }
+};
+// GET /admin/planners/search?q=email@example.com
+exports.searchPlanners = async (req, res) => {
+  try {
+    const { q } = req.query;
+    const query = { role: "planner", active: true };
+    if (q && q.trim()) {
+      query.email = { $regex: q.trim(), $options: "i" };
+    }
+    const planners = await User.find(query)
+      .select("email languagesSpoken region")
+      .limit(20)
+      .sort({ email: 1 });
+    return sendSuccess(res, planners, "Planners found");
+  } catch (err) {
+    logger.error({ error: err.message }, "Search planners error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to search planners",
       null,
       500,
     );

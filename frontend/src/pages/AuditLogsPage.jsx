@@ -7,15 +7,26 @@ import { PageHeader } from "../components/PageHeader";
 import { formatDate, getErrorMessage } from "../lib/format";
 
 const ACTION_COLORS = {
-  CREATE: "bg-emerald-100 text-emerald-700",
-  UPDATE: "bg-blue-100 text-blue-700",
-  DELETE: "bg-rose-100 text-rose-700",
-  PUBLISH: "bg-purple-100 text-purple-700",
-  ACTIVATE: "bg-teal-100 text-teal-700",
-  CLOSE: "bg-slate-100 text-slate-700",
-  APPROVE: "bg-emerald-100 text-emerald-700",
-  REJECT: "bg-rose-100 text-rose-700",
-  DEACTIVATE: "bg-slate-100 text-slate-700",
+  CREATE_PLANNER: "bg-emerald-100 text-emerald-700",
+  UPDATE_PLANNER: "bg-blue-100 text-blue-700",
+  UPDATE_PLANNER_STATUS: "bg-amber-100 text-amber-700",
+  CREATE_POLICY: "bg-teal-100 text-teal-700",
+  UPDATE_POLICY: "bg-blue-100 text-blue-700",
+  PUBLISH_POLICY: "bg-purple-100 text-purple-700",
+  ACTIVATE_POLICY: "bg-teal-100 text-teal-700",
+  PAUSE_POLICY: "bg-slate-100 text-slate-700",
+  RESUME_POLICY: "bg-emerald-100 text-emerald-700",
+  CLOSE_POLICY: "bg-rose-100 text-rose-700",
+  ARCHIVE_POLICY: "bg-slate-100 text-slate-700",
+  RESTORE_POLICY: "bg-emerald-100 text-emerald-700",
+  UPDATE_COMMENT: "bg-blue-100 text-blue-700",
+  RETRY_COMMENT: "bg-amber-100 text-amber-700",
+  FORCE_RETRY_COMMENT: "bg-rose-100 text-rose-700",
+  BULK_RETRY_COMMENTS_BY_IDS: "bg-purple-100 text-purple-700",
+  DELETE_COMMENT: "bg-rose-100 text-rose-700",
+  INITIATE_PASSWORD_RESET: "bg-slate-100 text-slate-700",
+  SEND_MESSAGE: "bg-indigo-100 text-indigo-700",
+  TRAINING_COMPLETED: "bg-emerald-100 text-emerald-700",
 };
 
 export function AuditLogsPage() {
@@ -34,7 +45,6 @@ export function AuditLogsPage() {
   });
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Clear error on component mount
   useEffect(() => {
     setError("");
   }, []);
@@ -50,7 +60,9 @@ export function AuditLogsPage() {
         userId: filters.userId || undefined,
         userRole: filters.userRole || undefined,
         startDate: filters.startDate || undefined,
-        endDate: filters.endDate ? `${filters.endDate}T23:59:59.000Z` : undefined,
+        endDate: filters.endDate
+          ? `${filters.endDate}T23:59:59.000Z`
+          : undefined,
       });
       setLogs(result.logs || []);
       setTotalPages(result.pages || 1);
@@ -63,7 +75,6 @@ export function AuditLogsPage() {
 
   useEffect(() => {
     loadLogs();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, filters]);
 
   const handleExport = async () => {
@@ -75,9 +86,10 @@ export function AuditLogsPage() {
         userId: filters.userId || undefined,
         userRole: filters.userRole || undefined,
         startDate: filters.startDate || undefined,
-        endDate: filters.endDate ? `${filters.endDate}T23:59:59.000Z` : undefined,
+        endDate: filters.endDate
+          ? `${filters.endDate}T23:59:59.000Z`
+          : undefined,
       });
-
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
@@ -97,7 +109,9 @@ export function AuditLogsPage() {
     ? logs.filter(
         (log) =>
           log._id?.toString()?.includes(searchQuery) ||
-          JSON.stringify(log.details || {}).toLowerCase().includes(searchQuery.toLowerCase())
+          JSON.stringify(log.details || {})
+            .toLowerCase()
+            .includes(searchQuery.toLowerCase()),
       )
     : logs;
 
@@ -118,7 +132,9 @@ export function AuditLogsPage() {
           <h3 className="font-bold text-slate-900">Filters</h3>
           <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">Action</span>
+              <span className="text-sm font-semibold text-slate-700">
+                Action
+              </span>
               <select
                 value={filters.action}
                 onChange={(e) => {
@@ -128,35 +144,18 @@ export function AuditLogsPage() {
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
               >
                 <option value="">All Actions</option>
-                {[
-                  "CREATE_PLANNER",
-                  "UPDATE_PLANNER",
-                  "UPDATE_PLANNER_STATUS",
-                  "CREATE_POLICY",
-                  "UPDATE_POLICY",
-                  "PUBLISH_POLICY",
-                  "ACTIVATE_POLICY",
-                  "PAUSE_POLICY",
-                  "RESUME_POLICY",
-                  "CLOSE_POLICY",
-                  "ARCHIVE_POLICY",
-                  "RESTORE_POLICY",
-                  "UPDATE_COMMENT",
-                  "RETRY_COMMENT",
-                  "FORCE_RETRY_COMMENT",
-                  "BULK_RETRY_COMMENTS_BY_IDS",
-                  "DELETE_COMMENT",
-                  "INITIATE_PASSWORD_RESET",
-                  "SEND_MESSAGE",
-                  "TRAINING_COMPLETED",
-                ].map((action) => (
-                  <option key={action} value={action}>{action}</option>
+                {Object.keys(ACTION_COLORS).map((action) => (
+                  <option key={action} value={action}>
+                    {action}
+                  </option>
                 ))}
               </select>
             </label>
 
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">User Role</span>
+              <span className="text-sm font-semibold text-slate-700">
+                User Role
+              </span>
               <select
                 value={filters.userRole}
                 onChange={(e) => {
@@ -173,12 +172,17 @@ export function AuditLogsPage() {
             </label>
 
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">Start Date</span>
+              <span className="text-sm font-semibold text-slate-700">
+                Start Date
+              </span>
               <input
                 type="date"
                 value={filters.startDate}
                 onChange={(e) => {
-                  setFilters((prev) => ({ ...prev, startDate: e.target.value }));
+                  setFilters((prev) => ({
+                    ...prev,
+                    startDate: e.target.value,
+                  }));
                   setPage(1);
                 }}
                 className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
@@ -186,7 +190,9 @@ export function AuditLogsPage() {
             </label>
 
             <label className="block">
-              <span className="text-sm font-semibold text-slate-700">End Date</span>
+              <span className="text-sm font-semibold text-slate-700">
+                End Date
+              </span>
               <input
                 type="date"
                 value={filters.endDate}
@@ -220,7 +226,9 @@ export function AuditLogsPage() {
           </div>
 
           <label className="block">
-            <span className="text-sm font-semibold text-slate-700">Search details</span>
+            <span className="text-sm font-semibold text-slate-700">
+              Search details
+            </span>
             <div className="relative mt-1">
               <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
               <input
@@ -244,41 +252,67 @@ export function AuditLogsPage() {
             <table className="w-full text-sm">
               <thead className="border-b border-slate-200 bg-slate-50">
                 <tr>
-                  <th className="px-4 py-3 text-left font-bold text-slate-700">Timestamp</th>
-                  <th className="px-4 py-3 text-left font-bold text-slate-700">User</th>
-                  <th className="px-4 py-3 text-left font-bold text-slate-700">Action</th>
-                  <th className="px-4 py-3 text-left font-bold text-slate-700">Resource</th>
-                  <th className="px-4 py-3 text-left font-bold text-slate-700">Details</th>
+                  <th className="px-4 py-3 text-left font-bold text-slate-700">
+                    Timestamp
+                  </th>
+                  <th className="px-4 py-3 text-left font-bold text-slate-700">
+                    User
+                  </th>
+                  <th className="px-4 py-3 text-left font-bold text-slate-700">
+                    Action
+                  </th>
+                  <th className="px-4 py-3 text-left font-bold text-slate-700">
+                    Resource
+                  </th>
+                  <th className="px-4 py-3 text-left font-bold text-slate-700">
+                    Details
+                  </th>
                 </tr>
               </thead>
               <tbody>
                 {filtered.map((log) => (
-                  <tr key={log._id} className="border-b border-slate-100 hover:bg-slate-50">
+                  <tr
+                    key={log._id}
+                    className="border-b border-slate-100 hover:bg-slate-50"
+                  >
                     <td className="px-4 py-3">
-                      <span className="text-xs text-slate-600">{formatDate(log.timestamp)}</span>
+                      <span className="text-xs text-slate-600">
+                        {formatDate(log.timestamp)}
+                      </span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="text-sm">
-                        <p className="font-medium text-slate-900">{log.userId?.email || "Unknown"}</p>
-                        <p className="text-xs text-slate-500 capitalize">{log.userRole}</p>
+                        <p className="font-medium text-slate-900">
+                          {log.userId?.email || "Unknown"}
+                        </p>
+                        <p className="text-xs text-slate-500 capitalize">
+                          {log.userRole || "Unknown"}
+                        </p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-bold capitalize ${
-                          ACTION_COLORS[log.action] || "bg-slate-100 text-slate-700"
+                          ACTION_COLORS[log.action] ||
+                          "bg-slate-100 text-slate-700"
                         }`}
                       >
                         {log.action}
                       </span>
                     </td>
                     <td className="px-4 py-3">
-                      <p className="text-sm text-slate-900 font-medium">{log.targetType || "Unknown"}</p>
-                      <p className="text-xs text-slate-500">{log.targetId ? `${log.targetId.substring(0, 12)}...` : "No target"}</p>
+                      <p className="text-sm text-slate-900 font-medium">
+                        {log.targetType || "Unknown"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        {log.targetId
+                          ? `${log.targetId.substring(0, 12)}...`
+                          : "No target"}
+                      </p>
                     </td>
                     <td className="px-4 py-3">
                       <p className="text-sm text-slate-600 truncate max-w-xs">
-                        {JSON.stringify(log.details).substring(0, 50)}...
+                        {JSON.stringify(log.details || {}).substring(0, 50)}...
                       </p>
                     </td>
                   </tr>
@@ -292,7 +326,7 @@ export function AuditLogsPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between pt-4 border-t border-slate-200">
             <p className="text-sm text-slate-600">
-              Page {page} of {totalPages} ({logs.length} records)
+              Page {page} of {totalPages} ({filtered.length} records)
             </p>
             <div className="flex gap-2">
               <button

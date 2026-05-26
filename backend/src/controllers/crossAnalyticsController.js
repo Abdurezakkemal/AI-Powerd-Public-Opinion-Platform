@@ -56,7 +56,7 @@ exports.getCrossAnalytics = async (req, res) => {
     if (region) {
       policyFilter.targetRegions = region;
     }
-    // Only include policies that are active, paused, or closed (or all? we include all non‑draft)
+    // Only include policies that are active, paused, or closed (non‑draft)
     policyFilter.status = { $in: ["active", "paused", "closed"] };
 
     const policies = await Policy.find(policyFilter).select("_id");
@@ -81,7 +81,7 @@ exports.getCrossAnalytics = async (req, res) => {
     // ---------- VOTE AGGREGATION ----------
     const voteMatch = {
       policyId: { $in: policyIds },
-      channel: "app", // we ignore SMS for cross‑policy? Or include both? Keep app for consistency with demographics.
+      channel: "app", // we ignore SMS for cross‑policy (keep consistent with demographics)
     };
     if (start) voteMatch.createdAt = { $gte: start };
     if (end) voteMatch.createdAt = { ...voteMatch.createdAt, $lte: end };
@@ -92,14 +92,18 @@ exports.getCrossAnalytics = async (req, res) => {
 
     const totalVotes = await Vote.countDocuments(voteMatch);
 
-    // ---------- COMMENT AGGREGATION ----------
+    // ---------- COMMENT AGGREGATION (updated for new schema) ----------
     const commentMatch = {
       policyId: { $in: policyIds },
-      status: "approved", // only approved comments (visible)
+      visibility: "visible",
+      $or: [
+        { "sentiment.overriddenByModerator": true },
+        { "reviewFlags.sentimentReviewNeeded": false },
+      ],
     };
     if (start) commentMatch.createdAt = { $gte: start };
     if (end) commentMatch.createdAt = { ...commentMatch.createdAt, $lte: end };
-    // Demographics: comments have snapshot field `demographics`
+    // Comments have demographics snapshot
     if (gender) commentMatch["demographics.gender"] = gender;
     if (ageRange) commentMatch["demographics.ageRange"] = ageRange;
     if (occupation) commentMatch["demographics.occupation"] = occupation;
@@ -146,7 +150,7 @@ exports.getCrossAnalytics = async (req, res) => {
       .slice(0, 10)
       .map(([kw, count]) => ({ keyword: kw, count }));
 
-    // Audit log (optional)
+    // Audit log
     await createAuditLog({
       userId: req.user.id,
       userRole: req.user.role,

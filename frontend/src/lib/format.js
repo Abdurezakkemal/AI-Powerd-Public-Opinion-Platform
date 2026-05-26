@@ -34,3 +34,11 @@ export function formatRating(value) {
 export function getErrorMessage(error, fallback = "Something went wrong") {
   return error?.message || fallback;
 }
+export function daysRemaining(futureDate) {
+  if (!futureDate) return 0;
+  const expiry = new Date(futureDate);
+  const now = new Date();
+  const diffTime = expiry - now;
+  if (diffTime <= 0) return 0;
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+}
