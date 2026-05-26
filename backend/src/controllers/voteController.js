@@ -1,3 +1,4 @@
+const mongoose = require('mongoose');
 const Vote = require("../models/Vote");
 const Policy = require("../models/Policy");
 const User = require("../models/User");

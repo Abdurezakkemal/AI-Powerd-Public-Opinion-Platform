@@ -43,11 +43,14 @@ const buildSortOption = (sort) => {
 };
 
 // Helper to get the latest version of a comment thread
-const getLatestVersion = async (originalCommentId) => {
-  const query = originalCommentId
-    ? { originalCommentId }
-    : { originalCommentId: null };
-  const latest = await Comment.findOne(query).sort({ versionNumber: -1 });
+const getLatestVersion = async (threadId) => {
+  // Find the latest version: either the original comment itself or any version pointing to it
+  const latest = await Comment.findOne({
+    $or: [
+      { _id: threadId },
+      { originalCommentId: threadId }
+    ]
+  }).sort({ versionNumber: -1 });
   return latest;
 };
 
@@ -93,7 +96,10 @@ const createNewVersion = async (originalComment, updates) => {
 exports.postComment = async (req, res) => {
   try {
     const { policyId, text, parentCommentId = null } = req.body;
+    logger.info(`[POST_COMMENT] User ${req.user.id} posting comment to policy ${policyId}`);
+    
     if (!policyId || !text?.trim()) {
+      logger.warn(`[POST_COMMENT] Validation failed - missing policyId or text`);
       return sendError(
         res,
         ErrorCodes.VALIDATION,
@@ -161,7 +167,16 @@ exports.postComment = async (req, res) => {
       await parentComment.save();
     }
 
-    logger.info(`Comment created: ${comment._id} by user ${req.user.id}`);
+    logger.info(`[POST_COMMENT] Comment created successfully: ${comment._id} by user ${req.user.id}`);
+    logger.info(`[POST_COMMENT] Comment details:`, {
+      id: comment._id,
+      policyId: comment.policyId,
+      userId: comment.userId,
+      text: comment.text.substring(0, 50),
+      visibility: comment.visibility,
+      parentCommentId: comment.parentCommentId
+    });
+    
     return sendSuccess(res, comment, "Comment created successfully");
   } catch (err) {
     logger.error({ error: err.message }, "Post comment error");
@@ -221,6 +236,17 @@ exports.editComment = async (req, res) => {
     // Find the latest version of this thread
     const threadId = comment.originalCommentId || comment._id;
     const latestVersion = await getLatestVersion(threadId);
+
+    // Add null check for latestVersion
+    if (!latestVersion) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment version not found",
+        null,
+        404,
+      );
+    }
 
     // If the latest version is pending and never analysed, replace it
     if (
@@ -372,8 +398,11 @@ exports.getPolicyComments = async (req, res) => {
       parentCommentId = null,
     } = req.query;
 
+    logger.info(`[GET_COMMENTS] Request for policyId: ${policyId}, page: ${page}, limit: ${limit}`);
+
     const policy = await Policy.findById(policyId);
-    if (!policy)
+    if (!policy) {
+      logger.warn(`[GET_COMMENTS] Policy not found: ${policyId}`);
       return sendError(
         res,
         ErrorCodes.NOT_FOUND,
@@ -381,8 +410,12 @@ exports.getPolicyComments = async (req, res) => {
         null,
         404,
       );
+    }
 
-    const filter = { policyId, ...buildVisibilityFilter(req.user) };
+    // Convert policyId string to ObjectId for aggregation
+    const policyObjectId = new mongoose.Types.ObjectId(policyId);
+
+    const filter = { policyId: policyObjectId, ...buildVisibilityFilter(req.user) };
     if (parentCommentId === "null" || parentCommentId === null)
       filter.parentCommentId = null;
     else if (parentCommentId) filter.parentCommentId = parentCommentId;
@@ -390,6 +423,10 @@ exports.getPolicyComments = async (req, res) => {
     if (visibility && ["planner", "admin"].includes(req.user.role))
       filter.visibility = visibility;
     if (reportState) filter.reportState = reportState;
+
+    logger.info(`[GET_COMMENTS] policyId type: ${typeof policyId}, value: ${policyId}`);
+    logger.info(`[GET_COMMENTS] Filter: ${JSON.stringify(filter)}`);
+    logger.info(`[GET_COMMENTS] User role: ${req.user?.role}`);
 
     // Only latest version per thread: group by originalCommentId (or self)
     // Using aggregation to get the latest version for each thread
@@ -405,12 +442,36 @@ exports.getPolicyComments = async (req, res) => {
         },
       },
       { $replaceRoot: { newRoot: "$doc" } },
+      {
+        $lookup: {
+          from: "users",
+          localField: "userId",
+          foreignField: "_id",
+          as: "userInfo",
+        },
+      },
+      { $unwind: { path: "$userInfo", preserveNullAndEmptyArrays: true } },
       { $sort: buildSortOption(sort) },
       { $skip: (page - 1) * limit },
       { $limit: Number(limit) },
     ];
 
+    logger.info(`[GET_COMMENTS] Executing aggregation pipeline with filter:`, JSON.stringify(filter));
+    
     const comments = await Comment.aggregate(pipeline);
+    
+    logger.info(`[GET_COMMENTS] Raw comments from aggregation: ${comments.length}`);
+    if (comments.length > 0) {
+      logger.info(`[GET_COMMENTS] First comment sample:`, {
+        id: comments[0]._id,
+        text: comments[0].text?.substring(0, 50),
+        hasUserInfo: !!comments[0].userInfo,
+        userEmail: comments[0].userInfo?.email,
+        visibility: comments[0].visibility,
+        parentCommentId: comments[0].parentCommentId
+      });
+    }
+    
     const total = await Comment.aggregate([
       { $match: filter },
       {
@@ -424,7 +485,9 @@ exports.getPolicyComments = async (req, res) => {
     const formatted = comments.map((c) => ({
       id: c._id,
       text: c.text,
-      user: c.userId ? { id: c.userId, email: c.userEmail } : null,
+      user: c.userInfo
+        ? { id: c.userInfo._id, email: c.userInfo.email }
+        : null,
       policyId: c.policyId,
       parentCommentId: c.parentCommentId,
       visibility: c.visibility,
@@ -441,19 +504,30 @@ exports.getPolicyComments = async (req, res) => {
       updatedAt: c.updatedAt,
     }));
 
-    return sendSuccess(
-      res,
-      {
-        comments: formatted,
-        pagination: {
-          total: total[0]?.total || 0,
-          page: Number(page),
-          limit: Number(limit),
-          pages: Math.ceil((total[0]?.total || 0) / limit),
-        },
+    logger.info(`[GET_COMMENTS] Formatted comments: ${formatted.length}`);
+    if (formatted.length > 0) {
+      logger.info(`[GET_COMMENTS] First formatted comment:`, {
+        id: formatted[0].id,
+        hasUser: !!formatted[0].user,
+        userEmail: formatted[0].user?.email,
+        visibility: formatted[0].visibility,
+        parentCommentId: formatted[0].parentCommentId
+      });
+    }
+
+    const response = {
+      comments: formatted,
+      pagination: {
+        total: total[0]?.total || 0,
+        page: Number(page),
+        limit: Number(limit),
+        pages: Math.ceil((total[0]?.total || 0) / limit),
       },
-      "Comments retrieved",
-    );
+    };
+
+    logger.info(`[GET_COMMENTS] Sending response with ${formatted.length} comments, total: ${response.pagination.total}`);
+
+    return sendSuccess(res, response, "Comments retrieved");
   } catch (err) {
     logger.error({ error: err.message }, "Get policy comments error");
     return sendError(

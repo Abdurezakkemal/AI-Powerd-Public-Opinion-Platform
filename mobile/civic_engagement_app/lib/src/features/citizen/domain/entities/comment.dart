@@ -14,6 +14,15 @@ class Comment extends Equatable {
     this.userEmail,
     this.hiddenReason,
     this.moderationReason,
+    this.aiStatus = 'processed',
+    this.reportState = 'clean',
+    this.reviewFlags,
+    this.originalCommentId,
+    this.versionNumber = 1,
+    this.editCount = 0,
+    this.editedAt,
+    this.updatedAt,
+    this.lastAnalyzedAt,
     this.sentiment,
     this.keywords,
     this.isOfficialReply = false,
@@ -21,6 +30,7 @@ class Comment extends Equatable {
     this.reportCount = 0,
     this.appeal,
     this.flaggedSnapshot,
+    this.replyCount = 0,
   });
 
   final String id;
@@ -31,8 +41,19 @@ class Comment extends Equatable {
   final String? userEmail;
   final String visibility; // "visible" or "hidden"
   final String? hiddenReason; // null, "profanity", "reports", "moderator"
-  final String moderationStatus; // "pending_ai", "needs_review", "reviewed", "none"
-  final String? moderationReason; // "pending_ai", "low_confidence", "reports", "moderator_flag"
+  final String
+      moderationStatus; // "pending_ai", "needs_review", "reviewed", "none"
+  final String?
+      moderationReason; // "pending_ai", "low_confidence", "reports", "moderator_flag"
+  final String aiStatus; // "pending", "processed", "failed", "stale"
+  final String reportState; // "clean", "reported", "under_review", "actioned"
+  final CommentReviewFlags? reviewFlags;
+  final String? originalCommentId;
+  final int versionNumber;
+  final int editCount;
+  final DateTime? editedAt;
+  final DateTime? updatedAt;
+  final DateTime? lastAnalyzedAt;
   final CommentSentiment? sentiment;
   final List<String>? keywords;
   final bool isOfficialReply;
@@ -40,15 +61,23 @@ class Comment extends Equatable {
   final int reportCount;
   final CommentAppeal? appeal;
   final FlaggedSnapshot? flaggedSnapshot;
+  final int replyCount;
   final DateTime createdAt;
 
   bool get isVisible => visibility == 'visible';
   bool get isHidden => visibility == 'hidden';
-  bool get isPendingAI => moderationStatus == 'pending_ai';
-  bool get needsReview => moderationStatus == 'needs_review';
+  bool get isDeleted => visibility == 'deleted';
+  bool get isPendingAI =>
+      aiStatus == 'pending' || moderationStatus == 'pending_ai';
+  bool get needsReview =>
+      reportState == 'under_review' ||
+      reviewFlags?.moderationReviewNeeded == true ||
+      reviewFlags?.sentimentReviewNeeded == true ||
+      moderationStatus == 'needs_review';
   bool get isReviewed => moderationStatus == 'reviewed';
-  bool get canAppeal => isHidden && needsReview;
+  bool get canAppeal => isHidden && appeal?.isPending != true;
   bool get hasAppeal => appeal != null;
+  bool get hasVersions => versionNumber > 1 || editCount > 0 || isEdited;
 
   @override
   List<Object?> get props => [
@@ -62,6 +91,15 @@ class Comment extends Equatable {
         hiddenReason,
         moderationStatus,
         moderationReason,
+        aiStatus,
+        reportState,
+        reviewFlags,
+        originalCommentId,
+        versionNumber,
+        editCount,
+        editedAt,
+        updatedAt,
+        lastAnalyzedAt,
         sentiment,
         keywords,
         isOfficialReply,
@@ -69,8 +107,24 @@ class Comment extends Equatable {
         reportCount,
         appeal,
         flaggedSnapshot,
+        replyCount,
         createdAt,
       ];
+}
+
+class CommentReviewFlags extends Equatable {
+  const CommentReviewFlags({
+    this.sentimentReviewNeeded = false,
+    this.moderationReviewNeeded = false,
+  });
+
+  final bool sentimentReviewNeeded;
+  final bool moderationReviewNeeded;
+
+  bool get any => sentimentReviewNeeded || moderationReviewNeeded;
+
+  @override
+  List<Object?> get props => [sentimentReviewNeeded, moderationReviewNeeded];
 }
 
 /// Immutable snapshot taken when a comment is flagged (reportCount >= 3)
@@ -119,27 +173,33 @@ class CommentAppeal extends Equatable {
     required this.reason,
     required this.status,
     required this.submittedAt,
+    this.details,
     this.resolvedAt,
     this.resolution,
     this.note,
   });
 
   final String reason;
-  final String status; // pending, resolved_approved, resolved_rejected
+  final String status; // pending, approved/rejected, or old resolved_* values
   final DateTime submittedAt;
+  final String? details;
   final DateTime? resolvedAt;
   final String? resolution; // approve, reject
   final String? note;
 
   bool get isPending => status == 'pending';
-  bool get isResolved => status.startsWith('resolved_');
-  bool get wasApproved => status == 'resolved_approved';
+  bool get isResolved =>
+      status == 'approved' ||
+      status == 'rejected' ||
+      status.startsWith('resolved_');
+  bool get wasApproved => status == 'approved' || status == 'resolved_approved';
 
   @override
   List<Object?> get props => [
         reason,
         status,
         submittedAt,
+        details,
         resolvedAt,
         resolution,
         note,

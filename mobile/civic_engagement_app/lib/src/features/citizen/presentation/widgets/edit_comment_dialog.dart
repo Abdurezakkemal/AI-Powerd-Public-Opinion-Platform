@@ -72,9 +72,8 @@ class _EditCommentDialogState extends State<EditCommentDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Update your comment text below. Top-level comments will be '
-                're-analyzed by AI (moderationStatus set to "pending_ai"). '
-                'Replies are not re-analyzed.',
+                'Update your comment text below. The latest version is shown '
+                'in the public discussion after backend review.',
                 style: TextStyle(fontSize: 12, color: Colors.grey),
               ),
               const SizedBox(height: 16),
@@ -90,9 +89,6 @@ class _EditCommentDialogState extends State<EditCommentDialog> {
                 validator: (value) {
                   if (value == null || value.trim().isEmpty) {
                     return 'Comment cannot be empty';
-                  }
-                  if (value.trim().length < 1) {
-                    return 'Comment must be at least 1 character';
                   }
                   if (value.trim().length > 2000) {
                     return 'Comment must be 2000 characters or less';

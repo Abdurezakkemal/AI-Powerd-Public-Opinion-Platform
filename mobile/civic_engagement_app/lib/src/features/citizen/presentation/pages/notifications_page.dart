@@ -9,17 +9,30 @@ import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../domain/entities/citizen_notification.dart';
 import '../cubit/notifications_cubit.dart';
+import '../widgets/appeal_comment_dialog.dart';
 
 class NotificationsPage extends StatelessWidget {
   const NotificationsPage({super.key});
 
   @override
   Widget build(BuildContext context) {
+    print('[NotificationsPage] Building page');
+    
     return BlocListener<NotificationsCubit, NotificationsState>(
-      listenWhen: (previous, current) =>
-          previous.actionStatus != current.actionStatus &&
-          current.message != null,
+      listenWhen: (previous, current) {
+        print('[NotificationsPage] State changed:');
+        print('  - Previous status: ${previous.status}');
+        print('  - Current status: ${current.status}');
+        print('  - Previous count: ${previous.notifications.length}');
+        print('  - Current count: ${current.notifications.length}');
+        return previous.actionStatus != current.actionStatus &&
+            current.message != null;
+      },
       listener: (context, state) {
+        print('[NotificationsPage] Action status changed: ${state.actionStatus}');
+        if (state.message != null) {
+          print('[NotificationsPage] Showing message: ${state.message}');
+        }
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(state.message!)));
@@ -43,14 +56,22 @@ class NotificationsPage extends StatelessWidget {
         ),
         body: BlocBuilder<NotificationsCubit, NotificationsState>(
           builder: (context, state) {
+            print('[NotificationsPage] Building body');
+            print('  - Status: ${state.status}');
+            print('  - Notifications count: ${state.notifications.length}');
+            print('  - Total: ${state.total}');
+            print('  - UnreadOnly: ${state.unreadOnly}');
+            
             if (state.status == RequestStatus.loading &&
                 state.notifications.isEmpty) {
+              print('[NotificationsPage] Showing loading indicator');
               return const Center(
                   child: CircularProgressIndicator(color: AppTheme.primary));
             }
 
             if (state.status == RequestStatus.failure &&
                 state.notifications.isEmpty) {
+              print('[NotificationsPage] Showing error view: ${state.message}');
               return ErrorView(
                 message: state.message ?? 'Failed to load notifications.',
                 onRetry: () =>
@@ -58,6 +79,7 @@ class NotificationsPage extends StatelessWidget {
               );
             }
 
+            print('[NotificationsPage] Showing notifications list');
             return RefreshIndicator(
               onRefresh: () =>
                   context.read<NotificationsCubit>().loadNotifications(
@@ -92,6 +114,9 @@ class NotificationsPage extends StatelessWidget {
                                     );
                               }
                             },
+                            onAppeal: item.canAppealComment
+                                ? () => _showAppealDialog(context, item)
+                                : null,
                           );
                         },
                       ),
@@ -101,6 +126,24 @@ class NotificationsPage extends StatelessWidget {
             );
           },
         ),
+      ),
+    );
+  }
+
+  void _showAppealDialog(BuildContext context, CitizenNotification item) {
+    final commentId = item.commentId;
+    if (commentId == null) return;
+    final cubit = context.read<NotificationsCubit>();
+    showDialog<void>(
+      context: context,
+      builder: (_) => AppealCommentDialog(
+        onSubmit: (reason) {
+          cubit.submitCommentAppeal(
+            notificationId: item.id,
+            commentId: commentId,
+            reason: reason,
+          );
+        },
       ),
     );
   }
@@ -162,10 +205,15 @@ class _NotificationFilters extends StatelessWidget {
 }
 
 class _NotificationCard extends StatelessWidget {
-  const _NotificationCard({required this.item, required this.onTap});
+  const _NotificationCard({
+    required this.item,
+    required this.onTap,
+    this.onAppeal,
+  });
 
   final CitizenNotification item;
   final VoidCallback onTap;
+  final VoidCallback? onAppeal;
 
   @override
   Widget build(BuildContext context) {
@@ -231,6 +279,21 @@ class _NotificationCard extends StatelessWidget {
                     fontSize: 12,
                   ),
                 ),
+                if (onAppeal != null) ...[
+                  const SizedBox(height: 12),
+                  OutlinedButton.icon(
+                    onPressed: onAppeal,
+                    icon: const Icon(Icons.gavel_rounded, size: 18),
+                    label: const Text('Appeal decision'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppTheme.primary,
+                      side: BorderSide(
+                        color: AppTheme.primary.withValues(alpha: 0.35),
+                      ),
+                      textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -259,6 +322,8 @@ IconData _iconForType(String type, bool read) {
       return Icons.reply_rounded;
     case 'COMMENT_FLAGGED':
       return Icons.flag_outlined;
+    case 'COMMENT_HIDDEN':
+      return Icons.visibility_off_outlined;
     case 'COMMENT_APPEAL':
       return Icons.rate_review_outlined;
     case 'APPEAL_RESOLVED':

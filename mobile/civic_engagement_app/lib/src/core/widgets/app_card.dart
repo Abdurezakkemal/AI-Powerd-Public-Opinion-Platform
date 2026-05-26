@@ -22,13 +22,13 @@ class AppCard extends StatelessWidget {
       margin: margin,
       decoration: BoxDecoration(
         color: color ?? Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        border: Border.all(color: Theme.of(context).dividerColor, width: 0.5),
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: Theme.of(context).dividerColor.withValues(alpha: 0.3), width: 1),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 30,
+            offset: const Offset(0, 12),
           ),
         ],
       ),

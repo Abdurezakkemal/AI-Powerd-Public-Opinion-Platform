@@ -286,78 +286,6 @@ class _AccountPageState extends State<AccountPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const _SectionTitle(
-                  icon: Icons.phone_iphone_rounded,
-                  title: 'Phone change',
-                ),
-                const SizedBox(height: 16),
-                AppTextField(
-                  controller: _newPhoneController,
-                  label: 'New phone',
-                  hint: '+251912345678',
-                  icon: Icons.phone_iphone_rounded,
-                  keyboardType: TextInputType.phone,
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: busy ? null : _requestPhoneChange,
-                  icon: const Icon(Icons.sms_rounded),
-                  label: const Text('Send phone OTP'),
-                  style: _outlinedButtonStyle(),
-                ),
-                const SizedBox(height: 16),
-                AppTextField(
-                  controller: _phoneCodeController,
-                  label: 'Phone OTP',
-                  icon: Icons.pin_outlined,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                ),
-                const SizedBox(height: 12),
-                AppButton(
-                  label: 'Verify phone',
-                  icon: Icons.verified_rounded,
-                  loading: busy,
-                  onPressed: _verifyPhoneChange,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _SectionTitle(
-                  icon: Icons.download_rounded,
-                  title: 'Data export',
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Download your profile, votes, comments, notifications, messages, and planner requests as JSON.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.mutedText,
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () => context.read<ProfileCubit>().exportUserData(),
-                  icon: const Icon(Icons.file_download_outlined),
-                  label: const Text('Export my data'),
-                  style: _outlinedButtonStyle(),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _SectionTitle(
                   icon: Icons.location_on_rounded,
                   title: 'Region Update',
                 ),
@@ -538,6 +466,34 @@ class _AccountPageState extends State<AccountPage> {
                   onPressed: () => context.read<AuthCubit>().logout(),
                   icon: const Icon(Icons.logout_rounded),
                   label: const Text('Logout'),
+                  style: _outlinedButtonStyle(),
+                ),
+                const SizedBox(height: 24),
+                const Divider(height: 1),
+                const SizedBox(height: 16),
+                Text(
+                  'Data & Account',
+                  style: Theme.of(context)
+                      .textTheme
+                      .titleSmall
+                      ?.copyWith(fontWeight: FontWeight.w800),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Export your data before deleting your account. This includes profile, votes, comments, notifications, messages, and planner requests.',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: AppTheme.mutedText,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                OutlinedButton.icon(
+                  onPressed: busy
+                      ? null
+                      : () => context.read<ProfileCubit>().exportUserData(),
+                  icon: const Icon(Icons.file_download_outlined),
+                  label: const Text('Export my data'),
                   style: _outlinedButtonStyle(),
                 ),
                 const SizedBox(height: 12),

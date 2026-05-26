@@ -38,12 +38,12 @@ class _ReportCommentDialogState extends State<ReportCommentDialog> {
     return BlocListener<CommentCubit, CommentState>(
       listener: (context, state) {
         if (state is CommentReported) {
-          Navigator.of(context).pop();
+          Navigator.of(context).pop(true); // Return true to indicate success
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text(state.message)),
           );
         } else if (state is CommentError) {
-          Navigator.of(context).pop();
+          Navigator.of(context).pop(false); // Return false to indicate failure
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(state.message),
@@ -61,9 +61,8 @@ class _ReportCommentDialogState extends State<ReportCommentDialog> {
             const Text('Why are you reporting this comment?'),
             const SizedBox(height: 8),
             const Text(
-              'When a comment receives 3 reports, it will be hidden '
-              '(visibility="hidden", moderationStatus="needs_review") '
-              'and flagged for moderator review.',
+              'Reports are sent to moderators. A comment may be hidden after '
+              'multiple reports and the author can appeal that decision.',
               style: TextStyle(fontSize: 12, color: Colors.grey),
             ),
             const SizedBox(height: 16),

@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/app_text_field.dart';
 import '../cubit/comment_cubit.dart';
 import '../cubit/comment_state.dart';
 
@@ -34,8 +33,17 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
   }
 
   void _submitComment() {
-    if (!_formKey.currentState!.validate()) return;
+    print('[PostCommentWidget] _submitComment called');
+    if (!_formKey.currentState!.validate()) {
+      print('[PostCommentWidget] Form validation failed');
+      return;
+    }
 
+    print('[PostCommentWidget] Form validated, posting comment...');
+    print('  - policyId: ${widget.policyId}');
+    print('  - text length: ${_textController.text.length}');
+    print('  - parentCommentId: ${widget.parentCommentId}');
+    
     context.read<CommentCubit>().postComment(
           policyId: widget.policyId,
           text: _textController.text,
@@ -47,7 +55,10 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
   Widget build(BuildContext context) {
     return BlocConsumer<CommentCubit, CommentState>(
       listener: (context, state) {
+        print('[PostCommentWidget] State changed: ${state.runtimeType}');
+        
         if (state is CommentPosted) {
+          print('[PostCommentWidget] Comment posted successfully: ${state.message}');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(state.message),
@@ -55,8 +66,10 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
             ),
           );
           _textController.clear();
+          print('[PostCommentWidget] Calling onCommentPosted callback');
           widget.onCommentPosted?.call();
         } else if (state is CommentError) {
+          print('[PostCommentWidget] Error posting comment: ${state.message}');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(state.message),
@@ -70,16 +83,15 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
 
         return Container(
           margin: const EdgeInsets.fromLTRB(20, 16, 20, 16),
-          padding: const EdgeInsets.all(20),
+          padding: const EdgeInsets.all(24),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: AppTheme.border),
+            borderRadius: BorderRadius.circular(32),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.03),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: AppTheme.primary.withValues(alpha: 0.05),
+                blurRadius: 24,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
@@ -103,9 +115,9 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
                           ? 'Reply to Comment'
                           : 'Join the Discussion',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
-                      ),
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3,
+                          ),
                     ),
                   ],
                 ),
@@ -116,19 +128,21 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
                   maxLength: 2000,
                   decoration: InputDecoration(
                     hintText: 'Share your thoughts, concerns, or suggestions...',
+                    filled: true,
+                    fillColor: AppTheme.primary.withValues(alpha: 0.03),
                     border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: AppTheme.border),
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide.none,
                     ),
                     enabledBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide(color: AppTheme.border),
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide.none,
                     ),
                     focusedBorder: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: const BorderSide(color: AppTheme.primary, width: 2),
+                      borderRadius: BorderRadius.circular(20),
+                      borderSide: BorderSide.none,
                     ),
-                    contentPadding: const EdgeInsets.all(16),
+                    contentPadding: const EdgeInsets.all(20),
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
@@ -149,7 +163,8 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
                         onPressed: () => Navigator.pop(context),
                         style: TextButton.styleFrom(
                           foregroundColor: AppTheme.mutedText,
-                          textStyle: const TextStyle(fontWeight: FontWeight.w600),
+                          textStyle:
+                              const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         child: const Text('Cancel'),
                       ),
@@ -158,7 +173,9 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
                     Expanded(
                       child: AppButton(
                         onPressed: isPosting ? null : _submitComment,
-                        label: widget.parentCommentId != null ? 'Post Reply' : 'Post Comment',
+                        label: widget.parentCommentId != null
+                            ? 'Post Reply'
+                            : 'Post Comment',
                         icon: Icons.send_rounded,
                         loading: isPosting,
                       ),

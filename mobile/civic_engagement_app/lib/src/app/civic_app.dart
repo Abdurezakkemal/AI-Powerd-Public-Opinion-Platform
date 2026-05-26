@@ -47,8 +47,11 @@ class CivicApp extends StatelessWidget {
                         serviceLocator<HistoryCubit>()..loadHistory(),
                   ),
                   BlocProvider(
-                    create: (_) => serviceLocator<NotificationsCubit>()
-                      ..loadNotifications(),
+                    create: (_) {
+                      print('[CivicApp] Creating NotificationsCubit and loading notifications');
+                      return serviceLocator<NotificationsCubit>()
+                        ..loadNotifications();
+                    },
                   ),
                   BlocProvider(create: (_) => serviceLocator<VoteCubit>()),
                 ],

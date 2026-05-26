@@ -52,46 +52,51 @@ class FeedPolicyCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 20),
-          const Divider(height: 1),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 16,
-            runSpacing: 12,
-            children: [
-              _InfoChip(
-                icon: Icons.tag_rounded,
-                label: policy.policyCode,
-              ),
-              _InfoChip(
-                icon: Icons.how_to_vote_rounded,
-                label: _formatPollType(policy.pollType),
-              ),
-              _InfoChip(
-                icon: Icons.event_rounded,
-                label: 'Ends ${dateFormat.format(policy.endDate)}',
-              ),
-            ],
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 12,
+              children: [
+                _InfoChip(
+                  icon: Icons.tag_rounded,
+                  label: policy.policyCode,
+                ),
+                _InfoChip(
+                  icon: Icons.how_to_vote_rounded,
+                  label: _formatPollType(policy.pollType),
+                ),
+                _InfoChip(
+                  icon: Icons.event_rounded,
+                  label: 'Ends ${dateFormat.format(policy.endDate)}',
+                ),
+              ],
+            ),
           ),
           if (policy.targetRegions.isNotEmpty) ...[
-            const SizedBox(height: 16),
+            const SizedBox(height: 12),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: policy.targetRegions
                   .map((region) => Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 6),
+                            horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: AppTheme.background,
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: AppTheme.border),
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: AppTheme.border.withValues(alpha: 0.5)),
                         ),
                         child: Text(
                           region,
                           style: const TextStyle(
                             fontSize: 12,
-                            fontWeight: FontWeight.w600,
+                            fontWeight: FontWeight.w700,
                             color: AppTheme.mutedText,
                           ),
                         ),

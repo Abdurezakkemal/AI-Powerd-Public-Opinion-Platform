@@ -74,7 +74,7 @@ class PolicyListPage extends StatelessWidget {
                 }
 
                 return SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 110),
                   sliver: SliverList.builder(
                     itemCount: state.policies.length + (state.hasMore ? 1 : 0),
                     itemBuilder: (context, index) {
@@ -138,39 +138,39 @@ class _PolicyHeader extends StatelessWidget {
         builder: (context, state) {
           final region = state.profile?.region ?? 'Your Region';
           return Container(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.all(28),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(28),
+              borderRadius: BorderRadius.circular(32),
               gradient: LinearGradient(
                 colors: [
-                  AppTheme.primary,
-                  AppTheme.primary.withValues(alpha: 0.8),
+                  AppTheme.primary.withValues(alpha: 0.9),
+                  AppTheme.primary.withValues(alpha: 0.65),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: AppTheme.primary.withValues(alpha: 0.25),
-                  blurRadius: 24,
-                  offset: const Offset(0, 8),
+                  color: AppTheme.primary.withValues(alpha: 0.15),
+                  blurRadius: 30,
+                  offset: const Offset(0, 12),
                 ),
               ],
             ),
             child: Row(
               children: [
                 Container(
-                  width: 56,
-                  height: 56,
+                  width: 64,
+                  height: 64,
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white.withValues(alpha: 0.4), width: 1),
+                    color: Colors.white.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1),
                   ),
                   child: const Icon(
                     Icons.location_city_rounded,
                     color: Colors.white,
-                    size: 28,
+                    size: 32,
                   ),
                 ),
                 const SizedBox(width: 20),
@@ -181,19 +181,20 @@ class _PolicyHeader extends StatelessWidget {
                       Text(
                         'Citizen Workspace',
                         style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.8),
+                          fontWeight: FontWeight.w500,
                           letterSpacing: 0.5,
                           fontSize: 13,
                         ),
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 8),
                       Text(
                         region,
                         style: Theme.of(context).textTheme.titleLarge?.copyWith(
                           color: Colors.white,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w800,
                           letterSpacing: -0.5,
+                          fontSize: 22,
                         ),
                       ),
                     ],
@@ -422,7 +423,7 @@ class _PolicyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return AppCard(
       onTap: onTap,
-      margin: const EdgeInsets.only(bottom: 16),
+      margin: const EdgeInsets.only(bottom: 20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -435,12 +436,12 @@ class _PolicyCard extends StatelessWidget {
                   style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w800,
                     fontSize: 18,
-                    height: 1.3,
+                    height: 1.4,
                     letterSpacing: -0.3,
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 16),
               StatusPill(status: policy.status),
             ],
           ),
@@ -450,34 +451,39 @@ class _PolicyCard extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: AppTheme.text.withValues(alpha: 0.7), 
-              height: 1.5,
+              color: AppTheme.mutedText, 
+              height: 1.6,
               fontSize: 14,
             ),
           ),
-          const SizedBox(height: 20),
-          const Divider(height: 1),
-          const SizedBox(height: 16),
-          Wrap(
-            spacing: 16,
-            runSpacing: 12,
-            children: [
-              _Metric(icon: Icons.tag_rounded, text: policy.policyCode),
-              if (policy.averageRating != null)
+          const SizedBox(height: 24),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Wrap(
+              spacing: 20,
+              runSpacing: 12,
+              children: [
+                _Metric(icon: Icons.tag_rounded, text: policy.policyCode),
+                if (policy.averageRating != null)
+                  _Metric(
+                    icon: Icons.star_rounded,
+                    text: policy.averageRating!.toStringAsFixed(1),
+                    iconColor: Colors.amber.shade600,
+                  ),
                 _Metric(
-                  icon: Icons.star_rounded,
-                  text: policy.averageRating!.toStringAsFixed(1),
-                  iconColor: Colors.amber.shade600,
+                  icon: Icons.how_to_vote_rounded,
+                  text: '${policy.totalVotes} votes',
                 ),
-              _Metric(
-                icon: Icons.how_to_vote_rounded,
-                text: '${policy.totalVotes} votes',
-              ),
-              _Metric(
-                icon: Icons.event_rounded,
-                text: DateFormatters.compact(policy.endDate),
-              ),
-            ],
+                _Metric(
+                  icon: Icons.event_rounded,
+                  text: DateFormatters.compact(policy.endDate),
+                ),
+              ],
+            ),
           ),
         ],
       ),

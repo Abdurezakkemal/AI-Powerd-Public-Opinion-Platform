@@ -14,6 +14,7 @@ enum NotificationType {
   messageReceived('MESSAGE_RECEIVED'),
   commentReply('COMMENT_REPLY'),
   commentFlagged('COMMENT_FLAGGED'),
+  commentHidden('COMMENT_HIDDEN'),
   commentAppeal('COMMENT_APPEAL'),
   appealResolved('APPEAL_RESOLVED'),
   voteSurge('VOTE_SURGE'),

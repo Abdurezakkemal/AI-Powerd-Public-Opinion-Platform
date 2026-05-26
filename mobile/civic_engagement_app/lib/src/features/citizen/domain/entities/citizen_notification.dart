@@ -53,7 +53,7 @@ class CitizenNotification extends Equatable {
   final bool read;
   final Map<String, dynamic> data;
   final DateTime? createdAt;
-  
+
   // NEW fields from Section 12.4
   final String? userId;
   final String? userRole;
@@ -62,10 +62,11 @@ class CitizenNotification extends Equatable {
 
   String? get policyId => data['policyId']?.toString();
   String? get commentId => data['commentId']?.toString();
-  
+  bool get canAppealComment => type == 'COMMENT_HIDDEN' && commentId != null;
+
   // NEW: Check if this is a smart alert
   bool get isSmartAlert => source == NotificationSource.alert;
-  
+
   // NEW: Check severity levels
   bool get isCritical => severity == NotificationSeverity.critical;
   bool get isWarning => severity == NotificationSeverity.warning;

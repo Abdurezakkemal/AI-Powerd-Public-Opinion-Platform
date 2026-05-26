@@ -17,8 +17,13 @@ class CitizenNotificationModel extends CitizenNotification {
 
   /// Parse notification from backend API response (Section 12.4)
   factory CitizenNotificationModel.fromJson(Map<String, dynamic> json) {
+    print('[CitizenNotificationModel] Parsing notification from JSON');
+    print('  - Raw JSON keys: ${json.keys.toList()}');
+    
     final data = json['data'];
-    return CitizenNotificationModel(
+    print('  - data field type: ${data.runtimeType}');
+    
+    final notification = CitizenNotificationModel(
       id: (json['_id'] ?? json['id'] ?? '').toString(),
       type: json['type']?.toString() ?? '',
       title: json['title']?.toString() ?? 'Notification',
@@ -36,6 +41,15 @@ class CitizenNotificationModel extends CitizenNotification {
           ? NotificationSource.fromString(json['source'].toString())
           : NotificationSource.system,
     );
+    
+    print('[CitizenNotificationModel] Parsed notification:');
+    print('  - ID: ${notification.id}');
+    print('  - Type: ${notification.type}');
+    print('  - Title: ${notification.title}');
+    print('  - Read: ${notification.read}');
+    print('  - Created: ${notification.createdAt}');
+    
+    return notification;
   }
 
   Map<String, dynamic> toJson() {

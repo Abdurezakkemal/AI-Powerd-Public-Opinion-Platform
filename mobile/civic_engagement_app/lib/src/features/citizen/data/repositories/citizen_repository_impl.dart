@@ -221,11 +221,17 @@ class CitizenRepositoryImpl implements CitizenRepository {
   }
 
   @override
+  @override
   Future<String> postComment({
     required String policyId,
     required String text,
     String? parentCommentId,
   }) async {
+    print('[CitizenRepository] postComment called');
+    print('  - policyId: $policyId');
+    print('  - text length: ${text.length}');
+    print('  - parentCommentId: $parentCommentId');
+    
     final response = await _apiClient.post(
       '/comments',
       body: {
@@ -234,6 +240,9 @@ class CitizenRepositoryImpl implements CitizenRepository {
         if (parentCommentId != null) 'parentCommentId': parentCommentId,
       },
     );
+    
+    print('[CitizenRepository] postComment response: ${response.message}');
+    print('[CitizenRepository] postComment response data: ${response.data}');
     return response.message;
   }
 
@@ -279,6 +288,10 @@ class CitizenRepositoryImpl implements CitizenRepository {
     int page = 1,
     int limit = 20,
   }) async {
+    print('[CitizenRepository] getPolicyComments called');
+    print('  - policyId: $policyId');
+    print('  - page: $page, limit: $limit');
+    
     // UPDATED: Use public endpoint instead of analytics endpoint
     final response = await _apiClient.get(
       '/comments/policy/$policyId',
@@ -287,18 +300,45 @@ class CitizenRepositoryImpl implements CitizenRepository {
         'limit': limit,
       },
     );
+    
+    print('[CitizenRepository] API response received');
+    print('  - message: ${response.message}');
+    print('  - data type: ${response.data.runtimeType}');
+    
     final data = response.data as Map<String, dynamic>;
     final rawComments = data['comments'];
+    final pagination = _pagination(data);
+    
+    print('[CitizenRepository] Raw comments type: ${rawComments.runtimeType}');
+    print('[CitizenRepository] Raw comments length: ${rawComments is List ? rawComments.length : 'N/A'}');
+    
+    if (rawComments is List && rawComments.isNotEmpty) {
+      print('[CitizenRepository] First raw comment keys: ${(rawComments[0] as Map).keys.toList()}');
+    }
+    
     final comments = rawComments is List
         ? rawComments
             .whereType<Map<String, dynamic>>()
             .map(CommentModel.fromJson)
             .toList()
         : <CommentModel>[];
+    
+    print('[CitizenRepository] Parsed ${comments.length} comments');
+    if (comments.isNotEmpty) {
+      final first = comments.first;
+      print('[CitizenRepository] First parsed comment:');
+      print('  - ID: ${first.id}');
+      print('  - Text: ${first.text.substring(0, first.text.length > 30 ? 30 : first.text.length)}...');
+      print('  - User ID: ${first.userId}');
+      print('  - User Email: ${first.userEmail}');
+      print('  - Visibility: ${first.visibility}');
+      print('  - Parent ID: ${first.parentCommentId}');
+    }
+    
     return CommentPage(
       comments: comments,
-      total: _toInt(data['total']),
-      page: _toInt(data['page'], fallback: page),
+      total: _toInt(pagination['total'], fallback: comments.length),
+      page: _toInt(pagination['page'], fallback: page),
     );
   }
 
@@ -361,6 +401,7 @@ class CitizenRepositoryImpl implements CitizenRepository {
     );
     final data = response.data as Map<String, dynamic>;
     final rawReplies = data['replies'];
+    final pagination = _pagination(data);
     final replies = rawReplies is List
         ? rawReplies
             .whereType<Map<String, dynamic>>()
@@ -369,8 +410,8 @@ class CitizenRepositoryImpl implements CitizenRepository {
         : <CommentModel>[];
     return CommentPage(
       comments: replies,
-      total: _toInt(data['total']),
-      page: _toInt(data['page'], fallback: page),
+      total: _toInt(pagination['total'], fallback: replies.length),
+      page: _toInt(pagination['page'], fallback: page),
     );
   }
 
@@ -392,18 +433,46 @@ class CitizenRepositoryImpl implements CitizenRepository {
     int limit = 20,
     bool unreadOnly = false,
   }) async {
+    print('[CitizenRepository] getNotifications called');
+    print('  - page: $page, limit: $limit');
+    print('  - unreadOnly: $unreadOnly');
+    
     final response = await _apiClient.get(
       '/users/me/notifications',
       query: {'page': page, 'limit': limit, if (unreadOnly) 'unreadOnly': true},
     );
+    
+    print('[CitizenRepository] Notifications API response received');
+    print('  - message: ${response.message}');
+    print('  - data type: ${response.data.runtimeType}');
+    
     final data = response.data as Map<String, dynamic>;
     final rawNotifications = data['notifications'];
+    
+    print('[CitizenRepository] Raw notifications type: ${rawNotifications.runtimeType}');
+    print('[CitizenRepository] Raw notifications length: ${rawNotifications is List ? rawNotifications.length : 'N/A'}');
+    
+    if (rawNotifications is List && rawNotifications.isNotEmpty) {
+      print('[CitizenRepository] First raw notification keys: ${(rawNotifications[0] as Map).keys.toList()}');
+    }
+    
     final notifications = rawNotifications is List
         ? rawNotifications
             .whereType<Map<String, dynamic>>()
             .map(CitizenNotificationModel.fromJson)
             .toList()
         : <CitizenNotificationModel>[];
+
+    print('[CitizenRepository] Parsed ${notifications.length} notifications');
+    if (notifications.isNotEmpty) {
+      final first = notifications.first;
+      print('[CitizenRepository] First parsed notification:');
+      print('  - ID: ${first.id}');
+      print('  - Type: ${first.type}');
+      print('  - Title: ${first.title}');
+      print('  - Read: ${first.read}');
+      print('  - Created: ${first.createdAt}');
+    }
 
     return NotificationPage(
       notifications: notifications,
@@ -502,6 +571,12 @@ class CitizenRepositoryImpl implements CitizenRepository {
   static int _toInt(dynamic value, {int fallback = 0}) {
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? fallback;
+  }
+
+  static Map<String, dynamic> _pagination(Map<String, dynamic> data) {
+    final pagination = data['pagination'];
+    if (pagination is Map<String, dynamic>) return pagination;
+    return data;
   }
 
   static String _dateOnly(DateTime value) {

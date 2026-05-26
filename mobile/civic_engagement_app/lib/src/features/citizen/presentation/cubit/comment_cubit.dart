@@ -51,6 +51,8 @@ class CommentCubit extends Cubit<CommentState> {
     required String policyId,
     bool refresh = false,
   }) async {
+    print('[CommentCubit] loadComments called - policyId: $policyId, refresh: $refresh');
+    
     if (refresh) {
       _currentPage = 1;
       _allComments = [];
@@ -60,10 +62,25 @@ class CommentCubit extends Cubit<CommentState> {
     emit(const CommentLoading());
 
     try {
+      print('[CommentCubit] Fetching comments from repository...');
       final page = await _repository.getPolicyComments(
         policyId: policyId,
         page: _currentPage,
       );
+
+      print('[CommentCubit] Received ${page.comments.length} comments from API');
+      print('[CommentCubit] Total comments: ${page.total}, Page: ${page.page}');
+      
+      if (page.comments.isNotEmpty) {
+        final firstComment = page.comments.first;
+        print('[CommentCubit] First comment sample:');
+        print('  - ID: ${firstComment.id}');
+        print('  - Text: ${firstComment.text.substring(0, firstComment.text.length > 50 ? 50 : firstComment.text.length)}');
+        print('  - User ID: ${firstComment.userId}');
+        print('  - User Email: ${firstComment.userEmail}');
+        print('  - Visibility: ${firstComment.visibility}');
+        print('  - Parent ID: ${firstComment.parentCommentId}');
+      }
 
       final commentsWithReplies = page.comments
           .map((comment) => CommentWithReplies(comment: comment))
@@ -78,6 +95,8 @@ class CommentCubit extends Cubit<CommentState> {
       _total = page.total;
       _currentPage = page.page;
 
+      print('[CommentCubit] State updated - ${_allComments.length} comments in state');
+
       emit(
         CommentLoaded(
           comments: _allComments.map((c) => c.comment).toList(),
@@ -87,7 +106,11 @@ class CommentCubit extends Cubit<CommentState> {
           translatedComments: Map.unmodifiable(_translatedComments),
         ),
       );
+      
+      print('[CommentCubit] CommentLoaded state emitted');
     } catch (e) {
+      print('[CommentCubit] ERROR loading comments: $e');
+      print('[CommentCubit] Error type: ${e.runtimeType}');
       emit(CommentError(e.toString()));
     }
   }
@@ -229,6 +252,11 @@ class CommentCubit extends Cubit<CommentState> {
     required String text,
     String? parentCommentId,
   }) async {
+    print('[CommentCubit] postComment called');
+    print('  - policyId: $policyId');
+    print('  - text length: ${text.length}');
+    print('  - parentCommentId: $parentCommentId');
+    
     emit(
       CommentPosting(
         comments: _currentLoadedState().comments,
@@ -239,11 +267,14 @@ class CommentCubit extends Cubit<CommentState> {
     );
 
     try {
+      print('[CommentCubit] Calling repository.postComment...');
       final message = await _repository.postComment(
         policyId: policyId,
         text: text,
         parentCommentId: parentCommentId,
       );
+
+      print('[CommentCubit] Comment posted successfully: $message');
 
       // Record comment interaction for personalized feed (only for top-level comments)
       if (parentCommentId == null) {
@@ -254,13 +285,18 @@ class CommentCubit extends Cubit<CommentState> {
               type: InteractionType.comment,
             ),
           );
+          print('[CommentCubit] Interaction recorded');
         } catch (_) {
+          print('[CommentCubit] Failed to record interaction (non-critical)');
           // Silently fail - don't block comment success
         }
       }
 
       emit(CommentPosted(message));
+      print('[CommentCubit] CommentPosted state emitted');
     } catch (e) {
+      print('[CommentCubit] ERROR posting comment: $e');
+      print('[CommentCubit] Error type: ${e.runtimeType}');
       emit(CommentError(e.toString()));
     }
   }

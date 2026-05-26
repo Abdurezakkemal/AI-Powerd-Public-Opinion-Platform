@@ -72,16 +72,54 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
               title: const Text('Policy Details'),
               elevation: 0,
               bottom: TabBar(
-                indicatorColor: AppTheme.primary,
-                indicatorWeight: 3,
+                indicator: BoxDecoration(
+                  color: AppTheme.primary.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(32),
+                ),
                 indicatorSize: TabBarIndicatorSize.tab,
+                dividerColor: Colors.transparent,
                 labelColor: AppTheme.primary,
                 unselectedLabelColor: AppTheme.mutedText,
                 labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
                 unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                tabs: const [
-                  Tab(text: 'Overview', icon: Icon(Icons.info_outline_rounded)),
-                  Tab(text: 'Discussion', icon: Icon(Icons.forum_outlined)),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                tabs: [
+                  Tab(
+                    height: 56,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.info_outline_rounded, size: 18),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('Overview'),
+                      ],
+                    ),
+                  ),
+                  Tab(
+                    height: 56,
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withValues(alpha: 0.1),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.forum_outlined, size: 18),
+                        ),
+                        const SizedBox(width: 8),
+                        const Text('Discussion'),
+                      ],
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -179,9 +217,7 @@ class _DetailHeader extends StatelessWidget {
               StatusPill(status: policy.status),
             ],
           ),
-          const SizedBox(height: 20),
-          const Divider(height: 1),
-          const SizedBox(height: 16),
+          const SizedBox(height: 24),
           Wrap(
             spacing: 12,
             runSpacing: 12,
@@ -248,10 +284,10 @@ class _DescriptionCard extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: const EdgeInsets.all(20),
             decoration: BoxDecoration(
-              color: AppTheme.background,
-              borderRadius: BorderRadius.circular(16),
+              color: AppTheme.primary.withValues(alpha: 0.03),
+              borderRadius: BorderRadius.circular(20),
             ),
             child: Column(
               children: [
@@ -299,7 +335,7 @@ class _VotingCard extends StatelessWidget {
     return AppCard(
       margin: EdgeInsets.zero,
       padding: const EdgeInsets.all(24),
-      color: policy.canVote ? AppTheme.primary.withValues(alpha: 0.03) : null,
+      color: policy.canVote ? AppTheme.primary.withValues(alpha: 0.05) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -438,10 +474,11 @@ class _VoteSheetState extends State<_VoteSheet> {
             color: Colors.white,
             borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
               Center(
                 child: Container(
                   width: 48,
@@ -497,6 +534,7 @@ class _VoteSheetState extends State<_VoteSheet> {
               ),
             ],
           ),
+        ),
         );
       },
     );
@@ -648,6 +686,8 @@ class _CommentsTab extends StatelessWidget {
             PostCommentWidget(
               policyId: policy.id,
               onCommentPosted: () {
+                print('[PolicyDetailPage] onCommentPosted callback triggered');
+                print('[PolicyDetailPage] Reloading comments for policy: ${policy.id}');
                 context.read<CommentCubit>().loadComments(
                       policyId: policy.id,
                       refresh: true,

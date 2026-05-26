@@ -25,8 +25,12 @@ class NotificationsCubit extends Cubit<NotificationsState> {
 
   /// Initialize WebSocket listener for real-time notifications
   void _initializeSocketListener() {
+    print('[NotificationsCubit] Initializing socket listener');
     _socketSubscription = _socketService.notificationStream.listen(
       (notification) {
+        print('[NotificationsCubit] Received notification via socket:');
+        print('  - type: ${notification.type}');
+        print('  - title: ${notification.title}');
         // Convert to CitizenNotification and add to list
         final citizenNotification = CitizenNotificationModel.fromJson(
           notification.toJson(),
@@ -34,14 +38,18 @@ class NotificationsCubit extends Cubit<NotificationsState> {
         _addNewNotification(citizenNotification);
       },
       onError: (error) {
-        print('Socket notification error: $error');
+        print('[NotificationsCubit] Socket notification error: $error');
       },
     );
+    print('[NotificationsCubit] Socket listener initialized');
   }
 
   /// Add a new notification received via WebSocket to the top of the list
   void _addNewNotification(CitizenNotification notification) {
+    print('[NotificationsCubit] Adding new notification to list');
+    print('  - Current count: ${state.notifications.length}');
     final updatedList = [notification, ...state.notifications];
+    print('  - New count: ${updatedList.length}');
     emit(
       state.copyWith(
         notifications: updatedList,
@@ -49,6 +57,7 @@ class NotificationsCubit extends Cubit<NotificationsState> {
         hasNewNotification: true,
       ),
     );
+    print('[NotificationsCubit] Notification added, state emitted');
   }
 
   /// Clear the new notification flag
@@ -57,9 +66,31 @@ class NotificationsCubit extends Cubit<NotificationsState> {
   }
 
   Future<void> loadNotifications({bool unreadOnly = false}) async {
+    print('[NotificationsCubit] loadNotifications called');
+    print('  - unreadOnly: $unreadOnly');
+    print('  - Current state: ${state.status}');
+    
     emit(state.copyWith(status: RequestStatus.loading, unreadOnly: unreadOnly));
+    
     try {
+      print('[NotificationsCubit] Fetching notifications from repository...');
       final page = await _repository.getNotifications(unreadOnly: unreadOnly);
+      
+      print('[NotificationsCubit] Received notifications:');
+      print('  - Count: ${page.notifications.length}');
+      print('  - Total: ${page.total}');
+      print('  - Page: ${page.page}');
+      
+      if (page.notifications.isNotEmpty) {
+        final first = page.notifications.first;
+        print('[NotificationsCubit] First notification sample:');
+        print('  - ID: ${first.id}');
+        print('  - Type: ${first.type}');
+        print('  - Title: ${first.title}');
+        print('  - Read: ${first.read}');
+        print('  - Created: ${first.createdAt}');
+      }
+      
       emit(
         state.copyWith(
           status: RequestStatus.success,
@@ -68,9 +99,19 @@ class NotificationsCubit extends Cubit<NotificationsState> {
           unreadOnly: unreadOnly,
         ),
       );
+      
+      print('[NotificationsCubit] State updated with ${page.notifications.length} notifications');
     } on ApiException catch (error) {
+      print('[NotificationsCubit] ERROR loading notifications: ${error.message}');
+      print('[NotificationsCubit] Error code: ${error.code}');
       emit(
         state.copyWith(status: RequestStatus.failure, message: error.message),
+      );
+    } catch (e) {
+      print('[NotificationsCubit] UNEXPECTED ERROR: $e');
+      print('[NotificationsCubit] Error type: ${e.runtimeType}');
+      emit(
+        state.copyWith(status: RequestStatus.failure, message: e.toString()),
       );
     }
   }
@@ -129,6 +170,34 @@ class NotificationsCubit extends Cubit<NotificationsState> {
           actionStatus: RequestStatus.success,
           notifications: updated,
           message: '$count notification(s) marked as read.',
+        ),
+      );
+    } on ApiException catch (error) {
+      emit(
+        state.copyWith(
+          actionStatus: RequestStatus.failure,
+          message: error.message,
+        ),
+      );
+    }
+  }
+
+  Future<void> submitCommentAppeal({
+    required String notificationId,
+    required String commentId,
+    required String reason,
+  }) async {
+    emit(state.copyWith(actionStatus: RequestStatus.loading));
+    try {
+      final message = await _repository.appealComment(
+        commentId: commentId,
+        reason: reason,
+      );
+      await markRead(notificationId);
+      emit(
+        state.copyWith(
+          actionStatus: RequestStatus.success,
+          message: message,
         ),
       );
     } on ApiException catch (error) {

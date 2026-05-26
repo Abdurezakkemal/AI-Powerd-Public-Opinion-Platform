@@ -25,6 +25,7 @@ class _CitizenHomeShellState extends State<CitizenHomeShell> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      extendBody: true,
       body: IndexedStack(
         index: _selectedIndex,
         children: [
@@ -41,25 +42,27 @@ class _CitizenHomeShellState extends State<CitizenHomeShell> {
       bottomNavigationBar: BlocBuilder<NotificationsCubit, NotificationsState>(
         builder: (context, state) {
           return Container(
+            margin: const EdgeInsets.only(left: 20, right: 20, bottom: 24),
             decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(40),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.05),
-                  blurRadius: 20,
-                  offset: const Offset(0, -5),
+                  color: Colors.black.withValues(alpha: 0.08),
+                  blurRadius: 30,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
             child: ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+              borderRadius: BorderRadius.circular(40),
               child: NavigationBar(
                 selectedIndex: _selectedIndex,
                 onDestinationSelected: (index) => setState(() => _selectedIndex = index),
                 backgroundColor: Colors.white,
                 elevation: 0,
-                height: 75,
+                height: 70,
                 indicatorColor: AppTheme.primary.withValues(alpha: 0.15),
-                labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+                labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
                 destinations: [
                   const NavigationDestination(
                     icon: Icon(Icons.policy_outlined),

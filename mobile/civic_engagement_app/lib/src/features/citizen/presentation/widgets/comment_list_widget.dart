@@ -9,6 +9,7 @@ import '../../domain/entities/comment.dart';
 import '../cubit/comment_cubit.dart';
 import '../cubit/comment_state.dart';
 import '../cubit/profile_cubit.dart';
+import 'appeal_comment_dialog.dart';
 import 'edit_comment_dialog.dart';
 import 'reply_comment_dialog.dart';
 import 'report_comment_dialog.dart';
@@ -185,14 +186,22 @@ class _CommentCard extends StatelessWidget {
   final Comment comment;
   final String policyId;
 
-  void _showReportDialog(BuildContext context) {
-    showDialog<void>(
+  void _showReportDialog(BuildContext context) async {
+    final reported = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => BlocProvider.value(
         value: context.read<CommentCubit>(),
         child: ReportCommentDialog(commentId: comment.id),
       ),
     );
+    
+    // Reload comments after successful report
+    if (reported == true && context.mounted) {
+      context.read<CommentCubit>().loadComments(
+        policyId: policyId,
+        refresh: true,
+      );
+    }
   }
 
   void _showEditDialog(BuildContext context) {
@@ -236,20 +245,19 @@ class _CommentCard extends StatelessWidget {
       children: [
         Container(
           margin: EdgeInsets.only(
-            left: isReply ? 40 : 20,
+            left: isReply ? 48 : 20,
             right: 20,
-            top: 8,
-            bottom: 8,
+            top: 10,
+            bottom: 10,
           ),
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: AppTheme.border),
+            borderRadius: BorderRadius.circular(28),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.02),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
+                color: AppTheme.primary.withValues(alpha: 0.04),
+                blurRadius: 20,
+                offset: const Offset(0, 8),
               ),
             ],
           ),
@@ -282,9 +290,21 @@ class _CommentCard extends StatelessWidget {
                 ],
                 Row(
                   children: [
-                    CircleAvatar(
-                      radius: 18,
-                      backgroundColor: AppTheme.primary.withValues(alpha: 0.1),
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [
+                            AppTheme.primary.withValues(alpha: 0.15),
+                            AppTheme.primary.withValues(alpha: 0.05),
+                          ],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                      ),
+                      alignment: Alignment.center,
                       child: Text(
                         (comment.userEmail ?? 'A')
                             .substring(0, 1)
@@ -292,6 +312,7 @@ class _CommentCard extends StatelessWidget {
                         style: const TextStyle(
                           color: AppTheme.primary,
                           fontWeight: FontWeight.w900,
+                          fontSize: 16,
                         ),
                       ),
                     ),
@@ -341,10 +362,6 @@ class _CommentCard extends StatelessWidget {
                     color: AppTheme.text,
                   ),
                 ),
-                _TranslationPanel(
-                  commentId: comment.id,
-                  text: comment.text,
-                ),
                 const SizedBox(height: 16),
                 Wrap(
                   spacing: 8,
@@ -365,7 +382,10 @@ class _CommentCard extends StatelessWidget {
                             Icon(Icons.edit_rounded,
                                 size: 12, color: Colors.grey.shade600),
                             const SizedBox(width: 4),
-                            Text('Edited',
+                            Text(
+                                comment.versionNumber > 1
+                                    ? 'Edited v${comment.versionNumber}'
+                                    : 'Edited',
                                 style: TextStyle(
                                     color: Colors.grey.shade600,
                                     fontSize: 11,
@@ -540,60 +560,18 @@ class _CommentCard extends StatelessWidget {
   }
 
   void _showAppealDialog(BuildContext context) {
-    final reasonController = TextEditingController();
     final cubit = context.read<CommentCubit>();
 
     showDialog<void>(
       context: context,
-      builder: (dialogContext) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Appeal Moderation',
-            style: TextStyle(fontWeight: FontWeight.w800)),
-        content: TextField(
-          controller: reasonController,
-          decoration: InputDecoration(
-            hintText: 'Explain why this decision should be reconsidered...',
-            hintStyle: const TextStyle(color: AppTheme.mutedText),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: BorderSide(color: AppTheme.border),
-            ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(16),
-              borderSide: const BorderSide(color: AppTheme.primary, width: 2),
-            ),
-          ),
-          maxLines: 4,
-          maxLength: 500,
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel',
-                style: TextStyle(fontWeight: FontWeight.w700)),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              if (reasonController.text.trim().isNotEmpty) {
-                cubit.appealComment(
-                  commentId: comment.id,
-                  reason: reasonController.text,
-                  policyId: policyId,
-                );
-                Navigator.pop(dialogContext);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppTheme.primary,
-              foregroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              elevation: 0,
-            ),
-            child: const Text('Submit Appeal',
-                style: TextStyle(fontWeight: FontWeight.w700)),
-          ),
-        ],
+      builder: (_) => AppealCommentDialog(
+        onSubmit: (reason) {
+          cubit.appealComment(
+            commentId: comment.id,
+            reason: reason,
+            policyId: policyId,
+          );
+        },
       ),
     );
   }
@@ -742,37 +720,63 @@ class _StatusChip extends StatelessWidget {
     Color color;
     String label;
 
-    if (comment.isHidden) {
-      switch (comment.hiddenReason) {
+    if (comment.isHidden || comment.isDeleted) {
+      switch (comment.moderationReason ?? comment.hiddenReason) {
         case 'profanity':
           color = Colors.red;
           label = 'Blocked';
         case 'reports':
+        case 'auto_hide_reports':
           color = Colors.orange;
           label = 'Flagged';
         case 'moderator':
+        case 'hidden_by_moderator':
           color = Colors.red;
-          label = 'Deleted';
+          label = comment.isDeleted ? 'Deleted' : 'Hidden';
         default:
           color = Colors.red;
-          label = 'Hidden';
+          label = comment.isDeleted ? 'Deleted' : 'Hidden';
       }
+    } else if (comment.reportState == 'reported') {
+      color = Colors.orange;
+      label = 'Reported';
+    } else if (comment.reportState == 'under_review' ||
+        comment.reviewFlags?.any == true) {
+      color = Colors.orange;
+      label = 'Under Review';
     } else {
-      switch (comment.moderationStatus) {
-        case 'pending_ai':
+      switch (comment.aiStatus) {
+        case 'pending':
           color = Colors.blue;
           label = 'Processing';
-        case 'needs_review':
+        case 'failed':
+        case 'stale':
           color = Colors.orange;
-          label = 'Under Review';
-        case 'reviewed':
-          color = Colors.green;
-          label = 'Reviewed';
-        case 'none':
-          return const SizedBox.shrink();
+          label = 'Review';
+        case 'processed':
+          if (comment.moderationStatus == 'reviewed') {
+            color = Colors.green;
+            label = 'Reviewed';
+          } else {
+            return const SizedBox.shrink();
+          }
         default:
-          color = Colors.grey;
-          label = comment.moderationStatus;
+          switch (comment.moderationStatus) {
+            case 'pending_ai':
+              color = Colors.blue;
+              label = 'Processing';
+            case 'needs_review':
+              color = Colors.orange;
+              label = 'Under Review';
+            case 'reviewed':
+              color = Colors.green;
+              label = 'Reviewed';
+            case 'none':
+              return const SizedBox.shrink();
+            default:
+              color = Colors.grey;
+              label = comment.aiStatus;
+          }
       }
     }
 
