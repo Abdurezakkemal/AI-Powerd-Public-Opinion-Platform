@@ -40,7 +40,7 @@ export function NotificationsPage() {
     const userId = readStoredAuth()?.userId;
     if (!userId) return;
 
-    const apiUrl = new URL(API_BASE_URL);
+    const apiUrl = new URL(API_BASE_URL, window.location.origin);
     const protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:";
     const socket = new WebSocket(
       `${protocol}//${apiUrl.host}/socket.io/?EIO=4&transport=websocket`,

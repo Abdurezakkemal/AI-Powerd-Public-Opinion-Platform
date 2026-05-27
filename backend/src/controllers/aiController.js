@@ -6,7 +6,8 @@ const {
   ErrorCodes,
 } = require("../utils/responseHelper");
 
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL || "http://localhost:8000";
+const AI_SERVICE_URL =
+  process.env.AI_SERVICE_URL || "https://ai-sevice.onrender.com";
 
 exports.suggestPolicyTopics = async (req, res) => {
   try {
