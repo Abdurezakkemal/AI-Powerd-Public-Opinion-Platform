@@ -9,7 +9,8 @@ const {
 
 const TRANSLATE_SPACE_URL = process.env.TRANSLATE_SPACE_URL;
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL || "http://localhost:8000";
+const AI_SERVICE_URL =
+  process.env.AI_SERVICE_URL || "https://ai-sevice.onrender.com";
 
 const getCacheKey = (text, sourceLang, targetLang) => {
   const key = `translate:${sourceLang}:${targetLang}:${text}`;

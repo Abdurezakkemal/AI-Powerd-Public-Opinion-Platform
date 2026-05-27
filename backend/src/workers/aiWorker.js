@@ -3,7 +3,7 @@ require("dotenv").config();
 const axios = require("axios");
 const Comment = require("../models/Comment");
 
-const AI_BASE = process.env.AI_SERVICE_URL || "http://localhost:8000";
+const AI_BASE = process.env.AI_SERVICE_URL || "https://ai-sevice.onrender.com";
 const AI_ANALYZE_URL = `${AI_BASE}/analyze`;
 
 const POLL_INTERVAL = 10000; // 10 seconds

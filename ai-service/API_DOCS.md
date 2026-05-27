@@ -34,20 +34,20 @@ Success responses are JSON objects (no `status` wrapper). Error responses return
 **Success example (`/analyze`)**:
 
 ```json
-    {
-      "sentiment": "positive",
-      "confidence": 0.73,
-      "keywords": ["policy", "good"],
-      "language": "am",
-      "sentiment_model": "twitter-xlm-roberta",
-      "keyword_model": "remote_keybert"
-    }
+{
+  "sentiment": "positive",
+  "confidence": 0.73,
+  "keywords": ["policy", "good"],
+  "language": "am",
+  "sentiment_model": "twitter-xlm-roberta",
+  "keyword_model": "remote_keybert"
+}
 ```
 
 **Error example**:
 
 ```json
-    { "detail": "Model loading failed" }
+{ "detail": "Model loading failed" }
 ```
 
 ## 5. Endpoints
@@ -95,13 +95,13 @@ Suggests policy topics from a predefined list using zero‑shot classification. 
 **Response (200 OK)**:
 
 ```json
-    {
-      "topics": [
-        { "topic": "Roads", "confidence": 0.76 },
-        { "topic": "Transport", "confidence": 0.06 },
-        { "topic": "Public Safety", "confidence": 0.02 }
-      ]
-    }
+{
+  "topics": [
+    { "topic": "Roads", "confidence": 0.76 },
+    { "topic": "Transport", "confidence": 0.06 },
+    { "topic": "Public Safety", "confidence": 0.02 }
+  ]
+}
 ```
 
 **Default topics** (if `candidate_topics` not provided):
@@ -161,15 +161,16 @@ Removed in remote mode. Returns `501 Not Implemented`. (Available only in local 
 
 ## 6. Environment Variables
 
-| Variable              | Description                                 | Default                                                    |
-| --------------------- | ------------------------------------------- | ---------------------------------------------------------- |
-| `AI_MODE`             | `remote` (use Spaces) or `local` (fallback) | `remote`                                                   |
-| `LANGID_SPACE_URL`    | URL of fasttext‑langid Space                | `https://abyayel-fasttext-langid.hf.space/detect`          |
-| `SENTIMENT_SPACE_URL` | URL of sentiment‑models Space               | `https://abyayel-sentiment-models.hf.space/sentiment`      |
-| `TOPIC_SPACE_URL`     | URL of topic‑model Space                    | `https://abyayel-topic-model.hf.space/suggest-topics`      |
-| `KEYWORD_SPACE_URL`   | URL of keyword‑extractor Space              | `https://abyayel-keyword-extractor.hf.space/extract`       |
-| `INTERNAL_API_KEY`    | Internal API key for authentication         | (must be set in production)                                |
-| `FASTTEXT_MODEL_PATH` | Local fastText model path (local mode)      | `lid.176.ftz` (compressed) or auto‑downloaded 1.2 GB model |
+| Variable              | Description                                 | Default                                                         |
+| --------------------- | ------------------------------------------- | --------------------------------------------------------------- |
+| `AI_MODE`             | `remote` (use Spaces) or `local` (fallback) | `remote`                                                        |
+| `LANGID_SPACE_URL`    | URL of fasttext‑langid Space                | `https://abraham-ad77-ethio-langid.hf.space/detect`             |
+| `SENTIMENT_SPACE_URL` | URL of sentiment‑models Space               | `https://abraham-ad77-ethio-sentiment.hf.space/sentiment`       |
+| `TOPIC_SPACE_URL`     | URL of topic‑model Space                    | `https://abraham-ad77-ethio-topic-only.hf.space/suggest-topics` |
+| `KEYWORD_SPACE_URL`   | URL of keyword‑extractor Space              | `https://abraham-ad77-ethio-keywords.hf.space/extract`          |
+| `TRANSLATE_SPACE_URL` | URL of translation Space                    | `https://abraham-ad77-ethio-translate.hf.space/translate`       |
+| `INTERNAL_API_KEY`    | Internal API key for authentication         | (must be set in production)                                     |
+| `FASTTEXT_MODEL_PATH` | Local fastText model path (local mode)      | `lid.176.ftz` (compressed) or auto‑downloaded 1.2 GB model      |
 
 ## 7. Language Detection
 
