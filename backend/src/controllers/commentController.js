@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 const Comment = require("../models/Comment");
 const Policy = require("../models/Policy");
+const User = require("../models/User");
 const logger = require("../utils/logger");
 const {
   sendSuccess,
