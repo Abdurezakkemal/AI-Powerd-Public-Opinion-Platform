@@ -18,7 +18,7 @@ import {
 } from "recharts";
 import { analyticsApi } from "../api/analytics";
 import { policyApi } from "../api/policies";
-import { plannerApi } from "../api/planners";
+import { plannerApi } from "../api/plannerApi";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
@@ -114,7 +114,7 @@ function Tabs({ tabs, defaultTab, children }) {
   );
 }
 
-function TabPane({ tabId, children }) {
+function TabPane({ children }) {
   return <div>{children}</div>;
 }
 
@@ -136,7 +136,6 @@ export function PolicyAnalyticsPage() {
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("overview");
   const [hasExportPermission, setHasExportPermission] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
 
@@ -228,23 +227,42 @@ export function PolicyAnalyticsPage() {
     }
   }, [policy, analytics]);
 
-  // Check export permission
+  // CSV export is available to admins, policy owners, and accepted associates.
   useEffect(() => {
+    let active = true;
     if (!policy || !canViewAnalytics) {
       setHasExportPermission(false);
-      return;
+      return () => {
+        active = false;
+      };
     }
     if (role === "admin" || isOwner) {
       setHasExportPermission(true);
-      return;
+      return () => {
+        active = false;
+      };
     }
+    if (role !== "planner") {
+      setHasExportPermission(false);
+      return () => {
+        active = false;
+      };
+    }
+
     plannerApi
       .getMyAssociatePolicies()
       .then((delegated) => {
-        const match = delegated.find((d) => d.policy._id === id);
-        setHasExportPermission(!!match?.permissions?.includes("export_data"));
+        if (!active) return;
+        const match = delegated.find((d) => d.policy?._id === id);
+        setHasExportPermission(Boolean(match));
       })
-      .catch(() => setHasExportPermission(false));
+      .catch(() => {
+        if (active) setHasExportPermission(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [policy, canViewAnalytics, role, isOwner, id]);
 
   // Load detailed data
@@ -498,7 +516,10 @@ export function PolicyAnalyticsPage() {
     ...(analytics?.pollType === "multipleChoice"
       ? [{ id: "correlation", label: "Correlation" }]
       : []),
-    { id: "comments", label: "Comments" },
+    {
+      id: "comments",
+      label: filters.sentiment ? `Comments (${commentTotal})` : "Comments",
+    },
   ];
 
   if (loading) return <LoadingState label="Loading analytics" />;
@@ -997,6 +1018,8 @@ export function PolicyAnalyticsPage() {
                       <p className="text-sm text-slate-500">
                         {selectedKeyword
                           ? `Filtered by keyword "${selectedKeyword}"`
+                          : filters.sentiment
+                            ? `Showing ${filters.sentiment} comments.`
                           : "Raw citizen comments with sentiment and keywords."}
                       </p>
                     </div>

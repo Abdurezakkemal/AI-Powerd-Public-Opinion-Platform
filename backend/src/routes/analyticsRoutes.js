@@ -3,9 +3,6 @@ const router = express.Router();
 const analyticsController = require("../controllers/analyticsController");
 const crossAnalyticsController = require("../controllers/crossAnalyticsController");
 const auth = require("../middleware/authMiddleware");
-const {
-  hasAssociatePermission,
-} = require("../middleware/permissionMiddleware");
 const limiters = require("../config/rateLimits");
 const validateObjectId = require("../middleware/validateObjectId");
 
@@ -58,13 +55,12 @@ router.get(
   analyticsController.getAnalytics,
 );
 
-// Export still requires export_data permission
+// Export is available to admins, owners, and accepted associates.
 router.get(
   "/:policyId/export",
   auth(["planner", "admin"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
-  hasAssociatePermission("export_data"),
   analyticsController.exportAnalytics,
 );
 

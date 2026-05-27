@@ -4,7 +4,6 @@ import { Link } from "react-router-dom";
 import { adminApi } from "../api/admin";
 import { policyApi } from "../api/policies";
 import { useAuth } from "../auth/AuthContext";
-import { AIHealthCard } from "../components/AIHealthCard";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
@@ -14,7 +13,6 @@ import { StatusBadge } from "../components/StatusBadge";
 import {
   formatDate,
   formatNumber,
-  formatRating,
   getErrorMessage,
 } from "../lib/format";
 
@@ -130,9 +128,9 @@ export function DashboardPage() {
         )}
       </div>
 
-      {/* Row 2: Admin specific (Active planners, Pending comments, AI health) */}
+      {/* Row 2: Admin specific */}
       {role === "admin" && stats.planners && (
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
           <Link to="/planners" className="block transition hover:opacity-80">
             <MetricCard
               label="Active planners"
@@ -151,7 +149,6 @@ export function DashboardPage() {
               helper="Awaiting moderation or AI retry"
             />
           </Link>
-          <AIHealthCard />
         </div>
       )}
 

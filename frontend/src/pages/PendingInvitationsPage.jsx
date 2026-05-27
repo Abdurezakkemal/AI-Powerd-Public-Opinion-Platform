@@ -5,7 +5,7 @@ import { PageHeader } from "../components/PageHeader";
 import { LoadingState } from "../components/LoadingState";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { Modal } from "../components/Modal";
-import { formatDate, daysRemaining } from "../lib/format";
+import { formatDate } from "../lib/format";
 
 export function PendingInvitationsPage() {
   const [searchParams] = useSearchParams();
@@ -21,7 +21,6 @@ export function PendingInvitationsPage() {
     setLoading(true);
     try {
       const invitations = await plannerApi.getPendingInvitations();
-      console.log("Invitations:", invitations);
       setInvitations(invitations);
     } catch (err) {
       setError(err.message || "Failed to load invitations");
@@ -114,9 +113,11 @@ export function PendingInvitationsPage() {
               </p>
               <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
                 <span>Invited by: {inv.assignedBy?.email}</span>
-                <span>Permissions: {inv.permissions.join(", ")}</span>
                 <span>Invited: {formatDate(inv.invitedAt)}</span>
               </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Message: {inv.metadata?.notes || "No message"}
+              </p>
               <div className="mt-3 flex gap-3">
                 <button
                   onClick={() => setPreviewInvitation(inv)}
@@ -155,6 +156,12 @@ export function PendingInvitationsPage() {
             <p className="whitespace-pre-wrap text-sm text-slate-700">
               {previewInvitation.policyId.description}
             </p>
+            <div className="rounded-lg border border-teal-100 bg-teal-50 p-3 text-sm text-teal-900">
+              <p className="font-semibold">Invitation Message</p>
+              <p className="mt-1 whitespace-pre-wrap">
+                {previewInvitation.metadata?.notes || "No message provided."}
+              </p>
+            </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <span className="font-semibold">Status:</span>
               <span>{previewInvitation.policyId.status}</span>

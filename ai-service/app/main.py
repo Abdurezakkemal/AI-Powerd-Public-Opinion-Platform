@@ -26,7 +26,6 @@ LANGID_URL = os.environ.get("LANGID_SPACE_URL", "https://abraham-ad77-ethio-lang
 SENTIMENT_URL = os.environ.get("SENTIMENT_SPACE_URL", "https://abraham-ad77-ethio-sentiment.hf.space/sentiment")
 TOPIC_URL = os.environ.get("TOPIC_SPACE_URL", "https://abraham-ad77-ethio-topic-only.hf.space/suggest-topics")
 KEYWORD_URL = os.environ.get("KEYWORD_SPACE_URL", "https://abraham-ad77-ethio-keywords.hf.space/extract")
-
 # ---------- API Key for remote Spaces ----------
 INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
 HEADERS = {"X-Internal-API-Key": INTERNAL_API_KEY} if INTERNAL_API_KEY else {}

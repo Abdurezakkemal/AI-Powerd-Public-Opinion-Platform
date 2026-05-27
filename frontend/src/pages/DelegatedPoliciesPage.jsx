@@ -45,7 +45,7 @@ export function DelegatedPoliciesPage() {
           {policies.map((item) => (
             <Link
               key={item.associateId}
-              to={`/policies/${item.policy._id}`}
+              to={`/policies/${item.policy._id}/delegated`}
               className="block rounded-lg border bg-white p-4 shadow-sm transition hover:shadow-md"
             >
               <div className="flex flex-wrap justify-between gap-2">
@@ -58,7 +58,7 @@ export function DelegatedPoliciesPage() {
                 {item.policy.policyCode}
               </p>
               <p className="mt-2 text-xs text-slate-500">
-                Permissions: {item.permissions.join(", ")}
+                Message: {item.message || "No message"}
               </p>
               <p className="text-xs text-slate-500">
                 Accepted on: {formatDate(item.acceptedAt)}

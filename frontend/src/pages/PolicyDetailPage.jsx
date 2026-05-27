@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
 import { policyApi } from "../api/policies";
 import { adminApi } from "../api/admin";
 import { analyticsApi } from "../api/analytics";
 import { plannerApi } from "../api/plannerApi";
+import { commentApi } from "../api/comments";
 import { PageHeader } from "../components/PageHeader";
 import { LoadingState } from "../components/LoadingState";
 import { ErrorAlert } from "../components/ErrorAlert";
@@ -11,17 +13,14 @@ import { StatusBadge } from "../components/StatusBadge";
 import { Modal } from "../components/Modal";
 import { Tabs, TabPane } from "../components/Tabs";
 import { MetricCard } from "../components/MetricCard";
-import { formatAuditDetails } from "../utils/auditFormatter";
 import {
   Activity,
   AlertTriangle,
   Bell,
   Users,
-  Edit,
   Trash2,
   RefreshCw,
   Eye,
-  History,
   Plus,
   XCircle,
   Save,
@@ -38,6 +37,7 @@ function ActionButton({
   onClick,
   variant = "secondary",
   loading = false,
+  disabled = false,
 }) {
   const classes =
     variant === "primary"
@@ -48,7 +48,7 @@ function ActionButton({
   return (
     <button
       onClick={onClick}
-      disabled={loading}
+      disabled={loading || disabled}
       className={`inline-flex min-h-8 items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold disabled:opacity-50 ${classes}`}
     >
       {loading ? (
@@ -61,22 +61,15 @@ function ActionButton({
   );
 }
 
-const formatPermission = (perm) => {
-  const map = {
-    moderate_comments: "Moderate Comments",
-    reply_official: "Official Replies",
-    export_data: "Export Data",
-  };
-  return map[perm] || perm;
-};
-
 export function PolicyDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, role } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [policy, setPolicy] = useState(null);
+  const [isOwner, setIsOwner] = useState(false);
   const [selectedTab, setSelectedTab] = useState("info");
   const [stats, setStats] = useState(null);
   const [allComments, setAllComments] = useState([]);
@@ -94,16 +87,11 @@ export function PolicyDetailPage() {
   const [plannerTotal, setPlannerTotal] = useState(0);
   const [showAssociateModal, setShowAssociateModal] = useState(false);
   const [selectedAssociate, setSelectedAssociate] = useState(null);
-  const [selectedPermissions, setSelectedPermissions] = useState([]);
-  const [historyEvents, setHistoryEvents] = useState([]);
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [associateMessage, setAssociateMessage] = useState("");
   const [actionLoading, setActionLoading] = useState("");
   const [modalError, setModalError] = useState("");
   const [overrideComment, setOverrideComment] = useState(null);
   const [overrideSentiment, setOverrideSentiment] = useState("");
-  const [overrideKeywords, setOverrideKeywords] = useState("");
-  const [editingAssociate, setEditingAssociate] = useState(null);
-  const [editPermissions, setEditPermissions] = useState([]);
   const [reportsModal, setReportsModal] = useState({
     open: false,
     reports: [],
@@ -154,35 +142,44 @@ export function PolicyDetailPage() {
     setLoading(true);
     setError("");
     try {
-      const [
-        policyData,
-        analytics,
-        all,
-        pending,
-        reported,
-        appealsData,
-        associatesData,
-        history,
-      ] = await Promise.all([
-        policyApi.get(id),
+      // Load basic policy data first
+      const policyData = await policyApi.get(id);
+      setPolicy(policyData);
+      
+      // Check if user is owner or admin
+      const isUserOwner = policyData.createdBy?._id === user?.id || policyData.createdBy === user?.id;
+      const isUserAdmin = role === "admin";
+      setIsOwner(isUserOwner);
+      
+      // Load shared data
+      const [analytics, all, associatesData] = await Promise.all([
         analyticsApi.summary(id),
         analyticsApi.comments(id, { limit: 100 }),
-        adminApi.getAIReviewComments({ policyId: id }),
-        adminApi.getReportedComments({ policyId: id }),
-        adminApi.getPendingAppeals({ policyId: id }),
         plannerApi.listAssociates(id).catch(() => []),
-        policyApi.history(id).catch(() => ({ events: [] })),
       ]);
-      setPolicy(policyData);
+      
       setStats(analytics);
       setAllComments(all.comments || []);
-      setPendingComments(pending.comments || []);
-      setReportedComments(reported.comments || []);
-      setAppeals(
-        Array.isArray(appealsData) ? appealsData : appealsData.appeals || [],
-      );
       setAssociates(associatesData);
-      setHistoryEvents(history.events || []);
+      
+      // Load admin-only data conditionally
+      if (isUserOwner || isUserAdmin) {
+        const [pending, reported, appealsData] = await Promise.all([
+          adminApi.getAIReviewComments({ policyId: id }),
+          adminApi.getReportedComments({ policyId: id }),
+          adminApi.getPendingAppeals({ policyId: id }),
+        ]);
+        setPendingComments(pending.comments || []);
+        setReportedComments(reported.comments || []);
+        setAppeals(
+          Array.isArray(appealsData) ? appealsData : appealsData.appeals || [],
+        );
+      } else {
+        // Clear admin-only data for non-owners
+        setPendingComments([]);
+        setReportedComments([]);
+        setAppeals([]);
+      }
     } catch (err) {
       console.error(err);
       setError(getErrorMessage(err, "Failed to load policy data"));
@@ -192,8 +189,8 @@ export function PolicyDetailPage() {
   };
 
   useEffect(() => {
-    if (id) loadData();
-  }, [id]);
+    if (id && user) loadData();
+  }, [id, user]);
 
   // Redirect draft policies to edit page
   useEffect(() => {
@@ -233,17 +230,20 @@ export function PolicyDetailPage() {
   };
 
   const sendInvitation = async () => {
-    if (!selectedAssociate) return;
+    if (!selectedAssociate || !associateMessage.trim()) return;
     setActionLoading("associateAdd");
     setModalError("");
+    setError("");
+    setNotice("");
     try {
       await plannerApi.addAssociate(id, {
         plannerEmail: selectedAssociate.email,
-        permissions: selectedPermissions,
+        message: associateMessage.trim(),
       });
       setShowAssociateModal(false);
       setSelectedAssociate(null);
-      setSelectedPermissions([]);
+      setAssociateMessage("");
+      setNotice("Invitation sent successfully.");
       await loadData();
     } catch (err) {
       setModalError(getErrorMessage(err, "Failed to send invitation"));
@@ -252,31 +252,6 @@ export function PolicyDetailPage() {
     }
   };
 
-  const handleOverrideSubmit = async () => {
-    if (!overrideComment) return;
-    const sentimentLabel =
-      overrideSentiment === "positive"
-        ? "positive"
-        : overrideSentiment === "negative"
-          ? "negative"
-          : "neutral";
-    await runAction(
-      `override-${overrideComment._id}`,
-      () =>
-        adminApi.updateComment(overrideComment._id, {
-          sentiment: {
-            label: sentimentLabel,
-            confidence: 1,
-            overriddenByModerator: true,
-          },
-          keywords: overrideKeywords.split(",").map((k) => k.trim()),
-        }),
-      "Sentiment and keywords overridden.",
-    );
-    setOverrideComment(null);
-    setOverrideSentiment("");
-    setOverrideKeywords("");
-  };
   const viewReports = async (commentId) => {
     setActionLoading(`reports-${commentId}`);
     try {
@@ -284,20 +259,6 @@ export function PolicyDetailPage() {
       setReportsModal({ open: true, reports: result.reports || [] });
     } catch (err) {
       setError(getErrorMessage(err, "Failed to load reports"));
-    } finally {
-      setActionLoading("");
-    }
-  };
-
-  const viewHistory = async (commentId) => {
-    setActionLoading(`history-${commentId}`);
-    try {
-      const versions = await commentApi.getVersions(commentId);
-      setHistoryEvents(versions || []); // assuming you have historyEvents state for modal
-      setHistoryPolicy({ id: commentId }); // to trigger history modal (you already have historyPolicy)
-      setShowHistoryModal(true);
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to load comment history"));
     } finally {
       setActionLoading("");
     }
@@ -398,7 +359,7 @@ export function PolicyDetailPage() {
     <div>
       <PageHeader
         title={policy.title}
-        description={`Policy Code: ${policy.policyCode} • Created by ${policy.createdBy?.email || "Unknown"}`}
+        description={`Policy Code: ${policy.policyCode} • Created by ${policy.createdBy?.email || "Unknown"}${!isOwner && role !== "admin" ? " • View Only" : ""}`}
         actions={
           <div className="flex gap-2">
             <Link
@@ -407,12 +368,6 @@ export function PolicyDetailPage() {
             >
               ← Back to Policies
             </Link>
-            <ActionButton
-              icon={History}
-              onClick={() => setShowHistoryModal(true)}
-            >
-              History
-            </ActionButton>
           </div>
         }
       />
@@ -720,13 +675,10 @@ export function PolicyDetailPage() {
                         <CheckCircle className="h-3.5 w-3.5" /> Approve
                       </button>
                       <button
-                        onClick={() => {
-                          setOverrideComment(comment);
-                          setOverrideSentiment(sentimentLabel || "neutral");
-                          setOverrideKeywords(
-                            (comment.keywords || []).join(", "),
-                          );
-                        }}
+	                        onClick={() => {
+	                          setOverrideComment(comment);
+	                          setOverrideSentiment(sentimentLabel || "neutral");
+	                        }}
                         disabled={isLoading || isProcessing}
                         className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                       >
@@ -927,6 +879,7 @@ export function PolicyDetailPage() {
                     .map((assoc) => {
                       const isPending = assoc.displayStatus === "pending";
                       const isAccepted = assoc.displayStatus === "accepted";
+                      const invitationMessage = assoc.metadata?.notes;
                       return (
                         <div
                           key={assoc._id}
@@ -942,10 +895,7 @@ export function PolicyDetailPage() {
                               )}
                             </p>
                             <p className="text-xs text-slate-500">
-                              Permissions:{" "}
-                              {assoc.permissions
-                                ?.map(formatPermission)
-                                .join(", ") || "None"}
+                              Message: {invitationMessage || "No message"}
                             </p>
                             {isPending && assoc.daysRemaining !== null && (
                               <p className="text-xs text-amber-600">
@@ -959,17 +909,6 @@ export function PolicyDetailPage() {
                             )}
                           </div>
                           <div className="flex gap-2">
-                            {isAccepted && (
-                              <ActionButton
-                                icon={Edit}
-                                onClick={() => {
-                                  setEditingAssociate(assoc);
-                                  setEditPermissions(assoc.permissions || []);
-                                }}
-                              >
-                                Edit Permissions
-                              </ActionButton>
-                            )}
                             {(isPending || isAccepted) && (
                               <ActionButton
                                 icon={Trash2}
@@ -982,7 +921,6 @@ export function PolicyDetailPage() {
                                     isPending
                                       ? "Invitation cancelled."
                                       : "Associate revoked.",
-                                    { suppressNotice: true },
                                   )
                                 }
                               >
@@ -1032,11 +970,8 @@ export function PolicyDetailPage() {
                                 : "Expired"}
                             </span>
                           </p>
-                          <p className="text-xs text-slate-500">
-                            Permissions:{" "}
-                            {assoc.permissions
-                              ?.map(formatPermission)
-                              .join(", ") || "None"}
+                            <p className="text-xs text-slate-500">
+                              Message: {assoc.metadata?.notes || "No message"}
                           </p>
                           {assoc.revokedAt && (
                             <p className="text-xs text-slate-500">
@@ -1055,33 +990,6 @@ export function PolicyDetailPage() {
           </div>
         </TabPane>
       </Tabs>
-      {/* History Modal */}
-      {showHistoryModal && (
-        <Modal
-          title={`Policy History: ${policy.title}`}
-          onClose={() => setShowHistoryModal(false)}
-        >
-          {historyEvents.length === 0 ? (
-            <p>No history events.</p>
-          ) : (
-            <ol className="space-y-2">
-              {historyEvents.map((ev, i) => (
-                <li key={i} className="border-b pb-2">
-                  <p className="font-semibold">{ev.action}</p>
-                  <p className="text-xs text-slate-500">
-                    {ev.userRole} • {formatDate(ev.timestamp)}
-                  </p>
-                  {ev.details && (
-                    <div className="mt-1 text-xs text-slate-600">
-                      {formatAuditDetails(ev)}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
-        </Modal>
-      )}
       {/* Override Sentiment Modal */}
       {overrideComment && (
         <Modal
@@ -1117,8 +1025,7 @@ export function PolicyDetailPage() {
                 runAction(
                   `override-${overrideComment._id}`,
                   () =>
-                    commentApi.moderate(overrideComment._id, {
-                      action: "approve",
+                    adminApi.updateComment(overrideComment._id, {
                       sentiment: { label: sentimentLabel, confidence: 1 },
                     }),
                   "Sentiment overridden.",
@@ -1140,7 +1047,11 @@ export function PolicyDetailPage() {
           onClose={
             actionLoading === "associateAdd"
               ? undefined
-              : () => setShowAssociateModal(false)
+              : () => {
+                  setShowAssociateModal(false);
+                  setSelectedAssociate(null);
+                  setAssociateMessage("");
+                }
           }
         >
           <div className="space-y-4">
@@ -1197,7 +1108,7 @@ export function PolicyDetailPage() {
                       className={`p-3 flex justify-between items-center hover:bg-slate-50 cursor-pointer ${selectedAssociate?._id === planner._id ? "bg-teal-50 border-teal-200" : ""}`}
                       onClick={() => {
                         setSelectedAssociate(planner);
-                        setSelectedPermissions([]);
+                        setAssociateMessage("");
                       }}
                     >
                       <div>
@@ -1242,84 +1153,25 @@ export function PolicyDetailPage() {
             )}
             {selectedAssociate && (
               <div className="space-y-3 border-t pt-3">
-                <p className="text-sm font-semibold">
-                  Permissions for{" "}
+                <label className="block text-sm font-semibold">
+                  Invitation message for{" "}
                   <span className="text-teal-700">
                     {selectedAssociate.email}
                   </span>
-                </p>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      value="moderate_comments"
-                      checked={selectedPermissions.includes(
-                        "moderate_comments",
-                      )}
-                      onChange={(e) => {
-                        if (e.target.checked)
-                          setSelectedPermissions([
-                            ...selectedPermissions,
-                            e.target.value,
-                          ]);
-                        else
-                          setSelectedPermissions(
-                            selectedPermissions.filter(
-                              (p) => p !== e.target.value,
-                            ),
-                          );
-                      }}
-                    />
-                    Moderate Comments
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      value="reply_official"
-                      checked={selectedPermissions.includes("reply_official")}
-                      onChange={(e) => {
-                        if (e.target.checked)
-                          setSelectedPermissions([
-                            ...selectedPermissions,
-                            e.target.value,
-                          ]);
-                        else
-                          setSelectedPermissions(
-                            selectedPermissions.filter(
-                              (p) => p !== e.target.value,
-                            ),
-                          );
-                      }}
-                    />
-                    Official Replies
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      value="export_data"
-                      checked={selectedPermissions.includes("export_data")}
-                      onChange={(e) => {
-                        if (e.target.checked)
-                          setSelectedPermissions([
-                            ...selectedPermissions,
-                            e.target.value,
-                          ]);
-                        else
-                          setSelectedPermissions(
-                            selectedPermissions.filter(
-                              (p) => p !== e.target.value,
-                            ),
-                          );
-                      }}
-                    />
-                    Export Data
-                  </label>
-                </div>
+                </label>
+                <textarea
+                  value={associateMessage}
+                  onChange={(e) => setAssociateMessage(e.target.value)}
+                  rows={4}
+                  maxLength={1000}
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  placeholder="Describe how this associate should help analyze the policy results."
+                />
                 {modalError && <ErrorAlert message={modalError} />}
                 <ActionButton
                   onClick={sendInvitation}
                   disabled={
-                    selectedPermissions.length === 0 ||
+                    !associateMessage.trim() ||
                     actionLoading === "associateAdd"
                   }
                   loading={actionLoading === "associateAdd"}
@@ -1328,97 +1180,6 @@ export function PolicyDetailPage() {
                 </ActionButton>
               </div>
             )}
-          </div>
-        </Modal>
-      )}
-
-      {/* Edit Associate Permissions Modal */}
-      {editingAssociate && (
-        <Modal
-          title="Edit Associate Permissions"
-          onClose={() => setEditingAssociate(null)}
-        >
-          <div className="space-y-4">
-            <p className="text-sm text-slate-500">
-              Editing permissions for{" "}
-              <strong>{editingAssociate.plannerId?.email}</strong>
-            </p>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  value="moderate_comments"
-                  checked={editPermissions.includes("moderate_comments")}
-                  onChange={(e) => {
-                    if (e.target.checked)
-                      setEditPermissions([
-                        ...editPermissions,
-                        "moderate_comments",
-                      ]);
-                    else
-                      setEditPermissions(
-                        editPermissions.filter(
-                          (p) => p !== "moderate_comments",
-                        ),
-                      );
-                  }}
-                />
-                Moderate Comments
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  value="reply_official"
-                  checked={editPermissions.includes("reply_official")}
-                  onChange={(e) => {
-                    if (e.target.checked)
-                      setEditPermissions([
-                        ...editPermissions,
-                        "reply_official",
-                      ]);
-                    else
-                      setEditPermissions(
-                        editPermissions.filter((p) => p !== "reply_official"),
-                      );
-                  }}
-                />
-                Official Replies
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  value="export_data"
-                  checked={editPermissions.includes("export_data")}
-                  onChange={(e) => {
-                    if (e.target.checked)
-                      setEditPermissions([...editPermissions, "export_data"]);
-                    else
-                      setEditPermissions(
-                        editPermissions.filter((p) => p !== "export_data"),
-                      );
-                  }}
-                />
-                Export Data
-              </label>
-            </div>
-            <ActionButton
-              icon={Save}
-              onClick={async () => {
-                await runAction(
-                  `edit-perms-${editingAssociate._id}`,
-                  () =>
-                    plannerApi.updateAssociatePermissions(
-                      id,
-                      editingAssociate._id,
-                      editPermissions,
-                    ),
-                  "Permissions updated.",
-                );
-                setEditingAssociate(null);
-              }}
-            >
-              Save Changes
-            </ActionButton>
           </div>
         </Modal>
       )}

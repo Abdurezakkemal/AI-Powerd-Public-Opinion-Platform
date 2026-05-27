@@ -475,7 +475,7 @@ exports.getFlaggedComments = async (req, res) => {
         policyId,
         plannerId: user.id,
         invitationStatus: "accepted",
-        permissions: "moderate_comments",
+        permissions: { $in: ["moderate_comments"] },
       });
 
       if (!isAdmin && !isOwner && !isAssociate) {
@@ -495,7 +495,7 @@ exports.getFlaggedComments = async (req, res) => {
       const associatedPolicies = await PolicyAssociate.find({
         plannerId: user.id,
         invitationStatus: "accepted",
-        permissions: "moderate_comments",
+        permissions: { $in: ["moderate_comments"] },
       }).distinct("policyId");
       const allowedPolicyIds = [...ownedPolicies, ...associatedPolicies];
       if (allowedPolicyIds.length === 0) {
@@ -1214,7 +1214,7 @@ exports.getAppeals = async (req, res) => {
         policyId,
         plannerId: user.id,
         invitationStatus: "accepted",
-        permissions: "moderate_comments",
+        permissions: { $in: ["moderate_comments"] },
       });
 
       if (!isAdmin && !isOwner && !isAssociate) {
@@ -1234,7 +1234,7 @@ exports.getAppeals = async (req, res) => {
       const associatedPolicies = await PolicyAssociate.find({
         plannerId: user.id,
         invitationStatus: "accepted",
-        permissions: "moderate_comments",
+        permissions: { $in: ["moderate_comments"] },
       }).distinct("policyId");
       const allowedPolicyIds = [...ownedPolicies, ...associatedPolicies];
       if (allowedPolicyIds.length === 0) {
@@ -1354,7 +1354,7 @@ exports.resolveAppeal = async (req, res) => {
           policyId: policy._id,
           plannerId: user.id,
           invitationStatus: "accepted",
-          permissions: "moderate_comments",
+          permissions: { $in: ["moderate_comments"] },
         });
         if (associate) isAuthorized = true;
       }

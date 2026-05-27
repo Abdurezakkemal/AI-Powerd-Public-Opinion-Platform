@@ -367,10 +367,7 @@ export function PoliciesPage() {
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Dates</th>
                 {tab === "delegated" && (
-                  <>
-                    <th className="px-4 py-3">Permissions</th>
-                    <th className="px-4 py-3">Invited By</th>
-                  </>
+                  <th className="px-4 py-3">Invited By</th>
                 )}
                 {role === "admin" && tab === "other" && (
                   <th className="px-4 py-3">Creator</th>
@@ -404,13 +401,9 @@ export function PoliciesPage() {
                         </Link>
                       )}
                       {tab === "delegated" && (
-                        <Link
-                          to={`/policies/${policy.id}/delegated`}
-                          state={{ permissions: policy.delegatedPermissions }}
-                          className="font-bold hover:text-teal-700"
-                        >
+                        <span className="font-bold text-slate-950">
                           {policy.title}
-                        </Link>
+                        </span>
                       )}
                       {tab === "other" && (
                         <Link
@@ -438,12 +431,7 @@ export function PoliciesPage() {
                       </div>
                     </td>
                     {tab === "delegated" && (
-                      <>
-                        <td className="px-4 py-4">
-                          {policy.delegatedPermissions?.join(", ") || "—"}
-                        </td>
-                        <td className="px-4 py-4">{policy.invitedBy}</td>
-                      </>
+                      <td className="px-4 py-4">{policy.invitedBy}</td>
                     )}
                     {role === "admin" && tab === "other" && (
                       <td className="px-4 py-4">

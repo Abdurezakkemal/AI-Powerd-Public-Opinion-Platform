@@ -1,10 +1,8 @@
-import { Lock, Info } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { adminApi } from "../api/admin";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
-import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { formatDate, getErrorMessage } from "../lib/format";
 
@@ -19,9 +17,6 @@ export function PlannersListPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [activeFilter, setActiveFilter] = useState("");
   const [searchEmail, setSearchEmail] = useState("");
-  const [resetModalOpen, setResetModalOpen] = useState(false);
-  const [selectedPlanner, setSelectedPlanner] = useState(null);
-  const [modalMessage, setModalMessage] = useState(null);
 
   const loadPlanners = async () => {
     setLoading(true);
@@ -70,51 +65,13 @@ export function PlannersListPage() {
     }
   };
 
-  const openResetModal = (planner) => {
-    setSelectedPlanner(planner);
-    setModalMessage(null);
-    setResetModalOpen(true);
-  };
-
-  const handlePasswordReset = async () => {
-    if (!selectedPlanner) return;
-    setError("");
-    setModalMessage(null);
-    setActionLoading((prev) => ({
-      ...prev,
-      [`reset-${selectedPlanner._id}`]: true,
-    }));
-    try {
-      await adminApi.initiatePasswordReset(selectedPlanner._id);
-      setModalMessage({
-        type: "success",
-        text: "Reset email sent successfully!",
-      });
-      setTimeout(() => {
-        setResetModalOpen(false);
-        setSelectedPlanner(null);
-        setModalMessage(null);
-      }, 2000);
-    } catch (err) {
-      setModalMessage({
-        type: "error",
-        text: getErrorMessage(err, "Failed to send reset email"),
-      });
-    } finally {
-      setActionLoading((prev) => ({
-        ...prev,
-        [`reset-${selectedPlanner._id}`]: false,
-      }));
-    }
-  };
-
   if (loading) return <LoadingState label="Loading planners" />;
 
   return (
     <div>
       <PageHeader
         title="Planner accounts"
-        description="View, filter, and manage planner accounts. Activate or deactivate users and send password reset emails."
+        description="View, filter, and manage planner accounts. Activate or deactivate users."
       />
       <div className="space-y-5">
         <ErrorAlert message={error} />
@@ -221,15 +178,6 @@ export function PlannersListPage() {
                               ? "Deactivate"
                               : "Activate"}
                         </button>
-                        <button
-                          onClick={() => openResetModal(planner)}
-                          disabled={actionLoading[`reset-${planner._id}`]}
-                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                        >
-                          {actionLoading[`reset-${planner._id}`]
-                            ? "Sending..."
-                            : "Reset password"}
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -262,56 +210,6 @@ export function PlannersListPage() {
           </div>
         )}
       </div>
-      {resetModalOpen && selectedPlanner && (
-        <Modal title="Reset Password" onClose={() => setResetModalOpen(false)}>
-          <div className="space-y-4">
-            {modalMessage && (
-              <div
-                className={`rounded-lg p-3 text-sm font-semibold ${
-                  modalMessage.type === "success"
-                    ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                    : "bg-rose-50 border border-rose-200 text-rose-700"
-                }`}
-              >
-                {modalMessage.text}
-              </div>
-            )}
-            {!modalMessage && (
-              <>
-                <p className="text-sm text-slate-600">
-                  Send a password reset email to{" "}
-                  <strong>{selectedPlanner.email}</strong>?
-                </p>
-                <p className="text-sm text-slate-500">
-                  They will receive an email with a link to create a new
-                  password. The link expires in 1 hour.
-                </p>
-              </>
-            )}
-            <div className="flex gap-3 justify-end pt-4 border-t border-slate-200">
-              <button
-                onClick={() => setResetModalOpen(false)}
-                type="button"
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              {!modalMessage && (
-                <button
-                  onClick={handlePasswordReset}
-                  disabled={actionLoading[`reset-${selectedPlanner._id}`]}
-                  type="button"
-                  className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-50"
-                >
-                  {actionLoading[`reset-${selectedPlanner._id}`]
-                    ? "Sending..."
-                    : "Send reset email"}
-                </button>
-              )}
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

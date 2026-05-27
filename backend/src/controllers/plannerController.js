@@ -11,6 +11,14 @@ const {
 } = require("../utils/responseHelper");
 const { sendEmail } = require("../utils/email");
 
+const escapeHtml = (value = "") =>
+  String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
 // Helper: convert permission keys to user‑friendly labels
 const formatPermissions = (perms) => {
   const map = {
@@ -362,13 +370,15 @@ exports.searchPlannersByLanguage = async (req, res) => {
 exports.addAssociate = async (req, res) => {
   try {
     const { policyId } = req.params;
-    const { plannerEmail, permissions } = req.body;
+    const { plannerEmail, message } = req.body;
+    const invitationMessage = (message || "").trim();
+    const escapedInvitationMessage = escapeHtml(invitationMessage);
 
-    if (!plannerEmail || !permissions || !permissions.length) {
+    if (!plannerEmail || !invitationMessage) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "plannerEmail and permissions array required",
+        "plannerEmail and invitation message required",
         null,
         400,
       );
@@ -442,33 +452,39 @@ exports.addAssociate = async (req, res) => {
     const associate = new PolicyAssociate({
       policyId,
       plannerId: associateUser._id,
-      permissions,
+      permissions: [],
       assignedBy: req.user.id,
+      metadata: {
+        notes: invitationMessage,
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      },
     });
     await associate.save();
 
-    // In‑app notification with formatted permissions
+    // In-app notification with the owner's invitation message.
     await createNotification({
       userId: associateUser._id,
       type: "ASSOCIATE_INVITED",
       title: "Policy Associate Invitation",
-      message: `You have been invited to become an associate on policy "${policy.title}" with permissions: ${formatPermissions(permissions)}. It expires on ${associate.expiresAt.toLocaleDateString()}.`,
-      data: { policyId, associateId: associate._id, permissions },
+      message: `You have been invited to help analyze policy "${policy.title}". It expires on ${associate.expiresAt.toLocaleDateString()}.`,
+      data: { policyId, associateId: associate._id, message: invitationMessage },
       severity: "info",
       source: "system",
     });
 
-    // Email with formatted permissions
+    // Email with the invitation message.
     const acceptUrl = `${process.env.FRONTEND_URL}/associates/invitation/${associate._id}?action=accept`;
     const rejectUrl = `${process.env.FRONTEND_URL}/associates/invitation/${associate._id}?action=reject`;
     await sendEmail({
       to: associateUser.email,
       subject: `Invitation to become an associate for policy: ${policy.title}`,
-      html: `<p>You have been invited by ${req.user.email} to help manage policy "${policy.title}".</p>
-             <p>Permissions: ${formatPermissions(permissions)}.</p>
+      html: `<p>You have been invited by ${req.user.email} to help analyze policy "${policy.title}".</p>
+             <p><strong>Message from ${req.user.email}:</strong></p>
+             <p>${escapedInvitationMessage}</p>
              <p>This invitation expires on ${associate.expiresAt.toLocaleDateString()}.</p>
              <p><a href="${acceptUrl}">Accept Invitation</a> | <a href="${rejectUrl}">Reject Invitation</a></p>
-             <p>If you accept, you will be able to act according to the permissions above. If you reject, no further action is needed.</p>`,
+             <p>If you accept, you will be able to view the policy and analyze its analytics information. If you reject, no further action is needed.</p>`,
     });
 
     await createAuditLog({
@@ -480,7 +496,7 @@ exports.addAssociate = async (req, res) => {
       details: {
         policyId,
         plannerId: associateUser._id,
-        permissions,
+        message: invitationMessage,
         expiresAt: associate.expiresAt,
       },
       req,
@@ -488,7 +504,11 @@ exports.addAssociate = async (req, res) => {
 
     return sendSuccess(
       res,
-      { associateId: associate._id, expiresAt: associate.expiresAt },
+      {
+        associateId: associate._id,
+        expiresAt: associate.expiresAt,
+        message: invitationMessage,
+      },
       "Invitation sent. The associate must accept before it expires.",
     );
   } catch (err) {
@@ -948,6 +968,7 @@ exports.getMyAssociatePolicies = async (req, res) => {
       associateId: assoc._id,
       policy: assoc.policyId,
       permissions: assoc.permissions,
+      message: assoc.metadata?.notes || "",
       assignedBy: assoc.assignedBy,
       acceptedAt: assoc.acceptedAt,
     }));

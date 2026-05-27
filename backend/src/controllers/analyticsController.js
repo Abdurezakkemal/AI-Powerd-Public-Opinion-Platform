@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const Vote = require("../models/Vote");
 const Comment = require("../models/Comment");
 const Policy = require("../models/Policy");
+const PolicyAssociate = require("../models/PolicyAssociate");
 const logger = require("../utils/logger");
 const { getOrSet } = require("../services/cacheService");
 const {
@@ -954,7 +955,7 @@ exports.exportAnalytics = async (req, res) => {
       );
     }
 
-    // Authorization: admin, owner, or associate with export_data permission
+    // Authorization: admin, owner, or accepted associate.
     const isAdmin = req.user.role === "admin";
     const isOwner = policy.createdBy.toString() === req.user.id.toString();
     let canExport = isAdmin || isOwner;
@@ -965,7 +966,6 @@ exports.exportAnalytics = async (req, res) => {
         plannerId: req.user.id,
         invitationStatus: "accepted",
         revokedAt: null,
-        permissions: "export_data",
       });
       canExport = !!associate;
     }

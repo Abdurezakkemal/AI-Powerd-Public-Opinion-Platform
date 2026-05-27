@@ -17,20 +17,7 @@ const policyAssociateSchema = new mongoose.Schema(
     permissions: {
       type: [String],
       enum: ["moderate_comments", "reply_official", "export_data"],
-      validate: {
-        validator: function (v) {
-          // For pending or accepted invitations, at least one permission is required
-          if (
-            this.invitationStatus === "pending" ||
-            this.invitationStatus === "accepted"
-          ) {
-            return v && v.length > 0;
-          }
-          // For other statuses (rejected, expired, revoked), permissions can be empty
-          return true;
-        },
-        message: "At least one permission is required for active invitations",
-      },
+      default: [],
     },
     assignedBy: {
       type: mongoose.Schema.Types.ObjectId,
@@ -157,10 +144,10 @@ policyAssociateSchema.virtual("daysRemaining").get(function () {
 
 // Virtual: Get invitation status for display
 policyAssociateSchema.virtual("displayStatus").get(function () {
-  if (this.acceptedAt) return "accepted";
-  if (this.rejectedAt) return "rejected";
   if (this.revokedAt) return "revoked";
+  if (this.rejectedAt) return "rejected";
   if (this.expiresAt && this.expiresAt < new Date()) return "expired";
+  if (this.acceptedAt) return "accepted";
   return "pending";
 });
 

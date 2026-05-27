@@ -91,22 +91,6 @@ export function PlannerDetailPage() {
     }
   };
 
-  const resetPassword = async () => {
-    if (!planner) return;
-
-    setError("");
-    setActionLoading("reset");
-
-    try {
-      await adminApi.initiatePasswordReset(planner._id);
-
-      alert(`Password reset email sent to ${planner.email}.`);
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to send reset email"));
-    } finally {
-      setActionLoading("");
-    }
-  };
   const savePlannerEdit = async () => {
     if (!editingPlanner) return;
 
@@ -232,12 +216,6 @@ export function PlannerDetailPage() {
                 {planner.languagesSpoken?.join(", ") || "None"}
               </p>
               <p>
-                <span className="font-semibold">Training completed:</span>{" "}
-                {planner.trainingCompletedAt
-                  ? formatDate(planner.trainingCompletedAt)
-                  : "No"}
-              </p>
-              <p>
                 <span className="font-semibold">Joined:</span>{" "}
                 {formatDate(planner.createdAt)}
               </p>
@@ -258,13 +236,6 @@ export function PlannerDetailPage() {
                 : planner.active
                   ? "Deactivate Account"
                   : "Activate Account"}
-            </button>
-            <button
-              onClick={resetPassword}
-              disabled={actionLoading === "reset"}
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-            >
-              {actionLoading === "reset" ? "Sending..." : "Reset Password"}
             </button>
           </div>
         </div>
@@ -330,12 +301,6 @@ export function PlannerDetailPage() {
                             Analytics
                           </Link>
                         )}
-                        <Link
-                          to={`/policies/${policy.id || policy._id}/history`}
-                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
-                        >
-                          History
-                        </Link>
                       </div>
                     </td>
                   </tr>
@@ -368,7 +333,6 @@ export function PlannerDetailPage() {
                   <th className="px-4 py-3 font-bold">Policy Title</th>
                   <th className="px-4 py-3 font-bold">Policy Code</th>
                   <th className="px-4 py-3 font-bold">Status</th>
-                  <th className="px-4 py-3 font-bold">Permissions</th>
                   <th className="px-4 py-3 font-bold">Invited By</th>
                   <th className="px-4 py-3 font-bold">Accepted On</th>
                 </tr>
@@ -389,9 +353,6 @@ export function PlannerDetailPage() {
                     </td>
                     <td className="px-4 py-4">
                       <StatusBadge status={item.policy.status} />
-                    </td>
-                    <td className="px-4 py-4 text-slate-600">
-                      {item.permissions.join(", ")}
                     </td>
                     <td className="px-4 py-4 text-slate-600">
                       {item.invitedBy?.email || "Unknown"}
