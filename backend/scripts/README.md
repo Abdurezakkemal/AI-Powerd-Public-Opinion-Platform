@@ -16,6 +16,7 @@ This folder contains scripts to populate the database with test data, create/res
 | `seedCitizens.js`  | Creates 15 citizens (app users) and logs them in (if backend running).                                                                                                                                                           | 15 citizen accounts + `citizen_tokens.json`.                                                        |
 | `seedPlanner.js`   | Creates 5 planners and logs them in.                                                                                                                                                                                             | 5 planner accounts + `planner_tokens.json`.                                                         |
 | `seedAnalytics.js` | **Full database seeder** – creates 2 planners, 22 citizens (2 per Ethiopian region), 6 policies (including a geographic policy covering all regions), and app votes for all citizens on active policies. Also logs in all users. | Full test dataset + `citizen_tokens.json` and `planner_tokens.json`. Prints policy IDs for testing. |
+| `seedMassiveDataset.js` | **Massive test dataset** – creates 8 planners, 55 citizens, 300 polls (100 all-region + 200 regional), 20 comments per poll, votes across poll statuses, and supporting notifications/subscriptions. | Huge dataset + `massive_seed_tokens.json`. |
 | `cleanup.js`       | **Selectively delete data** – citizens, planners, admins, app votes, SMS votes, policies, or all. Supports dry run.                                                                                                              | Deletes specified records.                                                                          |
 
 ---
@@ -137,6 +138,31 @@ Tokens saved to citizen_tokens.json and planner_tokens.json
 
 - Use the printed geographic policy ID to test `/analytics/:policyId/geographic`.
 - Use any citizen or planner token from the JSON files to authenticate API calls in Postman.
+
+### 5. `seedMassiveDataset.js` – Large-volume dataset
+
+**What it does**
+
+- Creates 8 planners and 55 citizens by default.
+- Seeds 100 all-region polls and 200 regional polls.
+- Cycles through every poll type and poll status.
+- Creates 20 comments for every poll, with a mix of clean, low-confidence, reported, and appeal cases.
+- Seeds votes, notifications, SMS subscriptions, audit logs, planner requests, and policy associate records.
+
+**How to run**
+
+```
+cd backend
+npm run seed:massive
+```
+
+**Optional overrides**
+
+- `SEED_ALL_REGION_POLLS=100`
+- `SEED_REGION_POLLS=200`
+- `SEED_COMMENTS_PER_POLL=20`
+- `SEED_PLANNER_COUNT=8`
+- `SEED_CITIZENS_PER_REGION=5`
 
 ---
 
