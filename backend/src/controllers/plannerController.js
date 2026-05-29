@@ -194,14 +194,22 @@ exports.requestPlanner = async (req, res) => {
         409,
       );
     }
-    const uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
-      resource_type: getProofResourceType(req.file.mimetype),
-      public_id: `planner-proof-${Date.now()}`,
-      context: {
-        applicant_email: normalizedEmail || userId || "citizen",
-        original_filename: req.file.originalname,
-      },
-    });
+    let uploadResult = { secure_url: "" };
+    try {
+      uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
+        resource_type: getProofResourceType(req.file.mimetype),
+        public_id: `planner-proof-${Date.now()}`,
+        context: {
+          applicant_email: normalizedEmail || userId || "citizen",
+          original_filename: req.file.originalname,
+        },
+      });
+    } catch (e) {
+      console.error("Cloudinary upload failed (falling back):", e);
+      // Continue without failing the request; store empty proof URL so admin
+      // can still review the submitted form data.
+      uploadResult = { secure_url: "" };
+    }
 
     const request = new PlannerRequest({
       userId,
@@ -226,6 +234,28 @@ exports.requestPlanner = async (req, res) => {
       proofFile: uploadResult.secure_url,
     });
     await request.save();
+    // Notify admins about the new planner request
+    try {
+      const admins = await User.find({ role: "admin", active: true }).select("_id");
+      if (admins && admins.length) {
+        const notifyPromises = admins.map((a) =>
+          createNotification({
+            userId: a._id,
+            type: "PLANNER_REQUEST_CREATED",
+            title: "New Planner Request",
+            message: `${request.fullName || request.email} submitted a planner request.`,
+            data: { requestId: request._id },
+            severity: "info",
+            source: "system",
+          }),
+        );
+        // Don't block the request response on notification delivery
+        Promise.allSettled(notifyPromises).catch(() => {});
+      }
+    } catch (e) {
+      // Log but do not fail the request
+      console.error("Failed to notify admins of planner request:", e);
+    }
     if (userId) {
       await createAuditLog({
         userId,

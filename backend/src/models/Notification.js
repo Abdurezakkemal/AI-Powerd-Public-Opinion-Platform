@@ -46,6 +46,8 @@ const notificationSchema = new mongoose.Schema(
         "RATING_DROP",
         "EMERGING_TOPIC",
         "PLANNER_APPROVED",
+        "PLANNER_REQUEST_CREATED",
+        "PLANNER_APPEAL_APPROVED",
       ],
       required: true,
     },

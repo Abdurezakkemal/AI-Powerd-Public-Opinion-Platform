@@ -21,6 +21,7 @@ import { CrossAnalyticsPage } from "./pages/CrossAnalyticsPage";
 import { MessagesPage } from "./pages/MessagesPage";
 import { MessageDetailPage } from "./pages/MessageDetailPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
+import NotificationsDevTest from "./pages/NotificationsDevTest";
 import { SettingsPage } from "./pages/SettingsPage";
 import { PlannersListPage } from "./pages/PlannersListPage";
 import { PlannerDetailPage } from "./pages/PlannerDetailPage";
@@ -129,6 +130,7 @@ export default function App() {
           <Route path="/messages" element={<MessagesPage />} />
           <Route path="/messages/:id" element={<MessageDetailPage />} />
           <Route path="/notifications" element={<NotificationsPage />} />
+          <Route path="/dev/notifications-test" element={<NotificationsDevTest />} />
 
           {/* Comment moderation routes */}
           <Route element={<ProtectedRoute roles={["admin", "comment_moderator"]} />}>
