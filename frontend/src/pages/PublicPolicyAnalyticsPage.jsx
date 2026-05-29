@@ -2,22 +2,46 @@ import {
   ArrowLeft,
   BarChart3,
   FileText,
+  Moon,
   MessageSquareText,
   Tags,
+  Sun,
   Vote,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { publicApi } from "../api/public";
+import { translateText } from "../api/translation";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
 import { formatNumber, getErrorMessage } from "../lib/format";
+import LanguageSelector from "../components/LanguageSelector";
 
-const sentimentStyles = {
-  positive: "bg-emerald-500 text-emerald-700",
-  neutral: "bg-amber-400 text-amber-700",
-  negative: "bg-rose-500 text-rose-700",
-};
+const TRANSLATION_LANGUAGES = [
+  { code: "en", label: "English" },
+  { code: "am", label: "Amharic" },
+  { code: "om", label: "Oromo" },
+  { code: "ti", label: "Tigrinya" },
+];
+
+const THEME_KEY = "civic_ui_theme";
+
+function getInitialTheme() {
+  if (typeof window === "undefined") return "dark";
+
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_KEY);
+    if (storedTheme === "light" || storedTheme === "dark") {
+      return storedTheme;
+    }
+
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  } catch {
+    return "dark";
+  }
+}
 
 function percent(value, total) {
   if (!total) return 0;
@@ -122,6 +146,60 @@ export function PublicPolicyAnalyticsPage() {
   const [comments, setComments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [theme, setTheme] = useState(getInitialTheme);
+  const [policyLanguage, setPolicyLanguage] = useState("en");
+  const [translatedPolicy, setTranslatedPolicy] = useState(null);
+  const [translatingPolicy, setTranslatingPolicy] = useState(false);
+  const [translatedComments, setTranslatedComments] = useState({});
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [theme]);
+
+  const isDark = theme === "dark";
+
+  const getCommentText = (comment) =>
+    comment?.text || comment?.comment?.text || comment?.content || comment?.body || comment?.message || "";
+
+  const translatePolicyHeader = async () => {
+    if (!analytics) return;
+    if (translatedPolicy) {
+      setTranslatedPolicy(null);
+      return;
+    }
+
+    setTranslatingPolicy(true);
+    setError("");
+    try {
+      const baseTitle = analytics.title || "Public analytics";
+      const baseDescription = analytics.description || "Public policy analytics";
+      const [title, description] = await Promise.all([
+        translateText({ text: baseTitle, targetLang: policyLanguage }),
+        translateText({ text: baseDescription, targetLang: policyLanguage }),
+      ]);
+      setTranslatedPolicy({ title, description });
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to translate public policy text"));
+    } finally {
+      setTranslatingPolicy(false);
+    }
+  };
+
+  const setTranslatedComment = (commentId, translatedText) => {
+    setTranslatedComments((current) => ({ ...current, [commentId]: translatedText }));
+  };
+
+  const revertTranslatedComment = (commentId) => {
+    setTranslatedComments((current) => {
+      const next = { ...current };
+      delete next[commentId];
+      return next;
+    });
+  };
 
   useEffect(() => {
     let active = true;
@@ -154,21 +232,19 @@ export function PublicPolicyAnalyticsPage() {
     };
   }, [id]);
 
-  const sentimentTotal = useMemo(() => {
-    const counts = analytics?.sentimentCounts || {};
-    return (counts.positive || 0) + (counts.neutral || 0) + (counts.negative || 0);
-  }, [analytics]);
+  const displayTitle = translatedPolicy?.title || analytics?.title || "Public analytics";
+  const displayDescription = translatedPolicy?.description || analytics?.description || "Public policy analytics";
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-50 px-4 py-8">
+      <div className="public-policy-analytics min-h-screen bg-slate-50 px-4 py-8" data-theme={theme}>
         <LoadingState label="Loading public analytics" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[linear-gradient(180deg,_#fffdf8_0%,_#f8f4eb_100%)] px-4 py-6 text-slate-950 sm:px-6 lg:px-8">
+    <div className="public-policy-analytics min-h-screen bg-[linear-gradient(180deg,_#fffdf8_0%,_#f8f4eb_100%)] px-4 py-6 text-slate-950 transition-colors duration-200 sm:px-6 lg:px-8" data-theme={theme}>
       <main className="mx-auto max-w-6xl">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <Link
@@ -178,6 +254,21 @@ export function PublicPolicyAnalyticsPage() {
             <ArrowLeft className="h-4 w-4" />
             Public page
           </Link>
+
+          <button
+            type="button"
+            onClick={() => setTheme(isDark ? "light" : "dark")}
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-semibold transition ${
+              isDark
+                ? "border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+            }`}
+            aria-pressed={isDark}
+            title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+          >
+            {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+            {isDark ? "Light mode" : "Dark mode"}
+          </button>
         </div>
 
         <ErrorAlert message={error} />
@@ -189,11 +280,41 @@ export function PublicPolicyAnalyticsPage() {
                 Vote analytics
               </p>
               <h1 className="mt-2 text-3xl font-black tracking-tight">
-                {analytics.title}
+                {displayTitle}
               </h1>
+              <p className="mt-2 text-sm text-slate-600">{displayDescription}</p>
               <p className="mt-2 text-sm font-semibold uppercase tracking-wide text-slate-500">
                 {analytics.pollType}
               </p>
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={translatePolicyHeader}
+                  disabled={translatingPolicy}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  {translatingPolicy ? "Translating..." : "Translate"}
+                </button>
+                <select
+                  value={policyLanguage}
+                  onChange={(event) => setPolicyLanguage(event.target.value)}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none hover:bg-slate-50"
+                >
+                  {TRANSLATION_LANGUAGES.map((option) => (
+                    <option key={option.code} value={option.code}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setTranslatedPolicy(null)}
+                  disabled={!translatedPolicy}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                >
+                  Original
+                </button>
+              </div>
             </section>
 
             <section className="mt-5 grid gap-4 md:grid-cols-3">
@@ -223,34 +344,6 @@ export function PublicPolicyAnalyticsPage() {
               </div>
 
               <div className="space-y-5">
-                <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-                  <h2 className="text-lg font-black text-slate-950">Sentiment</h2>
-                  <div className="mt-4 space-y-3">
-                    {["positive", "neutral", "negative"].map((sentiment) => {
-                      const count = analytics.sentimentCounts?.[sentiment] || 0;
-                      const width = percent(count, sentimentTotal);
-                      return (
-                        <div key={sentiment}>
-                          <div className="flex justify-between text-sm">
-                            <span className={`font-bold capitalize ${sentimentStyles[sentiment].split(" ")[1]}`}>
-                              {sentiment}
-                            </span>
-                            <span className="font-semibold text-slate-500">
-                              {formatNumber(count)} ({width}%)
-                            </span>
-                          </div>
-                          <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-                            <div
-                              className={`h-full rounded-full ${sentimentStyles[sentiment].split(" ")[0]}`}
-                              style={{ width: `${width}%` }}
-                            />
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-
                 <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
                   <div className="flex items-center gap-2">
                     <Tags className="h-4 w-4 text-teal-700" />
@@ -283,12 +376,26 @@ export function PublicPolicyAnalyticsPage() {
                 {comments.length ? (
                   comments.slice(0, 10).map((comment) => (
                     <article key={comment.id} className="rounded-xl bg-slate-50 p-4">
-                      <p className="text-sm leading-6 text-slate-700">{comment.text}</p>
-                      {comment.sentiment ? (
-                        <p className="mt-2 text-xs font-bold uppercase tracking-wide text-slate-500">
-                          {comment.sentiment}
-                        </p>
-                      ) : null}
+                      <p className="text-sm leading-6 text-slate-700">
+                        {translatedComments[comment.id] || getCommentText(comment)}
+                      </p>
+                      <div className="mt-3 flex flex-wrap items-center gap-3">
+                        <LanguageSelector
+                          text={getCommentText(comment)}
+                          onTranslated={(translatedText) =>
+                            setTranslatedComment(comment.id, translatedText)
+                          }
+                        />
+                        {translatedComments[comment.id] && (
+                          <button
+                            type="button"
+                            onClick={() => revertTranslatedComment(comment.id)}
+                            className="rounded-lg border border-slate-200 px-3 py-1 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                          >
+                            Show original
+                          </button>
+                        )}
+                      </div>
                     </article>
                   ))
                 ) : (

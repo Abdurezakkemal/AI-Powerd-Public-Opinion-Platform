@@ -58,7 +58,7 @@ const limiters = {
 
   plannerRequest: createRateLimiter({
     windowMs: 24 * 60 * 60 * 1000,
-    max: 1,
+    max: intEnv("RATE_LIMIT_PLANNER_REQUEST_MAX", 100),
     keyPrefix: "rl:planner:request",
     keyGenerator: (req) => req.user?.id || req.ip,
   }),

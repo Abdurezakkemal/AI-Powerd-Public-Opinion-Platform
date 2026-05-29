@@ -16,7 +16,6 @@ export function PlannerRequestsPage() {
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
   const [rejecting, setRejecting] = useState(null);
   const [resolvingAppeal, setResolvingAppeal] = useState(null);
   const [appealDecision, setAppealDecision] = useState("");
@@ -48,13 +47,11 @@ export function PlannerRequestsPage() {
   async function approve(request) {
     setActionLoading(request._id);
     setError("");
-    setNotice("");
     try {
       await plannerApi.approveRequest(request._id);
       setRequests((prev) => prev.filter((item) => item._id !== request._id));
-      setNotice("Planner request approved.");
       showToast("success", "Planner request approved.");
-      void loadRequests({ silent: true });
+      await loadRequests({ silent: true });
     } catch (err) {
       setError(getErrorMessage(err, "Failed to approve request"));
     } finally {
@@ -70,15 +67,13 @@ export function PlannerRequestsPage() {
     }
     setActionLoading(rejecting._id);
     setError("");
-    setNotice("");
     try {
       await plannerApi.rejectRequest(rejecting._id, reason.trim());
       setRequests((prev) => prev.filter((item) => item._id !== rejecting._id));
-      setNotice("Planner request rejected.");
       showToast("success", "Planner request rejected.");
       setRejecting(null);
       setReason("");
-      void loadRequests({ silent: true });
+      await loadRequests({ silent: true });
     } catch (err) {
       setError(getErrorMessage(err, "Failed to reject request"));
     } finally {
@@ -90,7 +85,6 @@ export function PlannerRequestsPage() {
     if (!resolvingAppeal || !appealDecision) return;
     setActionLoading(resolvingAppeal._id);
     setError("");
-    setNotice("");
     try {
       await plannerApi.resolveDeactivationAppeal(resolvingAppeal._id, {
         decision: appealDecision,
@@ -101,12 +95,11 @@ export function PlannerRequestsPage() {
         appealDecision === "approve"
           ? "Planner appeal approved and account reactivated."
           : "Planner appeal rejected.";
-      setNotice(appealMsg);
       showToast("success", appealMsg);
       setResolvingAppeal(null);
       setAppealDecision("");
       setReason("");
-      void loadRequests({ silent: true });
+      await loadRequests({ silent: true });
     } catch (err) {
       setError(getErrorMessage(err, "Failed to resolve appeal"));
     } finally {
@@ -128,7 +121,6 @@ export function PlannerRequestsPage() {
     <div>
       <PageHeader title="Planner Requests" description="Review citizen requests for planner access and planner deactivation appeals." />
       <ErrorAlert message={error} />
-      {notice ? <div className="mb-4 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">{notice}</div> : null}
 
       <div className="mb-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
@@ -299,7 +291,7 @@ export function PlannerRequestsPage() {
             />
             <div className="flex justify-end gap-2">
               <button type="button" className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50" onClick={() => setRejecting(null)}>Cancel</button>
-              <button type="button" className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-bold text-white hover:bg-rose-800" onClick={reject}>Reject</button>
+              <button type="button" disabled={Boolean(actionLoading)} className="rounded-lg bg-rose-700 px-4 py-2 text-sm font-bold text-white hover:bg-rose-800 disabled:opacity-50" onClick={reject}>Reject</button>
             </div>
           </div>
         </Modal>
@@ -324,11 +316,12 @@ export function PlannerRequestsPage() {
               <button type="button" className="rounded-lg border border-slate-200 px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50" onClick={() => setResolvingAppeal(null)}>Cancel</button>
               <button
                 type="button"
+                disabled={Boolean(actionLoading)}
                 className={`rounded-lg px-4 py-2 text-sm font-bold text-white ${
                   appealDecision === "approve"
                     ? "bg-emerald-700 hover:bg-emerald-800"
                     : "bg-rose-700 hover:bg-rose-800"
-                }`}
+                } disabled:opacity-50`}
                 onClick={resolveAppeal}
               >
                 {appealDecision === "approve" ? "Approve appeal" : "Reject appeal"}

@@ -12,6 +12,14 @@ const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "https://ai-sevice.onrender.com";
 
+const getTranslateEndpoint = (baseUrl) => {
+  if (!baseUrl) return null;
+  const normalized = baseUrl.replace(/\/$/, "");
+  return normalized.endsWith("/translate")
+    ? normalized
+    : `${normalized}/translate`;
+};
+
 const getCacheKey = (text, sourceLang, targetLang) => {
   const key = `translate:${sourceLang}:${targetLang}:${text}`;
   const crypto = require("crypto");
@@ -78,8 +86,10 @@ exports.translate = async (req, res) => {
       );
     }
 
+    const translateEndpoint = getTranslateEndpoint(TRANSLATE_SPACE_URL);
+
     const response = await axios.post(
-      `${TRANSLATE_SPACE_URL}/translate`,
+      translateEndpoint,
       { text, source_lang: sourceLang, target_lang: targetLang },
       {
         headers: { "X-Internal-API-Key": INTERNAL_API_KEY },

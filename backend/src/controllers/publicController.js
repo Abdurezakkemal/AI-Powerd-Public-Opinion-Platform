@@ -227,6 +227,7 @@ exports.getPolicyAnalytics = async (req, res) => {
     return sendSuccess(res, {
       policyId: policy._id,
       title: policy.title,
+      description: policy.description,
       pollType: policy.pollType,
       ...voteAgg,
       sentimentCounts,

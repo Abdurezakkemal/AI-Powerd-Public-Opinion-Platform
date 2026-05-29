@@ -16,8 +16,10 @@ import {
   UserRound,
   UserPlus,
   MessageSquare,
+  Moon,
+  Sun,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { userApi } from "../api/user";
@@ -41,7 +43,6 @@ const adminLinks = [
   { to: "/planner-requests", label: "Planner Requests", icon: UserPlus },
   { to: "/comments/pending", label: "Pending Comments", icon: MessageSquare },
   { to: "/comment-moderators", label: "Comment Moderators", icon: UserCircle },
-  { to: "/trends", label: "Trends", icon: TrendingUp },
 ];
 
 const moderatorLinks = [
@@ -49,9 +50,30 @@ const moderatorLinks = [
   { to: "/comments/pending", label: "Comment Moderation", icon: MessageSquare },
 ];
 
+const DASHBOARD_THEME_KEY = "civic_dashboard_theme";
+
+function getInitialTheme() {
+  if (typeof window === "undefined") return "dark";
+
+  try {
+    const storedTheme = window.localStorage.getItem(DASHBOARD_THEME_KEY);
+    if (storedTheme === "light" || storedTheme === "dark") {
+      return storedTheme;
+    }
+
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  } catch {
+    return "dark";
+  }
+}
+
 export function AppShell() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [theme, setTheme] = useState(getInitialTheme);
+  const userMenuRef = useRef(null);
   const { user, role, logout } = useAuth();
   const navigate = useNavigate();
   const [unreadNotifications, setUnreadNotifications] = useState(0);
@@ -60,7 +82,17 @@ export function AppShell() {
   let links = [...baseLinks];
   if (role === "comment_moderator") links = [...moderatorLinks];
   if (role === "planner") links = [...links, ...plannerLinks];
-  if (role === "admin") links = [...links, ...adminLinks];
+  if (role === "admin") {
+    // For admins, show Trends directly after Cross Analytics in the sidebar
+    const trendsLink = { to: "/trends", label: "Trends", icon: TrendingUp };
+    const idx = links.findIndex((l) => l.to === "/analytics/cross");
+    if (idx !== -1) {
+      links.splice(idx + 1, 0, trendsLink);
+    } else {
+      links = [...links, trendsLink];
+    }
+    links = [...links, ...adminLinks];
+  }
 
   useEffect(() => {
     const fetchCounts = async () => {
@@ -92,6 +124,28 @@ export function AppShell() {
     };
   }, [role]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DASHBOARD_THEME_KEY, theme);
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    const handleDocumentClick = (event) => {
+      if (!userMenuRef.current) return;
+      if (!userMenuRef.current.contains(event.target)) {
+        setUserMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleDocumentClick);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentClick);
+    };
+  }, []);
+
   const isActive = (to) => {
     if (to === "/planners") {
       return (
@@ -107,8 +161,15 @@ export function AppShell() {
     navigate("/login", { replace: true });
   };
 
+  const isDark = theme === "dark";
+
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-950">
+    <div
+      className={`dashboard-shell min-h-screen transition-colors duration-200 ${
+        isDark ? "bg-slate-950 text-slate-100" : "bg-slate-100 text-slate-950"
+      }`}
+      data-dashboard-theme={theme}
+    >
       {/* Mobile overlay */}
       <div className="lg:hidden">
         {sidebarOpen && (
@@ -222,6 +283,27 @@ export function AppShell() {
           <div className="flex items-center gap-3">
             {role !== "comment_moderator" && (
               <>
+                <button
+                  type="button"
+                  onClick={() => setTheme(isDark ? "light" : "dark")}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                    isDark
+                      ? "border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                  aria-pressed={isDark}
+                  title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                >
+                  {isDark ? (
+                    <Sun className="h-4 w-4" />
+                  ) : (
+                    <Moon className="h-4 w-4" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {isDark ? "Light mode" : "Dark mode"}
+                  </span>
+                </button>
+
                 {/* Messages */}
                 <button
                   onClick={() => navigate("/messages")}
@@ -248,7 +330,7 @@ export function AppShell() {
             )}
 
             {/* User dropdown */}
-            <div className="relative">
+            <div ref={userMenuRef} className="relative">
               <button
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
                 className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"

@@ -352,24 +352,7 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* Trend Visualization (Admin) */}
-      {role === "admin" && trends.length > 0 && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
-          <div className="mb-5 flex items-center justify-between">
-            <div>
-              <h3 className="text-lg font-bold text-slate-900">Activity Trends</h3>
-              <p className="text-sm text-slate-500">Votes and new users over the last 30 days</p>
-            </div>
-            <Link
-              to="/trends"
-              className="inline-flex items-center gap-1 text-sm font-semibold text-teal-600 hover:text-teal-700 transition-colors"
-            >
-              Full report <ArrowUpRight className="h-4 w-4" />
-            </Link>
-          </div>
-          <TrendChart data={trends} />
-        </section>
-      )}
+      
 
       <ErrorAlert message={error} />
 
@@ -529,6 +512,25 @@ export function DashboardPage() {
           </>
         )}
       </div>
+
+      {/* Activity Trends */}
+      {role === "admin" && trends.length > 0 && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Activity Trends</h3>
+              <p className="text-sm text-slate-500">Votes and new users over the last 30 days</p>
+            </div>
+            <Link
+              to="/trends"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-teal-600 hover:text-teal-700 transition-colors"
+            >
+              Full report <ArrowUpRight className="h-4 w-4" />
+            </Link>
+          </div>
+          <TrendChart data={trends} />
+        </section>
+      )}
 
       {/* Recent Policies */}
       <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">

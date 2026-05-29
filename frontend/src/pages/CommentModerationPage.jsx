@@ -14,6 +14,7 @@ import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
+import LanguageSelector from "../components/LanguageSelector";
 import { getErrorMessage, formatDate } from "../lib/format";
 
 const SENTIMENT_COLORS = {
@@ -60,6 +61,8 @@ export function CommentModerationPage() {
     open: false,
     reports: [],
   });
+
+  const [translatedComments, setTranslatedComments] = useState({});
 
   // Local error per comment (for retry failures)
   const [commentErrors, setCommentErrors] = useState({});
@@ -244,6 +247,29 @@ export function CommentModerationPage() {
     }
   };
 
+  const getCommentText = (comment) =>
+    comment?.text ||
+    comment?.comment?.text ||
+    comment?.content ||
+    comment?.body ||
+    comment?.message ||
+    "";
+
+  const setTranslatedComment = (commentId, translatedText) => {
+    setTranslatedComments((current) => ({
+      ...current,
+      [commentId]: translatedText,
+    }));
+  };
+
+  const revertTranslatedComment = (commentId) => {
+    setTranslatedComments((current) => {
+      const next = { ...current };
+      delete next[commentId];
+      return next;
+    });
+  };
+
   const resolveAppeal = async (comment, decision) => {
     const id = comment && (comment._id || comment.commentId || comment.id);
     if (!id) return setError('No comment selected for appeal resolution');
@@ -330,7 +356,26 @@ export function CommentModerationPage() {
         </div>
 
         <div className="mb-3 rounded-lg bg-slate-50 p-3">
-          <p className="text-sm text-slate-900">{comment.text}</p>
+          <p className="text-sm text-slate-900">
+            {translatedComments[comment._id] || getCommentText(comment) || "Comment unavailable"}
+          </p>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <LanguageSelector
+              text={getCommentText(comment)}
+              onTranslated={(translatedText) =>
+                setTranslatedComment(comment._id, translatedText)
+              }
+            />
+            {translatedComments[comment._id] && (
+              <button
+                type="button"
+                onClick={() => revertTranslatedComment(comment._id)}
+                className="rounded-lg border border-slate-200 px-3 py-1 text-sm font-bold text-slate-700 hover:bg-slate-50"
+              >
+                Show original
+              </button>
+            )}
+          </div>
         </div>
 
         {!isReported && comment.keywords?.length > 0 && (
@@ -583,7 +628,9 @@ export function CommentModerationPage() {
         >
           <div className="space-y-4">
             <div className="rounded-lg bg-slate-50 p-3">
-              <p className="text-sm text-slate-900">"{selectedComment.text}"</p>
+              <p className="text-sm text-slate-900">
+                "{getCommentText(selectedComment) || "Comment unavailable"}"
+              </p>
             </div>
             <p className="text-sm text-slate-600">
               {actionType === "approve"
@@ -751,8 +798,29 @@ export function CommentModerationPage() {
                 Comment text:
               </p>
               <p className="text-sm text-slate-900">
-                {appealModal.comment.text}
+                {translatedComments[appealModal.comment._id] ||
+                  getCommentText(appealModal.comment) ||
+                  "Comment unavailable"}
               </p>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <LanguageSelector
+                  text={getCommentText(appealModal.comment)}
+                  onTranslated={(translatedText) =>
+                    setTranslatedComment(appealModal.comment._id, translatedText)
+                  }
+                />
+                {translatedComments[appealModal.comment._id] && (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      revertTranslatedComment(appealModal.comment._id)
+                    }
+                    className="rounded-lg border border-slate-200 px-3 py-1 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                  >
+                    Show original
+                  </button>
+                )}
+              </div>
             </div>
             <div className="rounded-lg bg-blue-50 p-3">
               <p className="text-sm font-semibold text-blue-900">

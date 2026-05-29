@@ -25,6 +25,7 @@ import { LoadingState } from "../components/LoadingState";
 import { MetricCard } from "../components/MetricCard";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
+import LanguageSelector from "../components/LanguageSelector";
 import {
   formatDate,
   formatNumber,
@@ -132,6 +133,7 @@ export function PolicyAnalyticsPage() {
     sentiment: "",
   });
   const [selectedKeyword, setSelectedKeyword] = useState("");
+  const [translatedComments, setTranslatedComments] = useState({});
   const [loading, setLoading] = useState(true);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -370,6 +372,21 @@ export function PolicyAnalyticsPage() {
     ? comments.filter((comment) => comment.keywords?.includes(selectedKeyword))
     : comments;
   const totalCommentPages = Math.max(1, Math.ceil(commentTotal / PAGE_SIZE));
+
+  const handleCommentTranslation = (commentId, translatedText) => {
+    setTranslatedComments((current) => ({
+      ...current,
+      [commentId]: translatedText,
+    }));
+  };
+
+  const revertCommentTranslation = (commentId) => {
+    setTranslatedComments((current) => {
+      const next = { ...current };
+      delete next[commentId];
+      return next;
+    });
+  };
 
   const updateFilter = (name, value) => {
     setCommentPage(1);
@@ -1062,8 +1079,28 @@ export function PolicyAnalyticsPage() {
                             </span>
                           </div>
                           <p className="mt-3 text-sm leading-6 text-slate-700">
-                            {comment.text}
+                            {translatedComments[comment.id] || comment.text}
                           </p>
+                          <div className="mt-3 flex flex-wrap items-center gap-3">
+                            <LanguageSelector
+                              text={comment.text}
+                              onTranslated={(translatedText) =>
+                                handleCommentTranslation(
+                                  comment.id,
+                                  translatedText,
+                                )
+                              }
+                            />
+                            {translatedComments[comment.id] && (
+                              <button
+                                type="button"
+                                onClick={() => revertCommentTranslation(comment.id)}
+                                className="rounded-lg border border-slate-200 px-3 py-1 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                              >
+                                Show original
+                              </button>
+                            )}
+                          </div>
                           {comment.keywords?.length && (
                             <div className="mt-3 flex flex-wrap gap-2">
                               {comment.keywords.map((keyword) => (

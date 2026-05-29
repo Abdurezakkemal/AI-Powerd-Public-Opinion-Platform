@@ -6,11 +6,13 @@ import { adminApi } from "../api/admin";
 import { analyticsApi } from "../api/analytics";
 import { plannerApi } from "../api/plannerApi";
 import { commentApi } from "../api/comments";
+import { translateText } from "../api/translation";
 import { PageHeader } from "../components/PageHeader";
 import { LoadingState } from "../components/LoadingState";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { StatusBadge } from "../components/StatusBadge";
 import { Modal } from "../components/Modal";
+import LanguageSelector from "../components/LanguageSelector";
 import { Tabs, TabPane } from "../components/Tabs";
 import { MetricCard } from "../components/MetricCard";
 import {
@@ -31,6 +33,13 @@ import {
 import { formatDate, getErrorMessage, toIsoFromDateInput } from "../lib/format";
 import { showToast } from "../lib/toast";
 import { ETHIOPIAN_REGIONS } from "../constants/regions";
+
+const TRANSLATION_LANGUAGES = [
+  { code: "en", label: "English" },
+  { code: "am", label: "Amharic" },
+  { code: "om", label: "Oromo" },
+  { code: "ti", label: "Tigrinya" },
+];
 
 function ActionButton({
   children,
@@ -76,6 +85,10 @@ export function PolicyDetailPage() {
   const [allComments, setAllComments] = useState([]);
   const [pendingComments, setPendingComments] = useState([]);
   const [reportedComments, setReportedComments] = useState([]);
+  const [translatedComments, setTranslatedComments] = useState({});
+  const [translatedPolicy, setTranslatedPolicy] = useState(null);
+  const [translatingPolicy, setTranslatingPolicy] = useState(false);
+  const [policyLanguage, setPolicyLanguage] = useState("en");
   const [appeals, setAppeals] = useState([]);
   const [associates, setAssociates] = useState([]);
   const [allPlanners, setAllPlanners] = useState([]);
@@ -102,6 +115,66 @@ export function PolicyDetailPage() {
     comment: null,
     decision: "",
   });
+
+  const getCommentText = (comment) =>
+    comment?.text ||
+    comment?.comment?.text ||
+    comment?.content ||
+    comment?.body ||
+    comment?.message ||
+    "";
+
+  const setTranslatedComment = (commentId, translatedText) => {
+    setTranslatedComments((current) => ({
+      ...current,
+      [commentId]: translatedText,
+    }));
+  };
+
+  const revertTranslatedComment = (commentId) => {
+    setTranslatedComments((current) => {
+      const next = { ...current };
+      delete next[commentId];
+      return next;
+    });
+  };
+
+  const handlePolicyTranslation = async () => {
+    if (translatedPolicy) {
+      setTranslatedPolicy(null);
+      return;
+    }
+
+    const title = policy.title || `${(policy.targetRegions || ["Regional"])[0]} ${policy.pollType || ""} ${policy.status || ""} #${(policy._id || id).toString().slice(0, 6)}${policy.topics && policy.topics.length ? ` - ${policy.topics[0]}` : ""}`;
+    const description = policy.description || "Regional poll focused on Addis Ababa.";
+
+    setTranslatingPolicy(true);
+    setError("");
+    try {
+      const [translatedTitle, translatedDescription] = await Promise.all([
+        translateText({ text: title, targetLang: policyLanguage }),
+        translateText({ text: description, targetLang: policyLanguage }),
+      ]);
+
+      setTranslatedPolicy({
+        title: translatedTitle,
+        description: translatedDescription,
+      });
+    } catch (err) {
+      setError(getErrorMessage(err, "Failed to translate policy text"));
+    } finally {
+      setTranslatingPolicy(false);
+    }
+  };
+
+  const displayPolicyTitle =
+    translatedPolicy?.title ||
+    policy?.title ||
+    `${(policy?.targetRegions || ["Regional"])[0]} ${policy?.pollType || ""} ${policy?.status || ""} #${(policy?._id || id).toString().slice(0, 6)}${policy?.topics && policy.topics.length ? ` - ${policy.topics[0]}` : ""}`;
+  const displayPolicyDescription =
+    translatedPolicy?.description ||
+    policy?.description ||
+    "Regional poll focused on Addis Ababa.";
   const [commentErrors, setCommentErrors] = useState({}); // for per-comment errors
     
 
@@ -323,15 +396,33 @@ export function PolicyDetailPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 className="text-2xl font-bold text-slate-900">
-              {policy.title || `${(policy.targetRegions || ["Regional"])[0]} ${policy.pollType || ""} ${policy.status || ""} #${(policy._id || id).toString().slice(0,6)}${policy.topics && policy.topics.length ? ` - ${policy.topics[0]}` : ""}`}
+              {displayPolicyTitle}
             </h1>
             <p className="mt-1 text-sm text-slate-500">
               <strong className="font-medium">Policy Code:</strong> {policy.policyCode} • <strong className="font-medium">Read‑only view</strong>
             </p>
-            <p className="mt-2 text-sm text-slate-600">{policy.description || "Regional poll focused on Addis Ababa."}</p>
+            <p className="mt-2 text-sm text-slate-600">{displayPolicyDescription}</p>
           </div>
 
           <div className="flex items-center gap-2">
+            <button
+              onClick={handlePolicyTranslation}
+              disabled={translatingPolicy}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {translatingPolicy ? "Translating..." : "Translate"}
+            </button>
+            <select
+              value={policyLanguage}
+              onChange={(event) => setPolicyLanguage(event.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none hover:bg-slate-50"
+            >
+              {TRANSLATION_LANGUAGES.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
             <Link to={`/policies/${id}/analytics`} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
               <svg className="h-4 w-4 text-teal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 3v18h18" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
               View Analytics
@@ -350,7 +441,7 @@ export function PolicyDetailPage() {
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border bg-white p-5 md:col-span-2">
           <h3 className="text-lg font-bold mb-3">Description</h3>
-          <p className="text-sm text-slate-700 mb-4">{policy.description || 'Regional poll focused on Addis Ababa.'}</p>
+          <p className="text-sm text-slate-700 mb-4">{displayPolicyDescription}</p>
 
           <h3 className="text-lg font-bold mb-3">Details</h3>
           <dl className="grid gap-2 sm:grid-cols-2">
@@ -753,7 +844,28 @@ export function PolicyDetailPage() {
                     </div>
                   </div>
                   <div className="mb-3 rounded-lg bg-slate-50 p-3">
-                    <p className="text-sm text-slate-900">{comment.text}</p>
+                    <p className="text-sm text-slate-900">
+                      {translatedComments[comment._id] ||
+                        getCommentText(comment) ||
+                        "Comment unavailable"}
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <LanguageSelector
+                        text={getCommentText(comment)}
+                        onTranslated={(translatedText) =>
+                          setTranslatedComment(comment._id, translatedText)
+                        }
+                      />
+                      {translatedComments[comment._id] && (
+                        <button
+                          type="button"
+                          onClick={() => revertTranslatedComment(comment._id)}
+                          className="rounded-lg border border-slate-200 px-3 py-1 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                        >
+                          Show original
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-200">
                     <button

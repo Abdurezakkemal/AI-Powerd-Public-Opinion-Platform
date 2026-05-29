@@ -4,8 +4,10 @@ import {
   Download,
   FileText,
   Globe2,
+  Moon,
   Rocket,
   ShieldCheck,
+  Sun,
   Vote,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -28,7 +30,7 @@ const initialForm = {
   occupation: "government-employee",
   education: "bachelors",
   preferredLanguage: "en",
-  languagesSpoken: "en",
+  languagesSpoken: ["en"],
   organization: "",
   reason: "",
   proofFile: null,
@@ -62,6 +64,17 @@ const EDUCATIONS = [
 ];
 
 const LANGUAGE_OPTIONS = LANGUAGES.filter((language) => language.value !== "all");
+const SPOKEN_LANGUAGE_OPTIONS = LANGUAGE_OPTIONS;
+const MAX_PROOF_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_PROOF_FILE_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
 
 const APP_DOWNLOAD_URL = import.meta.env.VITE_MOBILE_APP_URL || "#download-app";
 
@@ -71,10 +84,37 @@ const navigationItems = [
   { label: "Download", href: "#download-app" },
 ];
 
+const THEME_KEY = "civic_ui_theme";
+
+function getInitialTheme() {
+  if (typeof window === "undefined") return "dark";
+
+  try {
+    const storedTheme = window.localStorage.getItem(THEME_KEY);
+    if (storedTheme === "light" || storedTheme === "dark") {
+      return storedTheme;
+    }
+
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  } catch {
+    return "dark";
+  }
+}
+
 function approximateCount(value, fallback = "10+") {
   if (!Number.isFinite(value) || value <= 0) return fallback;
   const rounded = Math.max(5, Math.round(value / 5) * 5);
   return `${rounded}+`;
+}
+
+function toggleSpokenLanguage(currentLanguages, language) {
+  if (currentLanguages.includes(language)) {
+    return currentLanguages.filter((item) => item !== language);
+  }
+
+  return [...currentLanguages, language];
 }
 
 function SentimentBar({ policy }) {
@@ -117,7 +157,18 @@ export function PublicLandingPage() {
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState(initialForm);
+  const [theme, setTheme] = useState(getInitialTheme);
   const proofFileRef = useRef(null);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(THEME_KEY, theme);
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [theme]);
+
+  const isDark = theme === "dark";
 
   useEffect(() => {
     let active = true;
@@ -173,22 +224,83 @@ export function PublicLandingPage() {
     event.preventDefault();
     setError("");
 
-    if (
-      !form.fullName.trim() ||
-      !form.email.trim() ||
-      !form.phone.trim() ||
-      !form.region.trim() ||
-      !form.ageRange.trim() ||
-      !form.gender.trim() ||
-      !form.occupation.trim() ||
-      !form.education.trim() ||
-      !form.preferredLanguage.trim() ||
-      !form.languagesSpoken.trim() ||
-      !form.organization.trim() ||
-      !form.reason.trim() ||
-      !form.proofFile
-    ) {
-      setError("Please complete every planner request field and upload a supporting proof file before submitting.");
+    if (!form.fullName.trim()) {
+      setError("Please enter your full name.");
+      return;
+    }
+
+    if (!form.email.trim()) {
+      setError("Please enter your email address.");
+      return;
+    }
+
+    if (!form.phone.trim()) {
+      setError("Please enter your phone number.");
+      return;
+    }
+
+    if (!form.region.trim()) {
+      setError("Please select a region.");
+      return;
+    }
+
+    if (!form.ageRange.trim()) {
+      setError("Please select an age range.");
+      return;
+    }
+
+    if (!form.gender.trim()) {
+      setError("Please select a gender.");
+      return;
+    }
+
+    if (!form.occupation.trim()) {
+      setError("Please select an occupation.");
+      return;
+    }
+
+    if (!form.education.trim()) {
+      setError("Please select an education level.");
+      return;
+    }
+
+    if (!form.preferredLanguage.trim()) {
+      setError("Please select your preferred language.");
+      return;
+    }
+
+    if (!form.languagesSpoken.length) {
+      setError("Please select at least one spoken language.");
+      return;
+    }
+
+    if (!form.organization.trim()) {
+      setError("Please enter your organization.");
+      return;
+    }
+
+    if (!form.reason.trim()) {
+      setError("Please enter your reason for requesting planner access.");
+      return;
+    }
+
+    if (form.reason.trim().length < 50) {
+      setError("Reason must be at least 50 characters.");
+      return;
+    }
+
+    if (!form.proofFile) {
+      setError("Please upload a supporting proof file.");
+      return;
+    }
+
+    if (form.proofFile.size > MAX_PROOF_FILE_SIZE_BYTES) {
+      setError("Proof file must be 5 MB or smaller.");
+      return;
+    }
+
+    if (!ALLOWED_PROOF_FILE_TYPES.has(form.proofFile.type)) {
+      setError("Proof file must be an image, PDF, DOC, or DOCX file.");
       return;
     }
 
@@ -205,12 +317,12 @@ export function PublicLandingPage() {
       formData.append("occupation", form.occupation);
       formData.append("education", form.education);
       formData.append("preferredLanguage", form.preferredLanguage);
-      formData.append("languagesSpoken", form.languagesSpoken);
+      formData.append("languagesSpoken", form.languagesSpoken.join(","));
       formData.append("organization", form.organization.trim());
       formData.append("reason", form.reason.trim());
       formData.append("proofFile", form.proofFile);
 
-      await plannerApi.requestPlanner(formData);
+      await plannerApi.requestPlannerPublic(formData);
       setForm(initialForm);
       if (proofFileRef.current) {
         proofFileRef.current.value = "";
@@ -223,8 +335,36 @@ export function PublicLandingPage() {
     }
   }
 
+  function handleProofFileChange(event) {
+    const file = event.target.files?.[0] || null;
+    if (!file) {
+      setForm((current) => ({ ...current, proofFile: null }));
+      return;
+    }
+
+    if (file.size > MAX_PROOF_FILE_SIZE_BYTES) {
+      setError("Proof file must be 5 MB or smaller.");
+      event.target.value = "";
+      setForm((current) => ({ ...current, proofFile: null }));
+      return;
+    }
+
+    if (!ALLOWED_PROOF_FILE_TYPES.has(file.type)) {
+      setError("Proof file must be an image, PDF, DOC, or DOCX file.");
+      event.target.value = "";
+      setForm((current) => ({ ...current, proofFile: null }));
+      return;
+    }
+
+    setError("");
+    setForm((current) => ({ ...current, proofFile: file }));
+  }
+
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.14),_transparent_32%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.10),_transparent_26%),linear-gradient(180deg,_#fffdf8_0%,_#f8f4eb_100%)] text-slate-950">
+    <div
+      className="public-dashboard min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(13,148,136,0.14),_transparent_32%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.10),_transparent_26%),linear-gradient(180deg,_#fffdf8_0%,_#f8f4eb_100%)] text-slate-950 transition-colors duration-200"
+      data-theme={theme}
+    >
       <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
         <ErrorAlert message={error} />
 
@@ -252,6 +392,20 @@ export function PublicLandingPage() {
                   {item.label}
                 </a>
               ))}
+              <button
+                type="button"
+                onClick={() => setTheme(isDark ? "light" : "dark")}
+                className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 transition ${
+                  isDark
+                    ? "border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                    : "border-slate-200 bg-white text-slate-700 hover:border-teal-300 hover:bg-teal-50 hover:text-teal-800"
+                }`}
+                aria-pressed={isDark}
+                title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+              >
+                {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
+                {isDark ? "Light mode" : "Dark mode"}
+              </button>
             </nav>
           </div>
         </header>
@@ -308,7 +462,7 @@ export function PublicLandingPage() {
                             <div className="min-w-0">
                               <div className="flex flex-wrap items-center gap-2">
                                 <span className="rounded-full bg-slate-950 px-2.5 py-1 text-[11px] font-bold text-white">Closed policy</span>
-                                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-slate-500 shadow-sm">Result available</span>
+                                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-bold text-slate-600 shadow-sm">Result available</span>
                               </div>
                               <p className="mt-3 truncate text-lg font-bold text-slate-950">{policy.title}</p>
                               <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">{policy.description}</p>
@@ -318,11 +472,11 @@ export function PublicLandingPage() {
                             </div>
 
                             <div className="grid min-w-[180px] gap-2 text-sm">
-                              <div className="rounded-2xl bg-white px-3 py-2 shadow-sm">
+                              <div className="rounded-2xl bg-slate-50 px-3 py-2 shadow-sm">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Votes</p>
                                 <p className="mt-1 text-lg font-black text-slate-950">{approximateCount(policy.voteCount, "5+")}</p>
                               </div>
-                              <div className="rounded-2xl bg-white px-3 py-2 shadow-sm">
+                              <div className="rounded-2xl bg-slate-50 px-3 py-2 shadow-sm">
                                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Comments</p>
                                 <p className="mt-1 text-lg font-black text-slate-950">{approximateCount(policy.commentCount, "10+")}</p>
                               </div>
@@ -467,12 +621,35 @@ export function PublicLandingPage() {
                         </option>
                       ))}
                     </select>
-                    <input
-                      value={form.languagesSpoken}
-                      onChange={(event) => setForm((current) => ({ ...current, languagesSpoken: event.target.value }))}
-                      className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none focus:border-teal-600"
-                      placeholder="Languages spoken"
-                    />
+                    <div className="rounded-xl border border-slate-300 px-4 py-3">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Languages spoken
+                      </p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {SPOKEN_LANGUAGE_OPTIONS.map((language) => {
+                          const checked = form.languagesSpoken.includes(language.value);
+                          return (
+                            <label
+                              key={language.value}
+                              className={`flex cursor-pointer items-center gap-3 rounded-lg border px-3 py-2 text-sm transition ${checked ? "border-teal-600 bg-teal-50 text-teal-900" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50"}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() =>
+                                  setForm((current) => ({
+                                    ...current,
+                                    languagesSpoken: toggleSpokenLanguage(current.languagesSpoken, language.value),
+                                  }))
+                                }
+                                className="h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-600"
+                              />
+                              <span className="font-medium">{language.label}</span>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                   <input
                     value={form.organization}
@@ -485,10 +662,13 @@ export function PublicLandingPage() {
                     ref={proofFileRef}
                     required
                     aria-label="Supporting proof file"
-                    accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,image/*,application/pdf"
-                    onChange={(event) => setForm((current) => ({ ...current, proofFile: event.target.files?.[0] || null }))}
+                    accept=".pdf,.png,.jpg,.jpeg,.webp,.gif,.doc,.docx,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    onChange={handleProofFileChange}
                     className="w-full rounded-xl border border-slate-300 px-4 py-3 text-sm outline-none file:mr-4 file:rounded-lg file:border-0 file:bg-teal-50 file:px-3 file:py-2 file:text-sm file:font-bold file:text-teal-700 focus:border-teal-600"
                   />
+                  <p className="text-xs text-slate-500">
+                    Upload an image, PDF, DOC, or DOCX file up to 5 MB.
+                  </p>
                   <textarea
                     rows="5"
                     value={form.reason}

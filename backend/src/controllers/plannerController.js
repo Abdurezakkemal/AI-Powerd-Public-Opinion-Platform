@@ -24,6 +24,20 @@ const escapeHtml = (value = "") =>
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#39;");
 
+const getProofResourceType = (mimetype = "") => {
+  if (
+    [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ].includes(mimetype)
+  ) {
+    return "raw";
+  }
+
+  return "image";
+};
+
 // Helper: convert permission keys to user‑friendly labels
 const formatPermissions = (perms) => {
   const map = {
@@ -181,6 +195,7 @@ exports.requestPlanner = async (req, res) => {
       );
     }
     const uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
+      resource_type: getProofResourceType(req.file.mimetype),
       public_id: `planner-proof-${Date.now()}`,
       context: {
         applicant_email: normalizedEmail || userId || "citizen",

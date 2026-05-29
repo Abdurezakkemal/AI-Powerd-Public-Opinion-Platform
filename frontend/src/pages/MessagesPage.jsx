@@ -184,7 +184,7 @@ export function MessagesPage() {
   }
 
   return (
-    <div className="space-y-6 pb-8">
+    <div className="messages-page space-y-6 pb-8">
       <PageHeader
         title="Messages"
         description="A chat-style workspace for conversations, quick replies, and planner collaboration."

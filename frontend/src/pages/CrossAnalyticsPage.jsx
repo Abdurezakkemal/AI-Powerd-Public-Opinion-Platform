@@ -265,7 +265,7 @@ export function CrossAnalyticsPage() {
             </section>
 
             <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="border-b border-slate-200 bg-gradient-to-r from-slate-50 to-emerald-50 px-5 py-4">
+              <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
                 <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
                   <div>
                     <h3 className="text-lg font-black text-slate-950">
@@ -284,9 +284,8 @@ export function CrossAnalyticsPage() {
               </div>
 
               {data.topKeywords?.length ? (
-                <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_280px]">
-                  <div className="space-y-3">
-                    {data.topKeywords.slice(0, 10).map((item, index) => {
+                <div className="space-y-3 p-5">
+                  {data.topKeywords.slice(0, 10).map((item, index) => {
                       const maxCount = data.topKeywords?.[0]?.count || 1;
                       const width = Math.max(8, Math.round((item.count / maxCount) * 100));
                       const isTopThree = index < 3;
@@ -320,7 +319,7 @@ export function CrossAnalyticsPage() {
                                 </p>
                               </div>
                             </div>
-                            <span className="rounded-full bg-white px-3 py-1 text-sm font-black text-slate-700 ring-1 ring-slate-200">
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-black text-slate-700 ring-1 ring-slate-200">
                               {item.count}
                             </span>
                           </div>
@@ -342,39 +341,6 @@ export function CrossAnalyticsPage() {
                         </div>
                       );
                     })}
-                  </div>
-
-                  <aside className="rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50 to-white p-4">
-                    <p className="text-xs font-bold uppercase tracking-wide text-emerald-700">
-                      Keyword insight
-                    </p>
-                    <p className="mt-2 text-sm leading-6 text-slate-600">
-                      These terms show the most repeated civic themes in the current filters. They help you spot what people are talking about most.
-                    </p>
-                    <div className="mt-4 space-y-2">
-                      <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
-                        <p className="text-xs font-semibold text-slate-500">Top term</p>
-                        <p className="text-sm font-bold text-slate-950">
-                          {data.topKeywords[0]?.keyword || "-"}
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
-                        <p className="text-xs font-semibold text-slate-500">Peak count</p>
-                        <p className="text-sm font-bold text-slate-950">
-                          {data.topKeywords[0]?.count || 0}
-                        </p>
-                      </div>
-                      <div className="rounded-xl bg-white px-3 py-2 ring-1 ring-slate-200">
-                        <p className="text-xs font-semibold text-slate-500">Average count</p>
-                        <p className="text-sm font-bold text-slate-950">
-                          {Math.round(
-                            data.topKeywords.reduce((sum, item) => sum + item.count, 0) /
-                              data.topKeywords.length,
-                          ) || 0}
-                        </p>
-                      </div>
-                    </div>
-                  </aside>
                 </div>
               ) : (
                 <div className="p-5">

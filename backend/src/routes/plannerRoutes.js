@@ -6,9 +6,28 @@ const auth = require("../middleware/authMiddleware");
 const limiters = require("../config/rateLimits");
 const validateObjectId = require("../middleware/validateObjectId");
 
+const ALLOWED_PROOF_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_PROOF_MIME_TYPES.has(file.mimetype)) {
+      return cb(null, true);
+    }
+
+    const error = new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname);
+    error.message = "Only image, PDF, DOC, or DOCX files are allowed.";
+    return cb(error, false);
+  },
 });
 
 const optionalCitizenAuth = (req, res, next) => {
