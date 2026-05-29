@@ -27,6 +27,7 @@ export function CommentModerationPage() {
   const [reportedComments, setReportedComments] = useState([]);
   const [appealComments, setAppealComments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState({});
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
@@ -63,8 +64,12 @@ export function CommentModerationPage() {
   // Local error per comment (for retry failures)
   const [commentErrors, setCommentErrors] = useState({});
 
-  const loadAllData = async () => {
-    setLoading(true);
+  const loadAllData = async ({ silent = false } = {}) => {
+    if (silent) {
+      setRefreshing(true);
+    } else {
+      setLoading(true);
+    }
     setError("");
     try {
       const [aiRes, reportedRes, appealsRes] = await Promise.all([
@@ -79,6 +84,7 @@ export function CommentModerationPage() {
       setError(getErrorMessage(err, "Failed to load comments"));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
@@ -98,23 +104,25 @@ export function CommentModerationPage() {
 
   // Moderate comment (approve/delete)
   const moderateComment = async (commentId, action) => {
-    setActionLoading((prev) => ({ ...prev, [commentId]: action }));
+    const id = commentId || (selectedComment && (selectedComment._id || selectedComment.commentId || selectedComment.id));
+    if (!id) return setError('No comment selected for moderation');
+    setActionLoading((prev) => ({ ...prev, [id]: action }));
     setCommentErrors((prev) => ({ ...prev, [commentId]: null }));
     setSuccessMessage("");
     try {
-      await commentApi.moderate(commentId, { action });
+      await adminApi.moderateComment(id, { action });
       setModalOpen(false);
       setSelectedComment(null);
-      await loadAllData();
+      void loadAllData({ silent: true });
       setSuccessMessage(`Comment ${action}d.`);
       setTimeout(() => setSuccessMessage(""), 3000);
     } catch (err) {
       const msg = getErrorMessage(err, `Failed to ${action} comment`);
-      setCommentErrors((prev) => ({ ...prev, [commentId]: msg }));
+      setCommentErrors((prev) => ({ ...prev, [id]: msg }));
     } finally {
       setActionLoading((prev) => {
         const newState = { ...prev };
-        delete newState[commentId];
+        delete newState[id];
         return newState;
       });
     }
@@ -128,7 +136,7 @@ export function CommentModerationPage() {
     setCommentErrors((prev) => ({ ...prev, [comment._id]: null }));
     setSuccessMessage("");
     try {
-      await commentApi.moderate(comment._id, {
+      await adminApi.moderateComment(comment._id, {
         action: "approve",
         sentiment: sentiment
           ? { label: sentiment, confidence: 1.0 }
@@ -198,6 +206,12 @@ export function CommentModerationPage() {
     setModalOpen(true);
   };
 
+  const rejectComment = (comment) => {
+    setSelectedComment(comment);
+    setActionType("reject");
+    setModalOpen(true);
+  };
+
   const viewHistory = async (commentId) => {
     setActionLoading((prev) => ({ ...prev, [`history-${commentId}`]: true }));
     try {
@@ -231,20 +245,20 @@ export function CommentModerationPage() {
   };
 
   const resolveAppeal = async (comment, decision) => {
-    setActionLoading((prev) => ({
-      ...prev,
-      [`appeal-${comment._id}`]: decision,
-    }));
+    const id = comment && (comment._id || comment.commentId || comment.id);
+    if (!id) return setError('No comment selected for appeal resolution');
+    setActionLoading((prev) => ({ ...prev, [`appeal-${id}`]: decision }));
     try {
-      await adminApi.resolveAppeal(comment._id, decision);
+      await adminApi.resolveAppeal(id, decision);
+      setAppealComments((prev) => prev.filter((item) => (item._id || item.commentId || item.id) !== id));
       setAppealModal({ open: false, comment: null, decision: "" });
-      await loadAllData();
+      void loadAllData({ silent: true });
     } catch (err) {
       setError(getErrorMessage(err, `Failed to ${decision} appeal`));
     } finally {
       setActionLoading((prev) => {
         const newState = { ...prev };
-        delete newState[`appeal-${comment._id}`];
+        delete newState[`appeal-${id}`];
         return newState;
       });
     }
@@ -434,11 +448,11 @@ export function CommentModerationPage() {
                 Approve (restore)
               </button>
               <button
-                onClick={() => deleteComment(comment)}
+                onClick={() => rejectComment(comment)}
                 className="inline-flex items-center gap-1 rounded-lg border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-100"
               >
                 <Trash2 className="h-3.5 w-3.5" />
-                Delete
+                Reject
               </button>
               <button
                 onClick={() => viewReports(comment._id)}
@@ -530,12 +544,12 @@ export function CommentModerationPage() {
             Appeals Pending ({appealComments.length})
           </button>
           <button
-            onClick={loadAllData}
-            disabled={loading}
+            onClick={() => loadAllData({ silent: true })}
+            disabled={loading || refreshing}
             className="ml-auto inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             <RefreshCw className="h-4 w-4" />
-            Refresh
+            {refreshing ? "Refreshing..." : "Refresh"}
           </button>
         </div>
 
@@ -547,7 +561,14 @@ export function CommentModerationPage() {
         ) : (
           <div className="space-y-3">
             {currentData.map((item) => {
-              const comment = item.comment || item;
+              const comment = item.comment || {
+                ...item,
+                _id: item._id || item.commentId,
+                policyId:
+                  item.policyId ||
+                  (item.policy ? { title: item.policy } : undefined),
+                userId: item.userId || item.appellant,
+              };
               return renderCommentCard(comment, activeTab);
             })}
           </div>
@@ -557,7 +578,7 @@ export function CommentModerationPage() {
       {/* Confirmation modal for approve/delete */}
       {modalOpen && selectedComment && (
         <Modal
-          title={`${actionType === "approve" ? "Approve" : "Delete"} Comment`}
+          title={`${actionType === "approve" ? "Approve" : actionType === "reject" ? "Reject" : "Delete"} Comment`}
           onClose={() => setModalOpen(false)}
         >
           <div className="space-y-4">
@@ -567,7 +588,9 @@ export function CommentModerationPage() {
             <p className="text-sm text-slate-600">
               {actionType === "approve"
                 ? "Approve this comment? It will become visible and included in analytics. Any pending reports or appeals will be resolved."
-                : "Delete this comment? It will be permanently hidden."}
+                  : actionType === "reject"
+                    ? "Reject this comment? It will remain hidden and the reports will be treated as invalid."
+                    : "Delete this comment? It will be permanently hidden."}
             </p>
             <div className="flex gap-3 justify-end pt-4 border-t border-slate-200">
               <button
@@ -589,7 +612,9 @@ export function CommentModerationPage() {
                   ? "Processing..."
                   : actionType === "approve"
                     ? "Approve"
-                    : "Delete"}
+                    : actionType === "reject"
+                      ? "Reject"
+                      : "Delete"}
               </button>
             </div>
           </div>

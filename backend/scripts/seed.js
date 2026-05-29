@@ -58,7 +58,7 @@ const regions = [
   "Somali",
 ];
 const ageRanges = ["18-24", "25-34", "35-44", "45-54", "55+"];
-const genders = ["male", "female", "non-binary", "prefer-not-to-say"];
+const genders = ["male", "female", "prefer-not-to-say"];
 const occupations = [
   "student",
   "farmer",
@@ -119,7 +119,7 @@ const plannerData = [
     email: "planner5@test.com",
     region: "Addis Ababa",
     ageRange: "35-44",
-    gender: "non-binary",
+    gender: "prefer-not-to-say",
     occupation: "private-sector",
     education: "postgraduate",
     languagesSpoken: ["en", "am"],
@@ -222,6 +222,147 @@ const policyDefinitions = [
   },
 ];
 
+const fullPublicVisibility = {
+  showResults: true,
+  showBreakdown: true,
+  showComments: true,
+  showSentiment: true,
+  allowTimeFilter: true,
+};
+
+const publicPolicyDefinitions = [
+  {
+    title: "Public Transit Reliability Review",
+    description: "Help evaluate how reliable public transportation feels across the city.",
+    targetRegions: ["Addis Ababa", "Oromia"],
+    pollType: "rating",
+    startDate: new Date(Date.now() - 50 * 86400000),
+    endDate: new Date(Date.now() - 20 * 86400000),
+    status: "closed",
+    topics: ["Transport", "Infrastructure"],
+  },
+  {
+    title: "Water Access and Service Quality",
+    description: "Rate how well water services are meeting daily needs.",
+    targetRegions: ["Amhara", "Sidama"],
+    pollType: "likert",
+    likertLabels: ["Very Poor", "Poor", "Average", "Good", "Excellent"],
+    startDate: new Date(Date.now() - 52 * 86400000),
+    endDate: new Date(Date.now() - 18 * 86400000),
+    status: "closed",
+    topics: ["Water Supply", "Public Services"],
+  },
+  {
+    title: "Community Safety Priorities",
+    description: "Choose the top safety measures your region should prioritize.",
+    targetRegions: ["Tigray", "Afar"],
+    pollType: "multipleChoice",
+    pollOptions: [
+      { id: "streetlights", text: "Street lighting" },
+      { id: "patrols", text: "More community patrols" },
+      { id: "response", text: "Faster emergency response" },
+      { id: "reporting", text: "Better reporting tools" },
+    ],
+    maxSelections: 2,
+    startDate: new Date(Date.now() - 48 * 86400000),
+    endDate: new Date(Date.now() - 16 * 86400000),
+    status: "closed",
+    topics: ["Public Safety", "Governance"],
+  },
+  {
+    title: "Local Tax Reform Feedback",
+    description: "Tell us whether the proposed tax approach should move forward.",
+    targetRegions: ["Oromia", "Addis Ababa"],
+    pollType: "approval",
+    startDate: new Date(Date.now() - 55 * 86400000),
+    endDate: new Date(Date.now() - 21 * 86400000),
+    status: "closed",
+    topics: ["Taxation", "Economy"],
+  },
+  {
+    title: "Road Repair Satisfaction Check",
+    description: "Rate how satisfied you are with recent road repair work.",
+    targetRegions: ["Gambela", "Benishangul-Gumuz"],
+    pollType: "rating",
+    startDate: new Date(Date.now() - 47 * 86400000),
+    endDate: new Date(Date.now() - 15 * 86400000),
+    status: "closed",
+    topics: ["Roads", "Infrastructure"],
+  },
+  {
+    title: "Education Investment Direction",
+    description: "Pick the education investments that should receive the strongest support.",
+    targetRegions: ["Addis Ababa", "Harari"],
+    pollType: "multipleChoice",
+    pollOptions: [
+      { id: "teachers", text: "Teacher training" },
+      { id: "materials", text: "Learning materials" },
+      { id: "digital", text: "Digital classrooms" },
+      { id: "transport", text: "School transport" },
+    ],
+    maxSelections: 2,
+    startDate: new Date(Date.now() - 44 * 86400000),
+    endDate: new Date(Date.now() - 14 * 86400000),
+    status: "closed",
+    topics: ["Education", "Youth"],
+  },
+  {
+    title: "Healthcare Service Confidence",
+    description: "Vote yes or no on whether local healthcare is improving.",
+    targetRegions: ["Somali", "Sidama"],
+    pollType: "binary",
+    startDate: new Date(Date.now() - 43 * 86400000),
+    endDate: new Date(Date.now() - 13 * 86400000),
+    status: "closed",
+    topics: ["Health", "Public Services"],
+  },
+  {
+    title: "Youth Employment Support",
+    description: "Rate the current support available for young job seekers.",
+    targetRegions: ["Addis Ababa", "Oromia"],
+    pollType: "likert",
+    likertLabels: ["Very Poor", "Poor", "Average", "Good", "Excellent"],
+    startDate: new Date(Date.now() - 40 * 86400000),
+    endDate: new Date(Date.now() - 12 * 86400000),
+    status: "closed",
+    topics: ["Employment", "Youth"],
+  },
+  {
+    title: "Urban Waste Collection Improvement",
+    description: "Choose the change that would improve waste collection the most.",
+    targetRegions: ["Addis Ababa", "Dire Dawa"],
+    pollType: "multipleChoice",
+    pollOptions: [
+      { id: "more-trucks", text: "More collection trucks" },
+      { id: "more-bins", text: "More public bins" },
+      { id: "route-optim", text: "Better route planning" },
+      { id: "awareness", text: "Awareness campaigns" },
+    ],
+    maxSelections: 2,
+    startDate: new Date(Date.now() - 39 * 86400000),
+    endDate: new Date(Date.now() - 11 * 86400000),
+    status: "closed",
+    topics: ["Environment", "Urban Planning"],
+  },
+  {
+    title: "Local Budget Transparency Pulse",
+    description: "Approve or reject the current approach to budget transparency.",
+    targetRegions: ["Central Ethiopia", "Southwest Ethiopia"],
+    pollType: "approval",
+    startDate: new Date(Date.now() - 42 * 86400000),
+    endDate: new Date(Date.now() - 10 * 86400000),
+    status: "closed",
+    topics: ["Governance", "Justice"],
+  },
+];
+
+const fullyPublicPolicies = publicPolicyDefinitions.map((definition) => ({
+  ...definition,
+  citizenAnalyticsVisibility: { ...fullPublicVisibility },
+}));
+
+const allPolicyDefinitions = [...policyDefinitions, ...fullyPublicPolicies];
+
 // ---------- Comment generation ----------
 const commentTextsPositive = [
   "Great policy!",
@@ -255,6 +396,82 @@ const randomComment = (sentimentLabel) => {
   return randomItem(list);
 };
 
+const reportReasons = [
+  "inappropriate",
+  "spam",
+  "harassment",
+  "hate speech",
+  "misinformation",
+];
+
+const buildReportedComment = ({ citizen, policy, reporters, reportCount, reportState }) => {
+  const now = Date.now();
+  const originalText = `This comment was reported on ${policy.title}.`;
+  const reports = Array.from({ length: reportCount }, (_, index) => {
+    const reporter = randomItem(reporters);
+    return {
+      reporterId: reporter._id,
+      reason: reportReasons[index % reportReasons.length],
+      details: `Seeded report ${index + 1} for moderation review.`,
+      status: index === reportCount - 1 ? "pending" : "valid",
+      createdAt: new Date(now - randomInt(1, 5) * 86400000),
+      snapshot: {
+        text: originalText,
+        sentiment: { label: "negative", confidence: 0.92 },
+        keywords: ["reported", "moderation"],
+        visibility: reportCount >= 5 ? "hidden" : "visible",
+        aiStatus: "processed",
+        reportCount: Math.max(0, index),
+      },
+    };
+  });
+
+  return new Comment({
+    policyId: policy._id,
+    userId: citizen._id,
+    parentCommentId: null,
+    text: originalText,
+    visibility: reportCount >= 5 ? "hidden" : "visible",
+    hiddenReason: reportCount >= 5 ? "reports" : null,
+    aiStatus: "processed",
+    sentiment: { label: "negative", confidence: 0.92 },
+    keywords: ["offensive", "reported"],
+    reportState,
+    reportCount,
+    reports,
+    reviewFlags: {
+      sentimentReviewNeeded: false,
+      moderationReviewNeeded: true,
+    },
+    moderationActions:
+      reportCount >= 5
+        ? [
+            {
+              action: "hide",
+              reason: "auto_hide_reports",
+              actor: null,
+              createdAt: new Date(),
+            },
+          ]
+        : [],
+    events: [
+      {
+        type: "created",
+        actor: citizen._id,
+        data: { text: originalText },
+        createdAt: new Date(now - randomInt(1, 5) * 86400000),
+      },
+      {
+        type: "reported",
+        actor: null,
+        data: { reportCount },
+        createdAt: new Date(now - randomInt(1, 5) * 86400000),
+      },
+    ],
+    createdAt: new Date(now - randomInt(1, 15) * 86400000),
+  });
+};
+
 // ---------- Main seed function ----------
 async function seed() {
   try {
@@ -278,10 +495,11 @@ async function seed() {
     let admin = await User.findOne({ email: "admin@test.com" });
     if (!admin) {
       const adminHash = await hashPassword("Admin@123");
+      const adminPhone = `+251900${String(Date.now()).slice(-9)}`;
       admin = new User({
         email: "admin@test.com",
         passwordHash: adminHash,
-        phoneHash: hashPhone("+251911111111"),
+        phoneHash: hashPhone(adminPhone),
         region: "Addis Ababa",
         ageRange: "35-44",
         gender: "male",
@@ -300,8 +518,10 @@ async function seed() {
 
     // ===== 3. Planners =====
     const passwordHash = await hashPassword(DEFAULT_PASSWORD);
-    for (const data of plannerData) {
-      const phoneHash = `planner_dummy_${data.email.split("@")[0]}`;
+    for (let index = 0; index < plannerData.length; index++) {
+      const data = plannerData[index];
+      const phone = data.phone || `+25191300${String(index + 1001).padStart(4, "0")}`;
+      const phoneHash = hashPhone(phone);
       const user = new User({
         ...data,
         passwordHash,
@@ -364,7 +584,7 @@ async function seed() {
     const planners = await User.find({ role: "planner" });
     const policyOwner = planners[0] || admin;
     const createdPolicies = [];
-    for (const def of policyDefinitions) {
+    for (const def of allPolicyDefinitions) {
       const policyCode = generatePolicyCode(def.title);
       const policy = new Policy({
         ...def,
@@ -442,10 +662,10 @@ async function seed() {
 
     // ===== 6.5. Comments that need review (low-confidence / reported) =====
     console.log("Creating comments in needs_review state...");
-    const lowConfidenceCount = 3;
-    const reportedCount = 3;
+    const lowConfidenceCount = 5;
+    const reportedCount = 8;
     const allCitizens = createdCitizens;
-    const somePolicies = createdPolicies.slice(0, 2);
+    const somePolicies = createdPolicies.slice(0, 4);
     // Low-confidence comments (visible but needs review)
     for (let i = 0; i < lowConfidenceCount; i++) {
       const citizen = randomItem(allCitizens);
@@ -478,30 +698,14 @@ async function seed() {
     for (let i = 0; i < reportedCount; i++) {
       const citizen = randomItem(allCitizens);
       const policy = randomItem(somePolicies);
-      const comment = new Comment({
-        policyId: policy._id,
-        userId: citizen._id,
-        parentCommentId: null,
-        text: "This comment was reported by users.",
-        visibility: "hidden",
-        hiddenReason: "reports",
-        moderationStatus: "needs_review",
-        moderationReason: "reports",
-        sentiment: { label: "negative", confidence: 0.9 },
-        keywords: ["offensive"],
-        reportCount: 3,
-        editedHistory: [],
-        flaggedSnapshot: {
-          text: "Original text before any edit",
-          sentiment: { label: "negative", confidence: 0.9 },
-          keywords: ["offensive"],
-          capturedAt: new Date(),
-          reportCountAtCapture: 3,
-        },
-        retryCount: 0,
-        nextRetry: null,
-        lastRetryTriggeredBy: null,
-        createdAt: new Date(Date.now() - randomInt(1, 5) * 86400000),
+      const reportCountForComment = i < 4 ? 5 : randomInt(2, 4);
+      const reportState = reportCountForComment >= 5 ? "under_review" : "reported";
+      const comment = buildReportedComment({
+        citizen,
+        policy,
+        reporters: allCitizens,
+        reportCount: reportCountForComment,
+        reportState,
       });
       await comment.save();
       console.log(`   Reported comment created for policy ${policy.title}`);

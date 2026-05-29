@@ -4,6 +4,7 @@ import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
 import { PageHeader } from "../components/PageHeader";
 import { formatDate, getErrorMessage } from "../lib/format";
+import { showToast } from "../lib/toast";
 
 export function CitizenManagementPage() {
   const [citizens, setCitizens] = useState([]);
@@ -61,6 +62,7 @@ export function CitizenManagementPage() {
       setSuccessMessage(
         `${citizen.email} ${updatedActive ? "activated" : "deactivated"}.`,
       );
+      try { showToast('success', `${citizen.email} ${updatedActive ? "activated" : "deactivated"}.`); } catch(e){}
       setTimeout(() => setSuccessMessage(""), 3000);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to update citizen status"));

@@ -4,8 +4,8 @@ const commentController = require("../controllers/commentController");
 const auth = require("../middleware/authMiddleware");
 const limiters = require("../config/rateLimits");
 const {
-  hasAssociatePermission,
-} = require("../middleware/permissionMiddleware");
+  hasCommentPermission,
+} = require("../middleware/commentPermissionMiddleware");
 const validateObjectId = require("../middleware/validateObjectId");
 
 // =====================================================
@@ -39,7 +39,7 @@ router.get(
 // Get all versions of a comment thread (for history)
 router.get(
   "/:id/versions",
-  auth(["planner", "admin"]),
+  auth(["planner", "comment_moderator", "admin"]),
   validateObjectId("id"),
   commentController.getCommentVersions,
 );
@@ -88,10 +88,10 @@ router.post(
 // Moderate a comment (planner/admin with permission)
 router.put(
   "/:commentId/moderate",
-  auth(["planner", "admin"]),
+  auth(["planner", "comment_moderator", "admin"]),
   validateObjectId("commentId"),
   limiters.moderateComment,
-  hasAssociatePermission("moderate_comments"),
+  hasCommentPermission("moderate_comments"),
   commentController.moderateComment,
 );
 
@@ -114,7 +114,7 @@ router.get(
 // Get all reports for a comment (moderator)
 router.get(
   "/:commentId/reports",
-  auth(["planner", "admin"]),
+  auth(["planner", "comment_moderator", "admin"]),
   validateObjectId("commentId"),
   commentController.getCommentReports,
 );
@@ -122,7 +122,7 @@ router.get(
 // Get full event history (planner/admin only)
 router.get(
   "/:id/history",
-  auth(["planner", "admin"]),
+  auth(["planner", "comment_moderator", "admin"]),
   validateObjectId("id"),
   commentController.getCommentHistory,
 );
@@ -130,7 +130,7 @@ router.get(
 // Get comments needing AI review (planner/admin only)
 router.get(
   "/needs-review",
-  auth(["planner", "admin"]),
+  auth(["planner", "comment_moderator", "admin"]),
   limiters.analyticsRead,
   commentController.getCommentsNeedingReview,
 );

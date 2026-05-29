@@ -5,7 +5,7 @@ const PolicyAssociate = require("../models/PolicyAssociate");
 const hasCommentPermission = (requiredPermission) => {
   return async (req, res, next) => {
     try {
-      const commentId = req.params.id;
+      const commentId = req.params.id || req.params.commentId;
 
       if (!commentId) {
         return res.status(400).json({
@@ -49,6 +49,10 @@ const hasCommentPermission = (requiredPermission) => {
           : policy.createdBy?.toString();
 
       const userId = req.user.id.toString();
+
+      if (req.user.role === "comment_moderator") {
+        return next();
+      }
 
       // owner/admin bypass
       if (ownerId === userId || req.user.role === "admin") {

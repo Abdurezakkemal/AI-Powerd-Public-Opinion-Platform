@@ -14,14 +14,20 @@ export function PendingInvitationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [invitations, setInvitations] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [activeTab, setActiveTab] = useState("pending");
   const [previewInvitation, setPreviewInvitation] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
 
   const loadInvitations = async () => {
     setLoading(true);
     try {
-      const invitations = await plannerApi.getPendingInvitations();
-      setInvitations(invitations);
+      const [pendingInvitations, invitationHistory] = await Promise.all([
+        plannerApi.getPendingInvitations(),
+        plannerApi.getInvitationHistory(),
+      ]);
+      setInvitations(pendingInvitations);
+      setHistory(invitationHistory);
     } catch (err) {
       setError(err.message || "Failed to load invitations");
     } finally {
@@ -88,11 +94,35 @@ export function PendingInvitationsPage() {
         title="Pending Invitations"
         description="Invitations to become an associate on policies"
       />
-      {invitations.length === 0 ? (
+
+      <div className="mt-5 flex gap-2 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab("pending")}
+          className={`rounded-t-lg px-4 py-2 text-sm font-bold ${
+            activeTab === "pending"
+              ? "border-b-2 border-teal-700 text-teal-700"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Pending ({invitations.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("history")}
+          className={`rounded-t-lg px-4 py-2 text-sm font-bold ${
+            activeTab === "history"
+              ? "border-b-2 border-teal-700 text-teal-700"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          History ({history.length})
+        </button>
+      </div>
+
+      {activeTab === "pending" && invitations.length === 0 ? (
         <div className="mt-6 rounded-lg border bg-white p-8 text-center text-slate-500">
           No pending invitations.
         </div>
-      ) : (
+      ) : activeTab === "pending" ? (
         <div className="mt-6 space-y-4">
           {invitations.map((inv) => (
             <div
@@ -142,6 +172,55 @@ export function PendingInvitationsPage() {
               </div>
             </div>
           ))}
+        </div>
+      ) : history.length === 0 ? (
+        <div className="mt-6 rounded-lg border bg-white p-8 text-center text-slate-500">
+          No invitation history yet.
+        </div>
+      ) : (
+        <div className="mt-6 overflow-hidden rounded-lg border bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-bold">Policy</th>
+                <th className="px-4 py-3 font-bold">Status</th>
+                <th className="px-4 py-3 font-bold">Invited by</th>
+                <th className="px-4 py-3 font-bold">Date</th>
+                <th className="px-4 py-3 font-bold">Result</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {history.map((inv) => (
+                <tr key={inv._id}>
+                  <td className="px-4 py-4 font-semibold text-slate-950">
+                    {inv.policyId?.title || "Deleted policy"}
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold capitalize text-slate-700">
+                      {inv.displayStatus || inv.invitationStatus}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    {inv.assignedBy?.email || "Unknown"}
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    {formatDate(inv.invitedAt || inv.createdAt)}
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    {inv.acceptedAt
+                      ? `Accepted ${formatDate(inv.acceptedAt)}`
+                      : inv.rejectedAt
+                        ? `Rejected ${formatDate(inv.rejectedAt)}`
+                        : inv.revokedAt
+                          ? `Revoked ${formatDate(inv.revokedAt)}`
+                          : inv.displayStatus === "expired"
+                            ? "Expired"
+                            : "Awaiting response"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

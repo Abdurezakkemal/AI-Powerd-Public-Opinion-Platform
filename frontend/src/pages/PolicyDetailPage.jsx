@@ -29,6 +29,7 @@ import {
   PenSquare,
 } from "lucide-react";
 import { formatDate, getErrorMessage, toIsoFromDateInput } from "../lib/format";
+import { showToast } from "../lib/toast";
 import { ETHIOPIAN_REGIONS } from "../constants/regions";
 
 function ActionButton({
@@ -102,95 +103,58 @@ export function PolicyDetailPage() {
     decision: "",
   });
   const [commentErrors, setCommentErrors] = useState({}); // for per-comment errors
-  const fetchPlanners = async () => {
-    setLoadingPlanners(true);
-    try {
-      const params = {
-        page: plannerPage,
-        limit: 10,
-        search: plannerSearch,
-        region: plannerRegion,
-        language: plannerLanguage,
-      };
-      const result = await plannerApi.searchActivePlanners(params);
-      setAllPlanners(result.planners || []);
-      setPlannerTotalPages(result.totalPages || 1);
-      setPlannerTotal(result.total || 0);
-    } catch (err) {
-      console.error("Failed to fetch planners", err);
-      setAllPlanners([]);
-    } finally {
-      setLoadingPlanners(false);
-    }
-  };
+    
 
   useEffect(() => {
-    if (showAssociateModal) fetchPlanners();
-  }, [
-    showAssociateModal,
-    plannerPage,
-    plannerSearch,
-    plannerRegion,
-    plannerLanguage,
-  ]);
-
-  useEffect(() => {
-    if (showAssociateModal) setPlannerPage(1);
-  }, [plannerSearch, plannerRegion, plannerLanguage]);
+    if (id && user) loadData();
+  }, [id, user]);
 
   const loadData = async () => {
     setLoading(true);
     setError("");
     try {
-      // Load basic policy data first
-      const policyData = await policyApi.get(id);
-      setPolicy(policyData);
-      
-      // Check if user is owner or admin
-      const isUserOwner = policyData.createdBy?._id === user?.id || policyData.createdBy === user?.id;
-      const isUserAdmin = role === "admin";
-      setIsOwner(isUserOwner);
-      
-      // Load shared data
-      const [analytics, all, associatesData] = await Promise.all([
-        analyticsApi.summary(id),
-        analyticsApi.comments(id, { limit: 100 }),
-        plannerApi.listAssociates(id).catch(() => []),
-      ]);
-      
-      setStats(analytics);
-      setAllComments(all.comments || []);
-      setAssociates(associatesData);
-      
-      // Load admin-only data conditionally
-      if (isUserOwner || isUserAdmin) {
-        const [pending, reported, appealsData] = await Promise.all([
-          adminApi.getAIReviewComments({ policyId: id }),
-          adminApi.getReportedComments({ policyId: id }),
-          adminApi.getPendingAppeals({ policyId: id }),
-        ]);
-        setPendingComments(pending.comments || []);
-        setReportedComments(reported.comments || []);
-        setAppeals(
-          Array.isArray(appealsData) ? appealsData : appealsData.appeals || [],
+      const policyResult = await policyApi.get(id);
+      setPolicy(policyResult);
+      setIsOwner(
+        policyResult.createdBy?._id === user?.id ||
+          policyResult.createdBy === user?.id,
+      );
+
+      // analytics summary (best-effort)
+      try {
+        const statsResult = await analyticsApi.summary(id);
+        setStats(statsResult);
+      } catch (e) {
+        setStats(null);
+      }
+
+      // comments for this policy
+      try {
+        const commentsResult = await commentApi.getPolicyComments(id, {
+          limit: 1000,
+        });
+        const commentsList =
+          commentsResult?.comments || commentsResult?.data || commentsResult || [];
+        setAllComments(commentsList || []);
+        setPendingComments(
+          (commentsList || []).filter((c) => c.aiStatus === "pending"),
         );
-      } else {
-        // Clear admin-only data for non-owners
+        setReportedComments(
+          (commentsList || []).filter((c) => (c.reportCount || 0) > 0),
+        );
+        setAppeals((commentsList || []).filter((c) => c.appeal));
+      } catch (e) {
+        setAllComments([]);
         setPendingComments([]);
         setReportedComments([]);
         setAppeals([]);
       }
     } catch (err) {
-      console.error(err);
-      setError(getErrorMessage(err, "Failed to load policy data"));
+      setError(getErrorMessage(err, "Failed to load policy"));
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (id && user) loadData();
-  }, [id, user]);
 
   // Redirect draft policies to edit page
   useEffect(() => {
@@ -210,7 +174,10 @@ export function PolicyDetailPage() {
     if (!options.suppressNotice) setNotice("");
     try {
       await action();
-      if (!options.suppressNotice && successMsg) setNotice(successMsg);
+      if (!options.suppressNotice && successMsg) {
+        setNotice(successMsg);
+        try { showToast('success', successMsg); } catch(e){}
+      }
       await loadData();
     } catch (err) {
       setError(getErrorMessage(err, "Action failed"));
@@ -244,6 +211,7 @@ export function PolicyDetailPage() {
       setSelectedAssociate(null);
       setAssociateMessage("");
       setNotice("Invitation sent successfully.");
+      try { showToast('success', 'Invitation sent successfully.'); } catch(e){}
       await loadData();
     } catch (err) {
       setModalError(getErrorMessage(err, "Failed to send invitation"));
@@ -265,9 +233,11 @@ export function PolicyDetailPage() {
   };
 
   const resolveAppeal = async (comment, decision) => {
-    setActionLoading(`appeal-${comment._id}`);
+    const id = comment && (comment._id || comment.commentId || comment.id);
+    if (!id) return setError('No comment selected for appeal resolution');
+    setActionLoading(`appeal-${id}`);
     try {
-      await adminApi.resolveAppeal(comment._id, decision);
+      await adminApi.resolveAppeal(id, decision);
       setAppealModal({ open: false, comment: null, decision: "" });
       await loadData(); // refresh all data
     } catch (err) {
@@ -298,13 +268,9 @@ export function PolicyDetailPage() {
       {comments.map((c) => {
         const commentId = c._id || c.id;
         const text = c.text || c.comment;
-        const userDisplayName =
-          c.userId?.displayName || c.userDisplayName || "Anonymous";
+        const userDisplayName = c.userId?.displayName || c.userDisplayName || "Anonymous";
         const createdAt = c.createdAt;
-        const sentimentLabel =
-          typeof c.sentiment === "string"
-            ? c.sentiment
-            : c.sentiment?.label || null;
+        const sentimentLabel = typeof c.sentiment === "string" ? c.sentiment : c.sentiment?.label || null;
         return (
           <div key={commentId} className="rounded-lg border p-3">
             <p className="text-sm font-semibold">{text}</p>
@@ -313,13 +279,9 @@ export function PolicyDetailPage() {
               <span>•</span>
               <span>{formatDate(createdAt)}</span>
               {sentimentLabel && (
-                <span className="rounded-full bg-slate-100 px-2 py-0.5">
-                  Sentiment: {sentimentLabel}
-                </span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5">Sentiment: {sentimentLabel}</span>
               )}
-              {c.reportCount !== undefined && (
-                <span className="text-rose-600">Reports: {c.reportCount}</span>
-              )}
+              {c.reportCount !== undefined && <span className="text-rose-600">Reports: {c.reportCount}</span>}
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
               {actions.map((act) => (
@@ -357,25 +319,86 @@ export function PolicyDetailPage() {
 
   return (
     <div>
-      <PageHeader
-        title={policy.title}
-        description={`Policy Code: ${policy.policyCode} • Created by ${policy.createdBy?.email || "Unknown"}${!isOwner && role !== "admin" ? " • View Only" : ""}`}
-        actions={
-          <div className="flex gap-2">
-            <Link
-              to="/policies"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-            >
-              ← Back to Policies
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">
+              {policy.title || `${(policy.targetRegions || ["Regional"])[0]} ${policy.pollType || ""} ${policy.status || ""} #${(policy._id || id).toString().slice(0,6)}${policy.topics && policy.topics.length ? ` - ${policy.topics[0]}` : ""}`}
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              <strong className="font-medium">Policy Code:</strong> {policy.policyCode} • <strong className="font-medium">Read‑only view</strong>
+            </p>
+            <p className="mt-2 text-sm text-slate-600">{policy.description || "Regional poll focused on Addis Ababa."}</p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Link to={`/policies/${id}/analytics`} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <svg className="h-4 w-4 text-teal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 3v18h18" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              View Analytics
+            </Link>
+            <button onClick={() => runAction('clone', () => policyApi.clone(id), 'Policy cloned.')} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+              <Copy className="h-4 w-4" />
+              Clone Policy
+            </button>
+            <Link to="/policies" className="ml-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+              ← Back
             </Link>
           </div>
-        }
-      />
-      {notice && (
-        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-          {notice}
         </div>
-      )}
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border bg-white p-5 md:col-span-2">
+          <h3 className="text-lg font-bold mb-3">Description</h3>
+          <p className="text-sm text-slate-700 mb-4">{policy.description || 'Regional poll focused on Addis Ababa.'}</p>
+
+          <h3 className="text-lg font-bold mb-3">Details</h3>
+          <dl className="grid gap-2 sm:grid-cols-2">
+            <dt className="font-semibold">Status:</dt>
+            <dd><StatusBadge status={policy.status} /></dd>
+
+            <dt className="font-semibold">Target Regions:</dt>
+            <dd>{(policy.targetRegions || []).join(', ') || 'Addis Ababa'}</dd>
+
+            <dt className="font-semibold">Start Date:</dt>
+            <dd>{formatDate(policy.startDate)}</dd>
+
+            <dt className="font-semibold">End Date:</dt>
+            <dd>{formatDate(policy.endDate)}</dd>
+
+            <dt className="font-semibold">Poll Type:</dt>
+            <dd>{policy.pollType || 'multipleChoice'}</dd>
+
+            <dt className="font-semibold">Topics:</dt>
+            <dd>{(policy.topics || []).join(', ') || 'Tourism'}</dd>
+
+            <dt className="font-semibold">Created By:</dt>
+            <dd>{policy.createdBy?.email || 'Unknown'}</dd>
+          </dl>
+        </div>
+
+        <div className="rounded-lg border bg-white p-5">
+          <p className="text-xs text-slate-500">Sentiment Counts</p>
+          <div className="mt-2 flex items-center gap-3 text-sm">
+            <div className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">Pos: {stats?.sentimentCounts?.positive ?? stats?.positive ?? 0}</div>
+            <div className="rounded-md bg-rose-50 px-2 py-1 text-rose-700">Neg: {stats?.sentimentCounts?.negative ?? stats?.negative ?? 0}</div>
+            <div className="rounded-md bg-slate-50 px-2 py-1 text-slate-700">Neu: {stats?.sentimentCounts?.neutral ?? stats?.neutral ?? 0}</div>
+          </div>
+
+          <div className="mt-4">
+            <p className="text-xs text-slate-500">Top Keywords</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(stats?.topKeywords || []).slice(0, 6).map((k, i) => (
+                <span key={k?.keyword || i} className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{k?.keyword || k}</span>
+              ))}
+              {(!stats?.topKeywords || stats.topKeywords.length === 0) && (
+                <span className="text-sm text-slate-500">No keywords</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* notices shown via global toasts */}
       <ErrorAlert message={error} />
 
       {/* Stats row */}
@@ -511,6 +534,7 @@ export function PolicyDetailPage() {
                     setNotice(
                       `Policy cloned as a new draft. Redirecting to edit...`,
                     );
+                    try { showToast('success', 'Policy cloned as a new draft. Redirecting to edit...'); } catch(e){}
                     navigate(`/policies/${result.id}/edit`);
                   } catch (err) {
                     setError(getErrorMessage(err, "Failed to clone policy"));

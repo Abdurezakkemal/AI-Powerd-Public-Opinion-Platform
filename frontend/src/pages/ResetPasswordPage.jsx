@@ -3,6 +3,7 @@ import { useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import { authApi } from "../api/auth";
 import { ErrorAlert } from "../components/ErrorAlert";
+import { PasswordField } from "../components/PasswordField";
 
 export function ResetPasswordPage() {
   const { isAuthenticated, initializing } = useAuth();
@@ -153,32 +154,24 @@ export function ResetPasswordPage() {
           <ErrorAlert message={error} />
 
           <form onSubmit={handleSubmit} className="mt-5 space-y-4">
-            <label className="block">
-              <span className="text-sm font-semibold text-slate-700">New password</span>
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="new-password"
-                disabled={submitting}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100 disabled:bg-slate-100"
-              />
-              <p className="mt-1 text-xs text-slate-500">Minimum 6 characters</p>
-            </label>
+            <PasswordField
+              label="New password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="new-password"
+              disabled={submitting}
+              helperText="Minimum 6 characters"
+            />
 
-            <label className="block">
-              <span className="text-sm font-semibold text-slate-700">Confirm password</span>
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="••••••••"
-                autoComplete="new-password"
-                disabled={submitting}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2.5 outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100 disabled:bg-slate-100"
-              />
-            </label>
+            <PasswordField
+              label="Confirm password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              placeholder="••••••••"
+              autoComplete="new-password"
+              disabled={submitting}
+            />
 
             <button
               type="submit"

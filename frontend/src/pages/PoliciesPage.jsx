@@ -21,6 +21,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { formatAuditDetails } from "../utils/auditFormatter";
 import { ETHIOPIAN_REGIONS, POLICY_STATUSES } from "../constants/regions";
 import { formatDate, getErrorMessage, toIsoFromDateInput } from "../lib/format";
+import { showToast } from "../lib/toast";
 import { useAuth } from "../auth/AuthContext";
 import { useDebounce } from "../hooks/useDebounce";
 
@@ -282,6 +283,7 @@ export function PoliciesPage() {
     try {
       await action();
       setNotice(successMessage);
+      try { showToast('success', successMessage); } catch (e) {}
       await loadDataForActiveTab();
       const otherTabs = ["my", "delegated", "other"].filter(
         (t) => t !== activeTab,
@@ -319,6 +321,7 @@ export function PoliciesPage() {
     try {
       const result = await policyApi.clone(policy.id);
       setNotice(`Policy cloned as a new draft. Redirecting to edit...`);
+      try { showToast('success', `Policy cloned as a new draft. Redirecting to edit...`); } catch (e) {}
       navigate(`/policies/${result.id}/edit`);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to clone policy"));
@@ -529,11 +532,7 @@ export function PoliciesPage() {
         }
       />
       <ErrorAlert message={error} />
-      {notice && (
-        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">
-          {notice}
-        </div>
-      )}
+      {/* notice is shown via global toasts */}
 
       <div className="mt-5 border-b">
         <nav className="flex gap-4">

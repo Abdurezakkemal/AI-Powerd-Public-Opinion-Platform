@@ -9,7 +9,18 @@ import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
 import { formatDate, getErrorMessage } from "../lib/format";
-import { Save } from "lucide-react";
+import {
+  BadgeCheck,
+  BriefcaseBusiness,
+  Cake,
+  CalendarDays,
+  GraduationCap,
+  Languages,
+  Mail,
+  MapPin,
+  ShieldCheck,
+  UserCircle2,
+} from "lucide-react";
 
 function generatePassword() {
   const random = Math.random().toString(36).slice(2, 8);
@@ -184,59 +195,114 @@ export function PlannerDetailPage() {
       </div>
 
       {/* Planner Profile Card */}
-      <div className="mt-5 rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap justify-between items-start gap-4">
-          <div>
-            <h3 className="text-xl font-bold text-slate-950">
-              {planner.email}
-            </h3>
-            <div className="mt-2 space-y-1 text-sm text-slate-600">
-              <p>
-                <span className="font-semibold">Region:</span>{" "}
-                {planner.region || "Not set"}
-              </p>
-              <p>
-                <span className="font-semibold">Age range:</span>{" "}
-                {planner.ageRange || "Not set"}
-              </p>
-              <p>
-                <span className="font-semibold">Gender:</span>{" "}
-                {planner.gender || "Not set"}
-              </p>
-              <p>
-                <span className="font-semibold">Occupation:</span>{" "}
-                {planner.occupation || "Not set"}
-              </p>
-              <p>
-                <span className="font-semibold">Education:</span>{" "}
-                {planner.education || "Not set"}
-              </p>
-              <p>
-                <span className="font-semibold">Languages spoken:</span>{" "}
-                {planner.languagesSpoken?.join(", ") || "None"}
-              </p>
-              <p>
-                <span className="font-semibold">Joined:</span>{" "}
-                {formatDate(planner.createdAt)}
-              </p>
+      <div className="mt-5 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-[0_18px_45px_-30px_rgba(15,23,42,0.45)]">
+        <div className="bg-gradient-to-r from-emerald-950 via-emerald-800 to-lime-700 px-6 py-5 text-white">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="flex items-start gap-4">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-white/12 ring-1 ring-white/20 backdrop-blur-sm">
+                <UserCircle2 className="h-9 w-9 text-white" />
+              </div>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h3 className="text-2xl font-black tracking-tight">{planner.email}</h3>
+                  <span className={`inline-flex items-center gap-1 rounded-full px-3 py-1 text-xs font-bold ${planner.active ? "bg-lime-300/20 text-lime-50 ring-1 ring-lime-200/30" : "bg-rose-400/15 text-rose-200 ring-1 ring-rose-300/30"}`}>
+                    <BadgeCheck className="h-3.5 w-3.5" />
+                    {planner.active ? "Active planner" : "Deactivated planner"}
+                  </span>
+                </div>
+                <p className="mt-1 max-w-2xl text-sm text-slate-200/90">
+                  Profile snapshot and moderation controls for this planner account.
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2">
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/12 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/15">
+                    <Mail className="h-3.5 w-3.5" />
+                    {planner.email}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/12 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/15">
+                    <MapPin className="h-3.5 w-3.5" />
+                    {planner.region || "Not set"}
+                  </span>
+                  <span className="inline-flex items-center gap-1.5 rounded-full bg-white/12 px-3 py-1.5 text-xs font-semibold text-white ring-1 ring-white/15">
+                    <CalendarDays className="h-3.5 w-3.5" />
+                    Joined {formatDate(planner.createdAt)}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-wrap gap-2 lg:justify-end">
+              <button
+                onClick={toggleStatus}
+                disabled={actionLoading === "status"}
+                className={`inline-flex items-center gap-2 rounded-2xl px-4 py-2.5 text-sm font-bold shadow-sm transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                  planner.active
+                    ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
+                    : "border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"
+                }`}
+              >
+                <ShieldCheck className="h-4 w-4" />
+                {actionLoading === "status"
+                  ? "Updating..."
+                  : planner.active
+                    ? "Deactivate Account"
+                    : "Activate Account"}
+              </button>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={toggleStatus}
-              disabled={actionLoading === "status"}
-              className={`rounded-lg px-4 py-2 text-sm font-bold disabled:opacity-50 disabled:cursor-not-allowed ${
-                planner.active
-                  ? "border border-rose-200 bg-white text-rose-700 hover:bg-rose-50"
-                  : "border border-emerald-200 bg-white text-emerald-700 hover:bg-emerald-50"
-              }`}
-            >
-              {actionLoading === "status"
-                ? "Updating..."
-                : planner.active
-                  ? "Deactivate Account"
-                  : "Activate Account"}
-            </button>
+        </div>
+
+        <div className="grid gap-4 p-6 md:grid-cols-2 xl:grid-cols-3">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <MapPin className="h-4 w-4 text-teal-700" />
+              Region
+            </div>
+            <p className="mt-3 text-lg font-bold text-slate-950">{planner.region || "Not set"}</p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <Cake className="h-4 w-4 text-teal-700" />
+              Age range
+            </div>
+            <p className="mt-3 text-lg font-bold text-slate-950">{planner.ageRange || "Not set"}</p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <UserCircle2 className="h-4 w-4 text-teal-700" />
+              Gender
+            </div>
+            <p className="mt-3 text-lg font-bold text-slate-950">{planner.gender || "Not set"}</p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <BriefcaseBusiness className="h-4 w-4 text-teal-700" />
+              Occupation
+            </div>
+            <p className="mt-3 text-lg font-bold text-slate-950">{planner.occupation || "Not set"}</p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <GraduationCap className="h-4 w-4 text-teal-700" />
+              Education
+            </div>
+            <p className="mt-3 text-lg font-bold text-slate-950">{planner.education || "Not set"}</p>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-slate-500">
+              <Languages className="h-4 w-4 text-teal-700" />
+              Languages spoken
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {(planner.languagesSpoken?.length ? planner.languagesSpoken : ["None"]).map((language) => (
+                <span key={language} className="rounded-full bg-white px-3 py-1 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
+                  {language}
+                </span>
+              ))}
+            </div>
           </div>
         </div>
       </div>

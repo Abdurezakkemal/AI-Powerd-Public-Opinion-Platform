@@ -9,6 +9,23 @@ const {
 const { sendEmail } = require("../utils/email");
 const { createNotification } = require("../services/notificationService");
 
+function getIdString(value) {
+  return value ? value.toString() : "";
+}
+
+async function populateMessage(message) {
+  await message.populate("senderId", "email");
+  await message.populate("recipientId", "email");
+  await message.populate({
+    path: "replyToId",
+    populate: [
+      { path: "senderId", select: "email" },
+      { path: "recipientId", select: "email" },
+    ],
+  });
+  return message;
+}
+
 // Send a message (only planners/admins)
 exports.sendMessage = async (req, res) => {
   try {
@@ -81,14 +98,26 @@ exports.sendMessage = async (req, res) => {
 // Get inbox (messages where user is recipient)
 exports.getInbox = async (req, res) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
-    const messages = await Message.find({ recipientId: req.user.id })
+    const { page = 1, limit = 20, unreadOnly } = req.query;
+    const filter = { recipientId: req.user.id };
+
+    if (String(unreadOnly).toLowerCase() === "true") {
+      filter.read = false;
+    }
+
+    const messages = await Message.find(filter)
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit))
       .populate("senderId", "email")
-      .populate("replyToId");
-    const total = await Message.countDocuments({ recipientId: req.user.id });
+      .populate({
+        path: "replyToId",
+        populate: [
+          { path: "senderId", select: "email" },
+          { path: "recipientId", select: "email" },
+        ],
+      });
+    const total = await Message.countDocuments(filter);
     return sendSuccess(
       res,
       { messages, total, page: Number(page) },
@@ -100,6 +129,74 @@ exports.getInbox = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to retrieve inbox",
+      null,
+      500,
+    );
+  }
+};
+
+// Get grouped conversations for the inbox UI
+exports.getConversations = async (req, res) => {
+  try {
+    const userIdStr = req.user.id.toString();
+    const messages = await Message.find({
+      $or: [{ senderId: req.user.id }, { recipientId: req.user.id }],
+    })
+      .sort({ createdAt: -1 })
+      .populate("senderId", "email")
+      .populate("recipientId", "email")
+      .populate({
+        path: "replyToId",
+        populate: [
+          { path: "senderId", select: "email" },
+          { path: "recipientId", select: "email" },
+        ],
+      });
+
+    const conversationsByUser = new Map();
+
+    for (const message of messages) {
+      const senderIdStr = getIdString(message.senderId?._id || message.senderId);
+      const recipientIdStr = getIdString(
+        message.recipientId?._id || message.recipientId,
+      );
+      const counterpart =
+        senderIdStr === userIdStr ? message.recipientId : message.senderId;
+      const counterpartIdStr = getIdString(counterpart?._id || counterpart);
+      if (!counterpartIdStr) continue;
+
+      if (!conversationsByUser.has(counterpartIdStr)) {
+        conversationsByUser.set(counterpartIdStr, {
+          conversationId: counterpartIdStr,
+          counterpartId: counterpartIdStr,
+          counterpartEmail: counterpart?.email || "Unknown",
+          latestMessage: message,
+          unreadCount: 0,
+          lastMessageAt: message.createdAt,
+        });
+      }
+
+      const conversation = conversationsByUser.get(counterpartIdStr);
+      if (senderIdStr !== userIdStr && recipientIdStr === userIdStr && !message.read) {
+        conversation.unreadCount += 1;
+      }
+    }
+
+    const conversations = Array.from(conversationsByUser.values()).sort(
+      (left, right) => new Date(right.lastMessageAt) - new Date(left.lastMessageAt),
+    );
+
+    return sendSuccess(
+      res,
+      { conversations, total: conversations.length },
+      "Conversations retrieved",
+    );
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve conversations",
       null,
       500,
     );
@@ -143,9 +240,26 @@ exports.getMessage = async (req, res) => {
       await message.save();
     }
 
-    await message.populate("senderId", "email");
-    await message.populate("recipientId", "email");
-    return sendSuccess(res, message, "Message retrieved");
+    await populateMessage(message);
+
+    const thread = await Message.find({
+      $or: [
+        { senderId: message.senderId, recipientId: message.recipientId },
+        { senderId: message.recipientId, recipientId: message.senderId },
+      ],
+    })
+      .sort({ createdAt: 1 })
+      .populate("senderId", "email")
+      .populate("recipientId", "email")
+      .populate({
+        path: "replyToId",
+        populate: [
+          { path: "senderId", select: "email" },
+          { path: "recipientId", select: "email" },
+        ],
+      });
+
+    return sendSuccess(res, { message, thread }, "Message retrieved");
   } catch (err) {
     console.error(err);
     return sendError(

@@ -2,7 +2,6 @@ import {
   BarChart3,
   Bell,
   FileText,
-  Inbox,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -11,7 +10,6 @@ import {
   X,
   AlertCircle,
   TrendingUp,
-  ClipboardList,
   Mail,
   UserCircle,
   ChevronDown,
@@ -30,6 +28,7 @@ const baseLinks = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/policies", label: "Policies", icon: FileText },
   { to: "/analytics/cross", label: "Cross Analytics", icon: BarChart3 },
+  { to: "/messages", label: "Messages", icon: MessageSquare },
 ];
 
 const plannerLinks = [
@@ -41,8 +40,13 @@ const adminLinks = [
   { to: "/citizens", label: "Citizens", icon: UserRound },
   { to: "/planner-requests", label: "Planner Requests", icon: UserPlus },
   { to: "/comments/pending", label: "Pending Comments", icon: MessageSquare },
+  { to: "/comment-moderators", label: "Comment Moderators", icon: UserCircle },
   { to: "/trends", label: "Trends", icon: TrendingUp },
-  { to: "/audit-logs", label: "Audit Logs", icon: ClipboardList },
+];
+
+const moderatorLinks = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/comments/pending", label: "Comment Moderation", icon: MessageSquare },
 ];
 
 export function AppShell() {
@@ -51,10 +55,10 @@ export function AppShell() {
   const { user, role, logout } = useAuth();
   const navigate = useNavigate();
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [unreadMessages, setUnreadMessages] = useState(0);
   const [pendingInvitationsCount, setPendingInvitationsCount] = useState(0);
 
   let links = [...baseLinks];
+  if (role === "comment_moderator") links = [...moderatorLinks];
   if (role === "planner") links = [...links, ...plannerLinks];
   if (role === "admin") links = [...links, ...adminLinks];
 
@@ -66,11 +70,6 @@ export function AppShell() {
           limit: 1,
         });
         setUnreadNotifications(notifRes.total || 0);
-        const msgRes = await messageApi.getInbox({
-          unreadOnly: true,
-          limit: 1,
-        });
-        setUnreadMessages(msgRes.total || 0);
         if (role === "planner") {
           const invitationsRes = await plannerApi.getPendingInvitations();
           setPendingInvitationsCount(invitationsRes.data?.length || 0);
@@ -79,9 +78,18 @@ export function AppShell() {
         console.error("Failed to fetch counts", err);
       }
     };
+
+    const handleMessageChange = () => {
+      fetchCounts();
+    };
+
     fetchCounts();
+    window.addEventListener("messages:changed", handleMessageChange);
     const interval = setInterval(fetchCounts, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("messages:changed", handleMessageChange);
+    };
   }, [role]);
 
   const isActive = (to) => {
@@ -129,7 +137,11 @@ export function AppShell() {
                 Civic Platform
               </p>
               <span className="mt-1 inline-block rounded-full bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-700">
-                {role === "admin" ? "Admin" : "Planner"}
+                {role === "admin"
+                  ? "Admin"
+                  : role === "comment_moderator"
+                    ? "Comment Moderator"
+                    : "Planner"}
               </span>
             </div>
           </div>
@@ -146,8 +158,8 @@ export function AppShell() {
           {links.map((link) => {
             const Icon = link.icon;
             const showBadge =
-              link.to === "/associates/invitations" &&
-              pendingInvitationsCount > 0;
+              link.to === "/associates/invitations" && pendingInvitationsCount > 0;
+            const badgeCount = pendingInvitationsCount;
             return (
               <NavLink
                 key={link.to}
@@ -169,7 +181,7 @@ export function AppShell() {
                 </div>
                 {showBadge && (
                   <span className="ml-auto rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
-                    {pendingInvitationsCount}
+                    {badgeCount > 9 ? "9+" : badgeCount}
                   </span>
                 )}
               </NavLink>
@@ -208,33 +220,32 @@ export function AppShell() {
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Messages */}
-            <button
-              onClick={() => navigate("/messages")}
-              className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-              title="Messages"
-            >
-              <Inbox className="h-5 w-5" />
-              {unreadMessages > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-teal-600 text-[10px] font-bold text-white">
-                  {unreadMessages > 9 ? "9+" : unreadMessages}
-                </span>
-              )}
-            </button>
+            {role !== "comment_moderator" && (
+              <>
+                {/* Messages */}
+                <button
+                  onClick={() => navigate("/messages")}
+                  className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                  title="Messages"
+                >
+                  <MessageSquare className="h-5 w-5" />
+                </button>
 
-            {/* Notifications */}
-            <button
-              onClick={() => navigate("/notifications")}
-              className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-              title="Notifications"
-            >
-              <Bell className="h-5 w-5" />
-              {unreadNotifications > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-teal-600 text-[10px] font-bold text-white">
-                  {unreadNotifications > 9 ? "9+" : unreadNotifications}
-                </span>
-              )}
-            </button>
+                {/* Notifications */}
+                <button
+                  onClick={() => navigate("/notifications")}
+                  className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                  title="Notifications"
+                >
+                  <Bell className="h-5 w-5" />
+                  {unreadNotifications > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-teal-600 text-[10px] font-bold text-white">
+                      {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                    </span>
+                  )}
+                </button>
+              </>
+            )}
 
             {/* User dropdown */}
             <div className="relative">

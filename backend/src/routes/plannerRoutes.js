@@ -1,9 +1,15 @@
 const express = require("express");
+const multer = require("multer");
 const router = express.Router();
 const plannerController = require("../controllers/plannerController");
 const auth = require("../middleware/authMiddleware");
 const limiters = require("../config/rateLimits");
 const validateObjectId = require("../middleware/validateObjectId");
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+});
 
 const optionalCitizenAuth = (req, res, next) => {
   const token = req.header("Authorization")?.replace("Bearer ", "");
@@ -16,7 +22,27 @@ router.post(
   "/request",
   optionalCitizenAuth,
   limiters.plannerRequest,
+  upload.single("proofFile"),
   plannerController.requestPlanner,
+);
+
+router.post(
+  "/appeals",
+  limiters.plannerRequest,
+  plannerController.submitDeactivationAppeal,
+);
+
+router.get(
+  "/appeals",
+  auth(["admin"]),
+  plannerController.listDeactivationAppeals,
+);
+
+router.post(
+  "/appeals/:id/resolve",
+  auth(["admin"]),
+  validateObjectId("id"),
+  plannerController.resolveDeactivationAppeal,
 );
 
 router.post(
@@ -116,6 +142,12 @@ router.get(
   "/associates/invitations/pending",
   auth(["planner"]),
   plannerController.getPendingInvitations,
+);
+
+router.get(
+  "/associates/invitations/history",
+  auth(["planner"]),
+  plannerController.getInvitationHistory,
 );
 
 // NEW: Get details of a single pending invitation (to preview policy before accepting)

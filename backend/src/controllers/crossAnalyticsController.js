@@ -47,7 +47,8 @@ exports.getCrossAnalytics = async (req, res) => {
       );
     }
 
-    // Build policy filter
+    // Build policy filter. Admins see platform-wide analytics; planners only
+    // see policies they own, so cross-policy totals cannot leak app-wide data.
     const policyFilter = {};
     if (topics) {
       const topicArray = topics.split(",").map((t) => t.trim());
@@ -58,6 +59,9 @@ exports.getCrossAnalytics = async (req, res) => {
     }
     // Only include policies that are active, paused, or closed (non‑draft)
     policyFilter.status = { $in: ["active", "paused", "closed"] };
+    if (req.user.role === "planner") {
+      policyFilter.createdBy = req.user.id;
+    }
 
     const policies = await Policy.find(policyFilter).select("_id");
     if (policies.length === 0) {
@@ -68,6 +72,7 @@ exports.getCrossAnalytics = async (req, res) => {
           totalComments: 0,
           sentimentCounts: { positive: 0, negative: 0, neutral: 0 },
           topKeywords: [],
+          policyCount: 0,
         },
         "No policies match the criteria",
         200,
@@ -177,6 +182,7 @@ exports.getCrossAnalytics = async (req, res) => {
         totalComments,
         sentimentCounts,
         topKeywords,
+        policyCount: policyIds.length,
       },
       "Cross‑policy analytics retrieved",
     );

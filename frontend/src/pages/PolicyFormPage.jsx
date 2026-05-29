@@ -1,5 +1,7 @@
 import {
   ArrowLeft,
+  Lightbulb,
+  Loader2,
   Save,
   Rocket,
   Copy,
@@ -18,13 +20,12 @@ import { PageHeader } from "../components/PageHeader";
 import { PollOptionsEditor } from "../components/PollOptionsEditor";
 import { StatusBadge } from "../components/StatusBadge";
 import { TagInput } from "../components/TagInput";
-import { useDebounce } from "../hooks/useDebounce";
 import {
   ETHIOPIAN_REGIONS,
   POLL_TYPES,
   POLICY_TOPICS,
 } from "../constants/regions";
-import { getErrorMessage } from "../lib/format";
+import { getErrorMessage, toIsoFromDateInput } from "../lib/format";
 
 const policySchema = z
   .object({
@@ -123,9 +124,9 @@ export function PolicyFormPage({ mode }) {
   const [serverError, setServerError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
   const [createdCode, setCreatedCode] = useState("");
-  const [relatedPolicies, setRelatedPolicies] = useState([]);
-  const [relatedLoading, setRelatedLoading] = useState(false);
-  const [relatedError, setRelatedError] = useState("");
+  const [aiSuggestions, setAiSuggestions] = useState([]);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
   const [policy, setPolicy] = useState(null);
   const {
     register,
@@ -140,13 +141,9 @@ export function PolicyFormPage({ mode }) {
   const selectedRegions = watch("targetRegions") || [];
   const pollType = watch("pollType");
   const topics = watch("topics") || [];
-  const debouncedTopics = useDebounce(topics, 400);
   const startDate = watch("startDate");
   const endDate = watch("endDate");
   const canEdit = !isEdit || policy?.status === "draft";
-  const visibleCitizenAnalyticsKeys = Object.keys(
-    emptyValues.citizenAnalyticsVisibility,
-  ).filter((key) => !["showBreakdown", "showSentiment"].includes(key));
 
   useEffect(() => {
     let active = true;
@@ -209,76 +206,36 @@ export function PolicyFormPage({ mode }) {
     setValue("targetRegions", Array.from(current), { shouldValidate: true });
   };
 
-  useEffect(() => {
-    let active = true;
-    const selectedTopics = (debouncedTopics || []).filter(Boolean);
-
-    if (isEdit || selectedTopics.length === 0) {
-      setRelatedPolicies([]);
-      setRelatedError("");
-      setRelatedLoading(false);
-      return () => {
-        active = false;
-      };
+  const suggestTopics = async () => {
+    setAiError("");
+    const titleValue = watch("title") || "";
+    const descriptionValue = watch("description") || "";
+    const text = `${titleValue} ${descriptionValue}`.trim();
+    if (text.length < 10) {
+      setAiError(
+        "Add a title and description (at least 10 characters) before requesting topic suggestions.",
+      );
+      return;
     }
-
-    async function loadRelatedPolicies() {
-      setRelatedLoading(true);
-      setRelatedError("");
-      try {
-        const results = await Promise.all(
-          selectedTopics.map((topic) =>
-            policyApi
-              .list({ topic, limit: 5 })
-              .then((result) => ({
-                policies: (result.policies || []).map((item) => ({
-                  ...item,
-                  matchedTopics: [topic],
-                })),
-              }))
-              .catch(() => ({
-                policies: [],
-              })),
-          ),
-        );
-        if (!active) return;
-        const unique = new Map();
-        results
-          .flatMap((result) => result.policies || [])
-          .forEach((item) => {
-            const key = item.id || item._id;
-            if (!key) return;
-            if (unique.has(key)) {
-              const existing = unique.get(key);
-              unique.set(key, {
-                ...existing,
-                matchedTopics: Array.from(
-                  new Set([
-                    ...(existing.matchedTopics || []),
-                    ...(item.matchedTopics || []),
-                  ]),
-                ),
-              });
-            } else {
-              unique.set(key, item);
-            }
-          });
-        setRelatedPolicies(Array.from(unique.values()).slice(0, 5));
-      } catch (err) {
-        if (active)
-          setRelatedError(
-            getErrorMessage(err, "Failed to load related policies"),
-          );
-      } finally {
-        if (active) setRelatedLoading(false);
-      }
+    setAiLoading(true);
+    try {
+      const result = await policyApi.suggestTopics(text);
+      const suggestedTopics = (result.topics || []).map((item) => item.topic);
+      setAiSuggestions(suggestedTopics);
+    } catch (err) {
+      setServerError(getErrorMessage(err, "Failed to suggest topics"));
+    } finally {
+      setAiLoading(false);
     }
+  };
 
-    loadRelatedPolicies();
-    return () => {
-      active = false;
-    };
-  }, [debouncedTopics, isEdit]);
+  const addSuggestion = (topic) => {
+    const current = new Set(topics);
+    if (!current.has(topic)) {
+      setValue("topics", [...topics, topic], { shouldValidate: true });
+    }
+    setAiSuggestions(aiSuggestions.filter((t) => t !== topic));
+  };
 
   const submit = async (values) => {
     setServerError("");
@@ -653,58 +610,53 @@ export function PolicyFormPage({ mode }) {
             />
           </div>
 
-          {!isEdit && topics.length > 0 && (
-            <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-sm font-bold text-slate-800">
-                  Related Policies
-                </h3>
-                {relatedLoading && (
-                  <span className="text-xs font-semibold text-slate-500">
-                    Loading...
-                  </span>
-                )}
-              </div>
-              {relatedError ? (
-                <p className="mt-2 text-xs font-semibold text-rose-600">
-                  {relatedError}
-                </p>
-              ) : relatedPolicies.length ? (
-                <div className="mt-3 grid gap-2">
-                  {relatedPolicies.map((item) => {
-                    const overlappingTopics = item.matchedTopics || [];
-                    return (
-                      <Link
-                        key={item.id || item._id}
-                        to={`/policies/${item.id || item._id}`}
-                        className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm hover:border-teal-200 hover:bg-teal-50"
-                      >
-                        <div className="flex flex-wrap items-center justify-between gap-2">
-                          <span className="font-semibold text-slate-900">
-                            {item.title}
-                          </span>
-                          <span className="font-mono text-xs text-slate-500">
-                            {item.policyCode}
-                          </span>
-                        </div>
-                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-slate-500">
-                          <span>{item.status}</span>
-                          {overlappingTopics.length > 0 && (
-                            <span>
-                              Matches: {overlappingTopics.join(", ")}
-                            </span>
-                          )}
-                        </div>
-                      </Link>
-                    );
-                  })}
-                </div>
+          {/* AI Topic Suggestions */}
+          <div>
+            <button
+              type="button"
+              onClick={suggestTopics}
+              disabled={aiLoading}
+              className="inline-flex items-center gap-2 rounded-lg border border-teal-200 px-3 py-2 text-sm font-bold text-teal-700 hover:bg-teal-50 disabled:opacity-50"
+            >
+              {aiLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
               ) : (
-                <p className="mt-2 text-sm text-slate-500">
-                  No related policies found for the selected topics.
-                </p>
+                <Lightbulb className="h-4 w-4" />
               )}
-            </section>
+              Get AI topic suggestions
+            </button>
+            {aiError && (
+              <p className="mt-1 text-xs font-semibold text-rose-600">
+                {aiError}
+              </p>
+            )}
+          </div>
+          {aiSuggestions.length > 0 && (
+            <div className="rounded-lg border border-teal-200 bg-teal-50 p-3">
+              <div className="flex items-center gap-2 text-sm font-semibold text-teal-800">
+                <Lightbulb className="h-4 w-4" />
+                Suggested topics (click to add)
+              </div>
+              <div className="mt-2 flex flex-wrap gap-2">
+                {aiSuggestions.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => addSuggestion(s)}
+                    className="rounded-full bg-teal-200 px-3 py-1 text-sm font-semibold text-teal-800 hover:bg-teal-300"
+                  >
+                    {s}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setAiSuggestions([])}
+                  className="rounded-full border border-teal-300 px-3 py-1 text-xs text-teal-700 hover:bg-teal-100"
+                >
+                  Dismiss all
+                </button>
+              </div>
+            </div>
           )}
 
           {/* Relevance Factors */}
@@ -735,7 +687,8 @@ export function PolicyFormPage({ mode }) {
               Citizen Analytics Visibility
             </legend>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {visibleCitizenAnalyticsKeys.map((key) => (
+              {Object.keys(emptyValues.citizenAnalyticsVisibility).map(
+                (key) => (
                   <label
                     key={key}
                     className="flex items-center gap-2 text-sm font-semibold text-slate-700"
@@ -747,7 +700,8 @@ export function PolicyFormPage({ mode }) {
                     />
                     {key}
                   </label>
-                ))}
+                ),
+              )}
             </div>
           </fieldset>
         </fieldset>

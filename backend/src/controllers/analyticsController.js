@@ -124,18 +124,87 @@ const parseDate = (dateStr, paramName) => {
 };
 
 // ---------- Helper: permission check ----------
-const checkAnalyticsAccess = async (policy, user) => {
-  if (user.role === "admin") return { allowed: true };
-  if (user.role !== "planner") {
+// type: 'summary' | 'timeseries' | 'comments' | 'demographics' | 'heatmap' | 'correlation' | 'export'
+const checkAnalyticsAccess = async (policy, user, type = "summary") => {
+  // Admins and planners have full access
+  if (user && user.role === "admin") return { allowed: true, includeSentiment: true };
+  if (user && user.role === "planner") return { allowed: true, includeSentiment: true };
+
+  // Citizens: enforce policy visibility flags and region/status rules
+  if (!user || user.role !== "citizen") {
     return {
       allowed: false,
       errorCode: "FORBIDDEN",
-      errorMessage: "Only planners can view analytics",
+      errorMessage: "Only planners and authorized citizens can view analytics",
       statusCode: 403,
     };
   }
-  // Any planner can view analytics (policy status already filtered in main controller)
-  return { allowed: true };
+
+  const vis = policy.citizenAnalyticsVisibility || {};
+
+  // Citizens may only view analytics for policies in allowed statuses
+  const allowedStatuses = ["active", "paused", "closed", "archived"];
+  if (!allowedStatuses.includes(policy.status)) {
+    return {
+      allowed: false,
+      errorCode: "NOT_FOUND",
+      errorMessage: "Policy not available",
+      statusCode: 404,
+    };
+  }
+
+  // Citizens must be in the policy's target region
+  if (user.region && Array.isArray(policy.targetRegions)) {
+    if (!policy.targetRegions.includes(user.region)) {
+      return {
+        allowed: false,
+        errorCode: "NOT_FOUND",
+        errorMessage: "Policy not found",
+        statusCode: 404,
+      };
+    }
+  }
+
+  // Determine access per type
+  if (type === "summary" || type === "timeseries" || type === "export") {
+    if (!vis.showResults) {
+      return {
+        allowed: false,
+        errorCode: "FORBIDDEN",
+        errorMessage: "Results are not visible to citizens for this policy",
+        statusCode: 403,
+      };
+    }
+  }
+
+  if (["demographics", "heatmap", "correlation"].includes(type)) {
+    if (!vis.showBreakdown) {
+      return {
+        allowed: false,
+        errorCode: "FORBIDDEN",
+        errorMessage: "Breakdown analytics are not visible to citizens for this policy",
+        statusCode: 403,
+      };
+    }
+  }
+
+  if (type === "comments") {
+    if (!vis.showComments) {
+      return {
+        allowed: false,
+        errorCode: "FORBIDDEN",
+        errorMessage: "Comments are not visible to citizens for this policy",
+        statusCode: 403,
+      };
+    }
+  }
+
+  // Return object with guidance for controllers: whether to include sentiment and whether to allow time filters
+  return {
+    allowed: true,
+    includeSentiment: !!vis.showSentiment,
+    allowTimeFilter: !!vis.allowTimeFilter,
+  };
 };
 
 // Helper to generate cache key from query parameters
@@ -168,8 +237,8 @@ exports.getAnalytics = async (req, res) => {
       region,
     } = req.query;
 
-    const start = parseDate(startDate, "startDate");
-    const end = parseDate(endDate, "endDate");
+    let start = parseDate(startDate, "startDate");
+    let end = parseDate(endDate, "endDate");
 
     const policy = await Policy.findById(policyId);
     if (!policy)
@@ -181,7 +250,7 @@ exports.getAnalytics = async (req, res) => {
         404,
       );
 
-    const access = await checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user, "summary");
     if (!access.allowed)
       return sendError(
         res,
@@ -190,6 +259,12 @@ exports.getAnalytics = async (req, res) => {
         null,
         access.statusCode,
       );
+
+    // If citizens are not allowed to set time filters, ignore start/end
+    if (access.allowTimeFilter === false) {
+      start = null;
+      end = null;
+    }
 
     // Build vote filter
     let voteFilter = { policyId: policy._id };
@@ -230,7 +305,7 @@ exports.getAnalytics = async (req, res) => {
       return [agg, comms];
     });
 
-    const sentimentCounts = { positive: 0, negative: 0, neutral: 0 };
+    let sentimentCounts = { positive: 0, negative: 0, neutral: 0 };
     const keywordFreq = {};
     comments.forEach((c) => {
       if (c.sentiment?.label) sentimentCounts[c.sentiment.label]++;
@@ -250,8 +325,8 @@ exports.getAnalytics = async (req, res) => {
       title: policy.title,
       pollType: policy.pollType,
       ...voteAgg,
-      sentimentCounts,
-      topKeywords,
+      // Only include sentiment/top keywords if permitted for citizens
+      ...(access.includeSentiment ? { sentimentCounts, topKeywords } : {}),
     };
 
     logger.info(
@@ -296,8 +371,8 @@ exports.getTimeseries = async (req, res) => {
       region,
     } = req.query;
 
-    const start = parseDate(startDate, "startDate");
-    const end = parseDate(endDate, "endDate");
+    let start = parseDate(startDate, "startDate");
+    let end = parseDate(endDate, "endDate");
 
     const policy = await Policy.findById(policyId);
     if (!policy)
@@ -309,7 +384,7 @@ exports.getTimeseries = async (req, res) => {
         404,
       );
 
-    const access = await checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user, "timeseries");
     if (!access.allowed)
       return sendError(
         res,
@@ -318,6 +393,11 @@ exports.getTimeseries = async (req, res) => {
         null,
         access.statusCode,
       );
+
+    if (access.allowTimeFilter === false) {
+      start = null;
+      end = null;
+    }
 
     let dateFormat;
     switch (bucket) {
@@ -531,7 +611,7 @@ exports.getTimeseries = async (req, res) => {
     }
 
     const allPeriods = new Set([...voteMap.keys(), ...sentimentMap.keys()]);
-    const merged = Array.from(allPeriods)
+    let merged = Array.from(allPeriods)
       .sort()
       .map((period) => {
         const voteData = voteMap.get(period) || { totalVotes: 0 };
@@ -546,6 +626,14 @@ exports.getTimeseries = async (req, res) => {
           topKeywords: sentimentData.topKeywords,
         };
       });
+
+    // If citizen is not allowed sentiment, strip those fields
+    if (access.includeSentiment === false) {
+      merged = merged.map((m) => {
+        const { averageSentiment, topKeywords, ...rest } = m;
+        return rest;
+      });
+    }
 
     logger.info(
       `Timeseries with sentiment for policy ${policyId} (${bucket}) delivered`,
@@ -588,7 +676,7 @@ exports.getCorrelation = async (req, res) => {
       );
     }
 
-    const access = await checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user, "correlation");
     if (!access.allowed)
       return sendError(
         res,
@@ -694,8 +782,8 @@ exports.getDemographicBreakdown = async (req, res) => {
       );
     }
 
-    const start = parseDate(startDate, "startDate");
-    const end = parseDate(endDate, "endDate");
+    let start = parseDate(startDate, "startDate");
+    let end = parseDate(endDate, "endDate");
 
     const policy = await Policy.findById(policyId);
     if (!policy)
@@ -707,7 +795,7 @@ exports.getDemographicBreakdown = async (req, res) => {
         404,
       );
 
-    const access = await checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user, "demographics");
     if (!access.allowed)
       return sendError(
         res,
@@ -716,6 +804,11 @@ exports.getDemographicBreakdown = async (req, res) => {
         null,
         access.statusCode,
       );
+
+    if (access.allowTimeFilter === false) {
+      start = null;
+      end = null;
+    }
 
     let groupField;
     if (dimension === "region") groupField = "$region";
@@ -906,9 +999,13 @@ exports.getDemographicBreakdown = async (req, res) => {
       }
     }
 
-    const formatted = Array.from(groupMap.values()).sort((a, b) =>
+    let formatted = Array.from(groupMap.values()).sort((a, b) =>
       (a[dimension] || "").localeCompare(b[dimension] || ""),
     );
+
+    if (access.includeSentiment === false) {
+      formatted = formatted.map(({ averageSentiment, topKeywords, ...rest }) => rest);
+    }
     logger.info(`Demographic breakdown for ${policyId} by ${dimension}`);
     return sendSuccess(
       res,
@@ -1039,7 +1136,7 @@ exports.getComments = async (req, res) => {
         404,
       );
 
-    const access = await checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user, "comments");
     if (!access.allowed)
       return sendError(
         res,
@@ -1104,12 +1201,9 @@ exports.getComments = async (req, res) => {
       } else {
         moderationStatus = "pending_review";
       }
-      return {
+      const base = {
         id: c._id,
         text: c.text,
-        sentiment: c.sentiment?.label,
-        confidence: c.sentiment?.confidence,
-        keywords: c.keywords,
         moderationStatus: moderationStatus,
         visibility: c.visibility,
         isOfficialReply: c.isOfficialReply,
@@ -1117,6 +1211,14 @@ exports.getComments = async (req, res) => {
         userDisplayName: c.userId?.displayName || "Anonymous",
         isEdited: (c.editedHistory && c.editedHistory.length > 0) || false,
       };
+
+      // Only include sentiment/keywords when allowed for citizens
+      if (access.includeSentiment !== false) {
+        base.sentiment = c.sentiment?.label;
+        base.confidence = c.sentiment?.confidence;
+        base.keywords = c.keywords;
+      }
+      return base;
     });
     return sendSuccess(
       res,
@@ -1161,15 +1263,7 @@ exports.getHeatmap = async (req, res) => {
       );
     }
 
-    if (!["planner", "admin"].includes(req.user.role)) {
-      return sendError(
-        res,
-        ErrorCodes.FORBIDDEN,
-        "Only planners and admins can view heatmap",
-        null,
-        403,
-      );
-    }
+    // Check access according to policy visibility (planners/admins allowed by checkAnalyticsAccess)
 
     const parseDate = (dateStr, paramName) => {
       if (!dateStr) return null;
@@ -1206,7 +1300,7 @@ exports.getHeatmap = async (req, res) => {
         404,
       );
 
-    const access = await checkAnalyticsAccess(policy, req.user);
+    const access = await checkAnalyticsAccess(policy, req.user, "heatmap");
     if (!access.allowed) {
       return sendError(
         res,
@@ -1215,6 +1309,11 @@ exports.getHeatmap = async (req, res) => {
         null,
         access.statusCode,
       );
+    }
+
+    if (access.allowTimeFilter === false) {
+      start = null;
+      end = null;
     }
 
     // Build vote match with demographics
@@ -1495,7 +1594,7 @@ exports.getHeatmap = async (req, res) => {
     }
 
     const allKeys = new Set([...voteMap.keys(), ...commentMap.keys()]);
-    const results = Array.from(allKeys)
+    let results = Array.from(allKeys)
       .sort()
       .map((key) => {
         const voteData = voteMap.get(key) || { totalVotes: 0 };
@@ -1513,6 +1612,10 @@ exports.getHeatmap = async (req, res) => {
         if (byRegionFlag && region) base.region = region;
         return base;
       });
+
+    if (access.includeSentiment === false) {
+      results = results.map(({ averageSentiment, topKeywords, ...rest }) => rest);
+    }
 
     logger.info(`Heatmap data generated for policy ${policyId}`);
     return sendSuccess(res, { interval, data: results }, "Heatmap retrieved");

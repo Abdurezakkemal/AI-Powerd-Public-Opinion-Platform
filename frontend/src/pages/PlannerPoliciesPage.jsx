@@ -18,6 +18,7 @@ import { Link, useParams } from "react-router-dom";
 import { policyApi } from "../api/policies";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorAlert } from "../components/ErrorAlert";
+import { showToast } from "../lib/toast";
 import { LoadingState } from "../components/LoadingState";
 import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
@@ -89,6 +90,7 @@ export function PlannerPoliciesPage() {
     try {
       await action();
       setNotice(successMessage);
+      try { if (successMessage) showToast('success', successMessage); } catch (e) {}
       // Refresh policies after action
       const policiesRes = await policyApi.list({ owner: userId, limit: 100 });
       setPolicies(policiesRes.policies || []);
@@ -158,11 +160,7 @@ export function PlannerPoliciesPage() {
 
       <div className="space-y-3">
         <ErrorAlert message={error} />
-        {notice ? (
-          <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-            {notice}
-          </div>
-        ) : null}
+        {/* notices shown via global toasts */}
       </div>
 
       {loading ? (

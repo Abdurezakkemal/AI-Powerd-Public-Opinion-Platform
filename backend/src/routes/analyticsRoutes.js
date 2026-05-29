@@ -17,14 +17,14 @@ router.get(
 
 router.get(
   "/heatmap",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   analyticsReadLimiter,
   analyticsController.getHeatmap,
 );
 
 router.get(
   "/:policyId/timeseries",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getTimeseries,
@@ -32,7 +32,7 @@ router.get(
 
 router.get(
   "/:policyId/correlation",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getCorrelation,
@@ -40,7 +40,7 @@ router.get(
 
 router.get(
   "/:policyId/demographics",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getDemographicBreakdown,
@@ -49,7 +49,7 @@ router.get(
 // ✅ Open analytics: any planner can view (no associate permission required)
 router.get(
   "/:policyId",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getAnalytics,
@@ -58,7 +58,7 @@ router.get(
 // Export is available to admins, owners, and accepted associates.
 router.get(
   "/:policyId/export",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.exportAnalytics,
@@ -67,7 +67,7 @@ router.get(
 // Comments list still requires moderate_comments permission
 router.get(
   "/:policyId/comments",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getComments,
