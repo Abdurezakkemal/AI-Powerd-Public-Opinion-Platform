@@ -8,8 +8,16 @@ const logger = require("../utils/logger");
 const { hashPhone, normalizePhone } = require("../utils/helpers");
 const { normalizeVoteValue, validateVoteValue } = require("../utils/pollTypes");
 
-const RATE_LIMIT = 3;
-const RATE_WINDOW = 24 * 60 * 60;
+const DEFAULT_SMS_DAILY_VOTE_LIMIT = 3;
+const RATE_LIMIT = (() => {
+  const v = Number.parseInt(process.env.SMS_DAILY_VOTE_LIMIT, 10);
+  return Number.isFinite(v) ? v : DEFAULT_SMS_DAILY_VOTE_LIMIT;
+})();
+
+const RATE_WINDOW = (() => {
+  const v = Number.parseInt(process.env.SMS_RATE_WINDOW_SECONDS, 10);
+  return Number.isFinite(v) ? v : 24 * 60 * 60;
+})();
 const PAGE_SIZE = 5;
 const SESSION_TTL = 24 * 60 * 60;
 

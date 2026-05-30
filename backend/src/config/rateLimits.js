@@ -129,7 +129,7 @@ const limiters = {
 
   smsReceive: createRateLimiter({
     windowMs: 60 * 1000,
-    max: intEnv("RATE_LIMIT_SMS_RECEIVE_MAX", 30),
+    max: intEnv("RATE_LIMIT_SMS_RECEIVE_MAX", 10),
     keyPrefix: "rl:sms:receive",
     keyGenerator: (req) => req.ip,
   }),
