@@ -30,7 +30,8 @@ const sendEmail = async (to, subject, text, html) => {
 
 // Mobile-friendly password reset email with visible token
 const sendMobilePasswordResetEmail = async (to, token) => {
-  const resetLink = `${process.env.FRONTEND_URL || "http://localhost:3000"}/reset-password?token=${token}`;
+  const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
+  const resetLink = `${frontendUrl}/reset-password?token=${token}`;
   await sendEmail(
     to,
     "Password Reset Request - Civic Engagement Platform",
@@ -57,7 +58,8 @@ const sendMobilePasswordResetEmail = async (to, token) => {
 
 // Mobile-friendly admin-initiated reset email with visible token
 const sendMobileAdminInitiatedResetEmail = async (to, token) => {
-  const resetLink = `${process.env.FRONTEND_URL || "http://localhost:3000"}/reset-password?token=${token}`;
+  const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
+  const resetLink = `${frontendUrl}/reset-password?token=${token}`;
   await sendEmail(
     to,
     "Password Reset Initiated by Administrator",

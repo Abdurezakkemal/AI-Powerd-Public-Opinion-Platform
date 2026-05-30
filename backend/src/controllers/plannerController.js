@@ -900,8 +900,9 @@ exports.addAssociate = async (req, res) => {
     });
 
     // Email with the invitation message.
-    const acceptUrl = `${process.env.FRONTEND_URL}/associates/invitation/${associate._id}?action=accept`;
-    const rejectUrl = `${process.env.FRONTEND_URL}/associates/invitation/${associate._id}?action=reject`;
+    const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
+    const acceptUrl = `${frontendUrl}/associates/invitation/${associate._id}?action=accept`;
+    const rejectUrl = `${frontendUrl}/associates/invitation/${associate._id}?action=reject`;
     await sendEmail({
       to: associateUser.email,
       subject: `Invitation to become an associate for policy: ${policy.title}`,
