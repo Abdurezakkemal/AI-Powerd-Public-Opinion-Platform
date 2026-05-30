@@ -7,7 +7,6 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/date_formatters.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
-import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../domain/entities/policy.dart';
 import '../../domain/entities/vote_value.dart';
@@ -80,9 +79,12 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                 dividerColor: Colors.transparent,
                 labelColor: AppTheme.primary,
                 unselectedLabelColor: AppTheme.mutedText,
-                labelStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                labelStyle:
+                    const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
+                unselectedLabelStyle:
+                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 tabs: [
                   Tab(
                     height: 56,
@@ -95,7 +97,8 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                             color: AppTheme.primary.withValues(alpha: 0.1),
                             shape: BoxShape.circle,
                           ),
-                          child: const Icon(Icons.info_outline_rounded, size: 18),
+                          child:
+                              const Icon(Icons.info_outline_rounded, size: 18),
                         ),
                         const SizedBox(width: 8),
                         const Text('Overview'),
@@ -144,7 +147,10 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                             if (state.detailStatus == RequestStatus.loading)
                               const Padding(
                                 padding: EdgeInsets.only(bottom: 16),
-                                child: LinearProgressIndicator(minHeight: 3, borderRadius: BorderRadius.all(Radius.circular(2))),
+                                child: LinearProgressIndicator(
+                                    minHeight: 3,
+                                    borderRadius:
+                                        BorderRadius.all(Radius.circular(2))),
                               ),
                             _DetailHeader(policy: policy),
                             const SizedBox(height: 16),
@@ -152,7 +158,6 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                             const SizedBox(height: 16),
                             _VotingCard(
                               policy: policy,
-                              onVote: () => _showVoteSheet(context, policy),
                             ),
                           ],
                         ),
@@ -164,26 +169,6 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
         );
       },
     );
-  }
-
-  Future<void> _showVoteSheet(BuildContext context, Policy policy) async {
-    final policyCubit = context.read<PolicyCubit>();
-    final historyCubit = context.read<HistoryCubit>();
-    final voted = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => BlocProvider.value(
-        value: context.read<VoteCubit>(),
-        child: _VoteSheet(policy: policy),
-      ),
-    );
-
-    if (!mounted || voted != true) return;
-    policyCubit.loadPolicy(policy.id);
-    policyCubit.loadPolicies();
-    historyCubit.loadHistory();
   }
 }
 
@@ -207,10 +192,10 @@ class _DetailHeader extends StatelessWidget {
                 child: Text(
                   policy.title,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w900,
-                    height: 1.25,
-                    letterSpacing: -0.5,
-                  ),
+                        fontWeight: FontWeight.w900,
+                        height: 1.25,
+                        letterSpacing: -0.5,
+                      ),
                 ),
               ),
               const SizedBox(width: 16),
@@ -269,9 +254,9 @@ class _DescriptionCard extends StatelessWidget {
           Text(
             'About this policy',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.3,
-            ),
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.3,
+                ),
           ),
           const SizedBox(height: 12),
           Text(
@@ -319,103 +304,51 @@ class _DescriptionCard extends StatelessWidget {
   }
 }
 
-class _VotingCard extends StatelessWidget {
-  const _VotingCard({required this.policy, required this.onVote});
-
-  final Policy policy;
-  final VoidCallback onVote;
-
-  @override
-  Widget build(BuildContext context) {
-    final title = policy.canVote ? 'Ready for your feedback' : 'Voting paused';
-    final message = policy.canVote
-        ? 'Submit one rating for this policy. A comment is optional.'
-        : 'This policy is visible, but voting is temporarily paused.';
-
-    return AppCard(
-      margin: EdgeInsets.zero,
-      padding: const EdgeInsets.all(24),
-      color: policy.canVote ? AppTheme.primary.withValues(alpha: 0.05) : null,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(
-                policy.canVote ? Icons.feedback_rounded : Icons.pause_circle_filled_rounded,
-                color: policy.canVote ? AppTheme.primary : AppTheme.mutedText,
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Text(
-            message, 
-            style: TextStyle(
-              color: AppTheme.text.withValues(alpha: 0.7),
-              height: 1.5,
-              fontSize: 14,
-            ),
-          ),
-          const SizedBox(height: 20),
-          AppButton(
-            label: 'Vote on Policy',
-            icon: Icons.how_to_vote_rounded,
-            onPressed: policy.canVote ? onVote : null,
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VoteSheet extends StatefulWidget {
-  const _VoteSheet({required this.policy});
+class _VotingCard extends StatefulWidget {
+  const _VotingCard({required this.policy});
 
   final Policy policy;
 
   @override
-  State<_VoteSheet> createState() => _VoteSheetState();
+  State<_VotingCard> createState() => _VotingCardState();
 }
 
-class _VoteSheetState extends State<_VoteSheet> {
+class _VotingCardState extends State<_VotingCard> {
   dynamic _voteValue;
-  final _commentController = TextEditingController();
+  bool _submitted = false;
 
   @override
   void initState() {
     super.initState();
+    _setInitialVoteValue();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VotingCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.policy.id != widget.policy.id ||
+        oldWidget.policy.pollType != widget.policy.pollType) {
+      _submitted = false;
+      _setInitialVoteValue();
+    }
+  }
+
+  void _setInitialVoteValue() {
     switch (widget.policy.pollType) {
       case 'rating':
       case 'likert':
         _voteValue = 5;
         break;
-      case 'binary':
-      case 'approval':
       case 'multipleChoice':
-        if (widget.policy.pollType == 'multipleChoice') _voteValue = <String>[];
-        else _voteValue = null;
-        break;
       case 'rankedChoice':
         _voteValue = <String>[];
         break;
+      case 'binary':
+      case 'approval':
+      default:
+        _voteValue = null;
+        break;
     }
-  }
-
-  @override
-  void dispose() {
-    _commentController.dispose();
-    super.dispose();
   }
 
   bool get _canSubmit {
@@ -429,22 +362,35 @@ class _VoteSheetState extends State<_VoteSheet> {
 
   String get _pollTypeLabel {
     switch (widget.policy.pollType) {
-      case 'binary': return 'Vote Yes or No';
-      case 'multipleChoice': return 'Select Options';
-      case 'likert': return 'Rate on Scale';
-      case 'approval': return 'Approve or Reject';
-      case 'rating': return 'Rate Policy';
-      case 'rankedChoice': return 'Rank Choices';
-      default: return 'Vote on Policy';
+      case 'binary':
+        return 'Vote Yes or No';
+      case 'multipleChoice':
+        return 'Select Options';
+      case 'likert':
+        return 'Rate on Scale';
+      case 'approval':
+        return 'Approve or Reject';
+      case 'rating':
+        return 'Rate Policy';
+      case 'rankedChoice':
+        return 'Rank Choices';
+      default:
+        return 'Vote on Policy';
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
+    final policy = widget.policy;
+    final title = policy.canVote ? 'Ready for your feedback' : 'Voting paused';
+    final message = policy.canVote
+        ? 'Submit one vote for this policy. Comments belong in the Discussion tab.'
+        : 'This policy is visible, but voting is temporarily paused.';
+
     return BlocConsumer<VoteCubit, VoteState>(
       listener: (context, state) {
         if (state.status == RequestStatus.success) {
+          setState(() => _submitted = true);
           final message = state.message ??
               (state.alreadyVoted
                   ? 'You have already voted on this policy.'
@@ -452,89 +398,108 @@ class _VoteSheetState extends State<_VoteSheet> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(message),
-              backgroundColor: state.alreadyVoted ? Colors.orange.shade700 : Colors.green.shade600,
+              backgroundColor: state.alreadyVoted
+                  ? Colors.orange.shade700
+                  : Colors.green.shade600,
             ),
           );
-          Navigator.of(context).pop(true);
+          context.read<PolicyCubit>().loadPolicy(policy.id);
+          context.read<PolicyCubit>().loadPolicies();
+          context.read<HistoryCubit>().loadHistory();
         } else if (state.status == RequestStatus.failure) {
-          final errorMessage = state.message ?? 'Failed to submit vote. Please try again.';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(errorMessage),
+              content: Text(
+                state.message ?? 'Failed to submit vote. Please try again.',
+              ),
               backgroundColor: Colors.redAccent,
             ),
           );
         }
       },
-      builder: (context, state) {
-        return Container(
-          margin: EdgeInsets.only(bottom: bottom),
-          padding: const EdgeInsets.fromLTRB(24, 16, 24, 32),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-          ),
-          child: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-              Center(
-                child: Container(
-                  width: 48,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    color: AppTheme.border,
-                    borderRadius: BorderRadius.circular(99),
+      builder: (context, voteState) {
+        return BlocBuilder<HistoryCubit, HistoryState>(
+          builder: (context, historyState) {
+            final alreadyVoted = _submitted ||
+                historyState.history.any((item) => item.policyId == policy.id);
+            final isLoading = voteState.status == RequestStatus.loading;
+            final canVote = policy.canVote && !alreadyVoted;
+
+            return AppCard(
+              margin: EdgeInsets.zero,
+              padding: const EdgeInsets.all(24),
+              color: canVote ? AppTheme.primary.withValues(alpha: 0.05) : null,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(
+                        alreadyVoted
+                            ? Icons.check_circle_rounded
+                            : policy.canVote
+                                ? Icons.feedback_rounded
+                                : Icons.pause_circle_filled_rounded,
+                        color: alreadyVoted
+                            ? Colors.green.shade600
+                            : policy.canVote
+                                ? AppTheme.primary
+                                : AppTheme.mutedText,
+                        size: 24,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          alreadyVoted ? 'Vote submitted' : title,
+                          style:
+                              Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.3,
+                                  ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 10),
+                  Text(
+                    alreadyVoted
+                        ? 'You have already voted on this policy.'
+                        : message,
+                    style: TextStyle(
+                      color: AppTheme.text.withValues(alpha: 0.7),
+                      height: 1.5,
+                      fontSize: 14,
+                    ),
+                  ),
+                  if (canVote) ...[
+                    const SizedBox(height: 24),
+                    Text(
+                      _pollTypeLabel,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w900,
+                          ),
+                    ),
+                    const SizedBox(height: 18),
+                    _buildVoteWidget(),
+                  ],
+                  const SizedBox(height: 24),
+                  AppButton(
+                    label: alreadyVoted ? 'Already Voted' : 'Submit Vote',
+                    icon: alreadyVoted
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.send_rounded,
+                    loading: isLoading,
+                    onPressed: canVote && _canSubmit && !isLoading
+                        ? () => context.read<VoteCubit>().submitVote(
+                              policyId: policy.id,
+                              value: _voteValue,
+                            )
+                        : null,
+                  ),
+                ],
               ),
-              const SizedBox(height: 24),
-              Text(
-                _pollTypeLabel,
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.5,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                widget.policy.title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: AppTheme.mutedText,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              const SizedBox(height: 32),
-              _buildVoteWidget(),
-              const SizedBox(height: 24),
-              AppTextField(
-                controller: _commentController,
-                label: 'Add a comment (optional)',
-                hint: 'Share your thoughts on this policy...',
-                icon: Icons.chat_bubble_outline_rounded,
-                maxLines: 4,
-                maxLength: 2000,
-              ),
-              const SizedBox(height: 24),
-              AppButton(
-                label: 'Submit Vote',
-                icon: Icons.send_rounded,
-                loading: state.status == RequestStatus.loading,
-                onPressed: _canSubmit
-                    ? () => context.read<VoteCubit>().submitVote(
-                          policyId: widget.policy.id,
-                          value: _voteValue,
-                          comment: _commentController.text,
-                        )
-                    : null,
-              ),
-            ],
-          ),
-        ),
+            );
+          },
         );
       },
     );
@@ -587,7 +552,7 @@ class _VoteSheetState extends State<_VoteSheet> {
 
 class _InfoChip extends StatelessWidget {
   const _InfoChip({
-    required this.icon, 
+    required this.icon,
     required this.label,
     this.iconColor,
     this.backgroundColor,
@@ -687,7 +652,8 @@ class _CommentsTab extends StatelessWidget {
               policyId: policy.id,
               onCommentPosted: () {
                 print('[PolicyDetailPage] onCommentPosted callback triggered');
-                print('[PolicyDetailPage] Reloading comments for policy: ${policy.id}');
+                print(
+                    '[PolicyDetailPage] Reloading comments for policy: ${policy.id}');
                 context.read<CommentCubit>().loadComments(
                       policyId: policy.id,
                       refresh: true,

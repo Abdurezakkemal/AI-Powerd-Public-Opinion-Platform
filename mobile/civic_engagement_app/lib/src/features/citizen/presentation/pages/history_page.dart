@@ -4,15 +4,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/state/request_status.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/date_formatters.dart';
-import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
-import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_view.dart';
+import '../../../../core/di/service_locator.dart';
+import '../../../auth/domain/repositories/auth_repository.dart';
+import '../../domain/repositories/citizen_repository.dart';
 import '../../domain/entities/vote_history.dart';
 import '../../domain/entities/vote_value.dart';
 import '../cubit/history_cubit.dart';
-import '../cubit/vote_cubit.dart';
 import '../widgets/rating_stars.dart';
 
 class HistoryPage extends StatelessWidget {
@@ -49,7 +49,7 @@ class HistoryPage extends StatelessWidget {
             return const EmptyState(
               icon: Icons.history_outlined,
               title: 'No votes yet',
-              message: 'Your policy ratings and comments will be listed here.',
+              message: 'Your policy votes will be listed here.',
             );
           }
 
@@ -60,12 +60,7 @@ class HistoryPage extends StatelessWidget {
               itemCount: state.history.length,
               itemBuilder: (context, index) {
                 final item = state.history[index];
-                return _HistoryCard(
-                  item: item,
-                  onComment: item.hasComment
-                      ? null
-                      : () => _showCommentSheet(context, item),
-                );
+                return _HistoryCard(item: item);
               },
             ),
           );
@@ -73,30 +68,12 @@ class HistoryPage extends StatelessWidget {
       ),
     );
   }
-
-  Future<void> _showCommentSheet(BuildContext context, VoteHistory item) async {
-    final added = await showModalBottomSheet<bool>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => BlocProvider.value(
-        value: context.read<VoteCubit>(),
-        child: _CommentSheet(item: item),
-      ),
-    );
-
-    if (added == true && context.mounted) {
-      context.read<HistoryCubit>().loadHistory();
-    }
-  }
 }
 
 class _HistoryCard extends StatelessWidget {
-  const _HistoryCard({required this.item, required this.onComment});
+  const _HistoryCard({required this.item});
 
   final VoteHistory item;
-  final VoidCallback? onComment;
 
   String _formatVoteValue() {
     // Get the poll type from the item, default to 'rating' if not available
@@ -172,32 +149,10 @@ class _HistoryCard extends StatelessWidget {
           ),
           if (item.hasComment) ...[
             const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF7F9FB),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                item.comment!,
-                style: const TextStyle(color: AppTheme.text, height: 1.35),
-              ),
-            ),
-          ] else ...[
+            _CommentBubble(text: item.comment!),
+          ] else if (item.policyId != null) ...[
             const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: onComment,
-              icon: const Icon(Icons.add_comment_outlined),
-              label: const Text('Add comment'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppTheme.primary,
-                side:
-                    BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
+            _HistoryPolicyComments(policyId: item.policyId!),
           ],
         ],
       ),
@@ -205,101 +160,97 @@ class _HistoryCard extends StatelessWidget {
   }
 }
 
-class _CommentSheet extends StatefulWidget {
-  const _CommentSheet({required this.item});
+class _HistoryPolicyComments extends StatefulWidget {
+  const _HistoryPolicyComments({required this.policyId});
 
-  final VoteHistory item;
+  final String policyId;
 
   @override
-  State<_CommentSheet> createState() => _CommentSheetState();
+  State<_HistoryPolicyComments> createState() => _HistoryPolicyCommentsState();
 }
 
-class _CommentSheetState extends State<_CommentSheet> {
-  final _commentController = TextEditingController();
+class _HistoryPolicyCommentsState extends State<_HistoryPolicyComments> {
+  late Future<List<String>> _commentsFuture;
 
   @override
-  void dispose() {
-    _commentController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    _commentsFuture = _loadUserComments();
+  }
+
+  Future<List<String>> _loadUserComments() async {
+    final userId = serviceLocator<AuthRepository>().restoreSession()?.userId;
+    if (userId == null) return const [];
+
+    try {
+      final page = await serviceLocator<CitizenRepository>().getPolicyComments(
+        policyId: widget.policyId,
+        limit: 100,
+      );
+
+      return page.comments
+          .where((comment) => comment.userId == userId)
+          .map((comment) => comment.text.trim())
+          .where((text) => text.isNotEmpty)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final bottom = MediaQuery.of(context).viewInsets.bottom;
-    return BlocConsumer<VoteCubit, VoteState>(
-      listener: (context, state) {
-        if (state.status == RequestStatus.success) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(state.message ?? 'Comment added.')),
+    return FutureBuilder<List<String>>(
+      future: _commentsFuture,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            height: 20,
+            width: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: AppTheme.primary,
+            ),
           );
-          Navigator.of(context).pop(true);
         }
-        if (state.status == RequestStatus.failure && state.message != null) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(state.message!)));
-        }
-      },
-      builder: (context, state) {
-        return Container(
-          margin: EdgeInsets.only(bottom: bottom),
-          padding: const EdgeInsets.fromLTRB(18, 16, 18, 22),
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Add comment',
-                style: Theme.of(
-                  context,
-                ).textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w900),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                widget.item.policyTitle ?? 'Policy feedback',
-                style: const TextStyle(color: AppTheme.mutedText),
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _commentController,
-                label: 'Comment',
-                icon: Icons.chat_bubble_outline_rounded,
-                maxLines: 5,
-                maxLength: 500,
-              ),
-              const SizedBox(height: 12),
-              AppButton(
-                label: 'Submit comment',
-                icon: Icons.send_rounded,
-                loading: state.status == RequestStatus.loading,
-                onPressed: () {
-                  if (_commentController.text.trim().isEmpty) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Comment is required.')),
-                    );
-                    return;
-                  }
-                  if (widget.item.policyId == null) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Policy information not available.')),
-                    );
-                    return;
-                  }
-                  context.read<VoteCubit>().addComment(
-                        policyId: widget.item.policyId!,
-                        comment: _commentController.text,
-                      );
-                },
-              ),
-            ],
-          ),
+
+        final comments = snapshot.data ?? const [];
+        if (comments.isEmpty) return const SizedBox.shrink();
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: comments
+              .map(
+                (comment) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: _CommentBubble(text: comment),
+                ),
+              )
+              .toList(),
         );
       },
+    );
+  }
+}
+
+class _CommentBubble extends StatelessWidget {
+  const _CommentBubble({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F9FB),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(color: AppTheme.text, height: 1.35),
+      ),
     );
   }
 }

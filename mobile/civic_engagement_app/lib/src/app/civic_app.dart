@@ -12,7 +12,6 @@ import '../features/citizen/presentation/cubit/policy_cubit.dart';
 import '../features/citizen/presentation/cubit/profile_cubit.dart';
 import '../features/citizen/presentation/cubit/vote_cubit.dart';
 import '../features/citizen/presentation/pages/citizen_home_shell.dart';
-import '../features/citizen/presentation/pages/planner_request_page.dart';
 
 class CivicApp extends StatelessWidget {
   const CivicApp({super.key});
@@ -48,7 +47,8 @@ class CivicApp extends StatelessWidget {
                   ),
                   BlocProvider(
                     create: (_) {
-                      print('[CivicApp] Creating NotificationsCubit and loading notifications');
+                      print(
+                          '[CivicApp] Creating NotificationsCubit and loading notifications');
                       return serviceLocator<NotificationsCubit>()
                         ..loadNotifications();
                     },
@@ -99,13 +99,6 @@ class _UnauthenticatedShellState extends State<_UnauthenticatedShell> {
           _showLanding = false;
           _initialRegister = true;
         }),
-        onPlannerRequest: () {
-          Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => const PlannerRequestPage(),
-            ),
-          );
-        },
       );
     }
     return AuthPage(

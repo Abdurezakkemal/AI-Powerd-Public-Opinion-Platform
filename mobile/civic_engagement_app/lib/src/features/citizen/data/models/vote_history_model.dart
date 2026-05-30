@@ -25,7 +25,14 @@ class VoteHistoryModel extends VoteHistory {
       pollType:
           policyMap?['pollType']?.toString() ?? json['pollType']?.toString(),
       value: json['value'] ?? json['rating'], // Support both old and new format
-      comment: _parseComment(json['comment']),
+      comment: _parseComment(
+        json['comment'] ??
+            json['comments'] ??
+            json['userComment'] ??
+            json['userComments'] ??
+            json['discussionComment'] ??
+            json['discussionComments'],
+      ),
       channel: json['channel']?.toString() ?? 'app',
       sentiment: _parseSentiment(json['sentiment']),
       createdAt: DateTime.tryParse(json['createdAt']?.toString() ?? ''),
@@ -35,8 +42,21 @@ class VoteHistoryModel extends VoteHistory {
   static String? _parseComment(dynamic value) {
     if (value == null) return null;
     if (value is String) return value;
+    if (value is List) {
+      final comments = value
+          .map(_parseComment)
+          .whereType<String>()
+          .map((comment) => comment.trim())
+          .where((comment) => comment.isNotEmpty)
+          .toList();
+      if (comments.isEmpty) return null;
+      return comments.join('\n\n');
+    }
     if (value is Map<String, dynamic>) {
-      return value['text']?.toString() ?? value['comment']?.toString();
+      return value['text']?.toString() ??
+          value['comment']?.toString() ??
+          value['body']?.toString() ??
+          value['content']?.toString();
     }
     return value.toString();
   }

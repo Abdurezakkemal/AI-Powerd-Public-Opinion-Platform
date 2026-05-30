@@ -194,13 +194,13 @@ class _CommentCard extends StatelessWidget {
         child: ReportCommentDialog(commentId: comment.id),
       ),
     );
-    
+
     // Reload comments after successful report
     if (reported == true && context.mounted) {
       context.read<CommentCubit>().loadComments(
-        policyId: policyId,
-        refresh: true,
-      );
+            policyId: policyId,
+            refresh: true,
+          );
     }
   }
 
@@ -452,7 +452,31 @@ class _CommentCard extends StatelessWidget {
                   const SizedBox(height: 16),
                   const Divider(height: 1),
                   const SizedBox(height: 12),
-                  _RepliesSection(comment: comment, policyId: policyId),
+                  Row(
+                    children: [
+                      TextButton.icon(
+                        onPressed: comment.isVisible
+                            ? () => _showReplyDialog(context)
+                            : null,
+                        icon: const Icon(Icons.reply_rounded, size: 18),
+                        label: const Text('Reply'),
+                        style: TextButton.styleFrom(
+                          foregroundColor: AppTheme.primary,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 8,
+                          ),
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      _RepliesSection(comment: comment, policyId: policyId),
+                    ],
+                  ),
                 ],
               ],
             ),
@@ -506,16 +530,6 @@ class _CommentCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(99),
                     ),
                   ),
-                ),
-                ListTile(
-                  leading:
-                      const Icon(Icons.reply_rounded, color: AppTheme.primary),
-                  title: const Text('Reply',
-                      style: TextStyle(fontWeight: FontWeight.w600)),
-                  onTap: () {
-                    Navigator.pop(bottomSheetContext);
-                    _showReplyDialog(context);
-                  },
                 ),
                 if (isAuthor && comment.isVisible) ...[
                   ListTile(

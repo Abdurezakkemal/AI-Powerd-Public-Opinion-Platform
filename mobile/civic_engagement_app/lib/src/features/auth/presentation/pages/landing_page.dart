@@ -7,13 +7,11 @@ class LandingPage extends StatelessWidget {
   const LandingPage({
     required this.onLogin,
     required this.onRegister,
-    required this.onPlannerRequest,
     super.key,
   });
 
   final VoidCallback onLogin;
   final VoidCallback onRegister;
-  final VoidCallback onPlannerRequest;
 
   @override
   Widget build(BuildContext context) {
@@ -157,24 +155,6 @@ class LandingPage extends StatelessWidget {
                                 fontWeight: FontWeight.w800,
                                 fontSize: 16,
                                 letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          Center(
-                            child: TextButton.icon(
-                              onPressed: onPlannerRequest,
-                              icon: const Icon(Icons.shield_outlined, size: 20),
-                              label: const Text(
-                                'Request planner access',
-                                style: TextStyle(fontWeight: FontWeight.w700),
-                              ),
-                              style: TextButton.styleFrom(
-                                foregroundColor: AppTheme.mutedText,
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 20,
-                                  vertical: 12,
-                                ),
                               ),
                             ),
                           ),

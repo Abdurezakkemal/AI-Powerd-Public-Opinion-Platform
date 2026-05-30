@@ -463,7 +463,7 @@ class _AccountPageState extends State<AccountPage> {
                     icon: Icons.logout_rounded, title: 'Session'),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
-                  onPressed: () => context.read<AuthCubit>().logout(),
+                  onPressed: () => _confirmLogout(context),
                   icon: const Icon(Icons.logout_rounded),
                   label: const Text('Logout'),
                   style: _outlinedButtonStyle(),
@@ -607,6 +607,38 @@ class _AccountPageState extends State<AccountPage> {
     final error = await context.read<ProfileCubit>().deleteAccount();
     if (!context.mounted || error != null) return;
     context.read<AuthCubit>().logout();
+  }
+
+  Future<void> _confirmLogout(BuildContext context) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+        title: const Text('Logout?',
+            style: TextStyle(fontWeight: FontWeight.w800)),
+        content: const Text(
+          'Are you sure you want to logout?',
+          style: TextStyle(color: AppTheme.mutedText),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(false),
+            child: const Text('Cancel',
+                style: TextStyle(fontWeight: FontWeight.w700)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
+            child: const Text('Logout',
+                style: TextStyle(fontWeight: FontWeight.w800)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && context.mounted) {
+      context.read<AuthCubit>().logout();
+    }
   }
 
   Future<void> _showExportSuccess(BuildContext context, String message) {

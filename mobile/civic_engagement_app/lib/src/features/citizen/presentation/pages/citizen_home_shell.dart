@@ -57,7 +57,8 @@ class _CitizenHomeShellState extends State<CitizenHomeShell> {
               borderRadius: BorderRadius.circular(40),
               child: NavigationBar(
                 selectedIndex: _selectedIndex,
-                onDestinationSelected: (index) => setState(() => _selectedIndex = index),
+                onDestinationSelected: (index) =>
+                    setState(() => _selectedIndex = index),
                 backgroundColor: Colors.white,
                 elevation: 0,
                 height: 70,
@@ -65,18 +66,24 @@ class _CitizenHomeShellState extends State<CitizenHomeShell> {
                 labelBehavior: NavigationDestinationLabelBehavior.alwaysHide,
                 destinations: [
                   const NavigationDestination(
-                    icon: Icon(Icons.policy_outlined),
-                    selectedIcon: Icon(Icons.policy_rounded, color: AppTheme.primary),
+                    icon: Icon(Icons.policy_outlined, size: 30),
+                    selectedIcon: Icon(Icons.policy_rounded,
+                        color: AppTheme.primary, size: 30),
                     label: 'Policies',
                   ),
                   const NavigationDestination(
-                    icon: Icon(Icons.recommend_outlined),
-                    selectedIcon: Icon(Icons.recommend_rounded, color: AppTheme.primary),
+                    icon: Icon(Icons.dynamic_feed_outlined, size: 30),
+                    selectedIcon: Icon(
+                      Icons.dynamic_feed_rounded,
+                      color: AppTheme.primary,
+                      size: 30,
+                    ),
                     label: 'For You',
                   ),
                   const NavigationDestination(
-                    icon: Icon(Icons.history_outlined),
-                    selectedIcon: Icon(Icons.history_rounded, color: AppTheme.primary),
+                    icon: Icon(Icons.history_outlined, size: 30),
+                    selectedIcon: Icon(Icons.history_rounded,
+                        color: AppTheme.primary, size: 30),
                     label: 'History',
                   ),
                   NavigationDestination(
@@ -92,8 +99,9 @@ class _CitizenHomeShellState extends State<CitizenHomeShell> {
                     label: 'Alerts',
                   ),
                   const NavigationDestination(
-                    icon: Icon(Icons.person_outline_rounded),
-                    selectedIcon: Icon(Icons.person_rounded, color: AppTheme.primary),
+                    icon: Icon(Icons.person_outline_rounded, size: 30),
+                    selectedIcon: Icon(Icons.person_rounded,
+                        color: AppTheme.primary, size: 30),
                     label: 'Account',
                   ),
                 ],
@@ -118,7 +126,7 @@ class _BadgeIcon extends StatelessWidget {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Icon(icon, color: color),
+        Icon(icon, color: color, size: 30),
         if (count > 0)
           Positioned(
             right: -6,
