@@ -18,6 +18,7 @@ import { CommentModeratorsPage } from "./pages/CommentModeratorsPage";
 import { TrendsDashboardPage } from "./pages/TrendsDashboardPage";
 import { PlannerRequestsPage } from "./pages/PlannerRequestsPage";
 import { CrossAnalyticsPage } from "./pages/CrossAnalyticsPage";
+import { SmsTestingPage } from "./pages/SmsTestingPage";
 import { MessagesPage } from "./pages/MessagesPage";
 import { MessageDetailPage } from "./pages/MessageDetailPage";
 import { NotificationsPage } from "./pages/NotificationsPage";
@@ -32,13 +33,15 @@ import { PendingInvitationsPage } from "./pages/PendingInvitationsPage";
 // New pages for delegated and read‑only policy views
 import { DelegatedPolicyDetailPage } from "./pages/DelegatedPolicyDetailPage";
 import { ReadOnlyPolicyDetailPage } from "./pages/ReadOnlyPolicyDetailPage";
+import { useI18n } from "./i18n/I18nProvider";
 
 function ProtectedRoute({ roles }) {
   const { initializing, isAuthenticated, role } = useAuth();
   const location = useLocation();
+  const { t } = useI18n();
 
   if (initializing) {
-    return <LoadingState fullScreen label="Checking your session" />;
+    return <LoadingState fullScreen label={t("Checking your session")} />;
   }
 
   if (!isAuthenticated) {
@@ -53,6 +56,8 @@ function ProtectedRoute({ roles }) {
 }
 
 function NotFoundPage() {
+  const { t } = useI18n();
+
   return (
     <div className="grid min-h-screen place-items-center bg-slate-50 px-6 text-center">
       <div>
@@ -60,10 +65,10 @@ function NotFoundPage() {
           404
         </p>
         <h1 className="mt-2 text-3xl font-bold text-slate-950">
-          Page not found
+          {t("Page not found")}
         </h1>
         <p className="mt-2 text-slate-600">
-          The page you are looking for is not part of this dashboard.
+          {t("The page you are looking for is not part of this dashboard.")}
         </p>
       </div>
     </div>
@@ -85,6 +90,7 @@ export default function App() {
     <ToastsProvider>
       <Routes>
       <Route path="/public/policies/:id/analytics" element={<PublicPolicyAnalyticsPage />} />
+      <Route path="/sms-studio" element={<SmsTestingPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />

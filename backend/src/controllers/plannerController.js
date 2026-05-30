@@ -305,6 +305,38 @@ exports.listPendingRequests = async (req, res) => {
   }
 };
 
+exports.listRequestHistory = async (req, res) => {
+  try {
+    const { status } = req.query;
+    const query = {};
+
+    if (status === "approved" || status === "rejected") {
+      query.status = status;
+    } else {
+      query.status = { $in: ["approved", "rejected"] };
+    }
+
+    const requests = await PlannerRequest.find(query)
+      .populate(
+        "userId",
+        "email region ageRange gender occupation education createdAt",
+      )
+      .populate("reviewedBy", "email")
+      .sort({ reviewedAt: -1, createdAt: -1 });
+
+    return sendSuccess(res, requests);
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to fetch request history",
+      null,
+      500,
+    );
+  }
+};
+
 exports.approveRequest = async (req, res) => {
   try {
     const { id } = req.params;

@@ -33,6 +33,7 @@ import {
 import { formatDate, getErrorMessage, toIsoFromDateInput } from "../lib/format";
 import { showToast } from "../lib/toast";
 import { ETHIOPIAN_REGIONS } from "../constants/regions";
+import { useI18n } from "../i18n/I18nProvider";
 
 const TRANSLATION_LANGUAGES = [
   { code: "en", label: "English" },
@@ -72,6 +73,7 @@ function ActionButton({
 }
 
 export function PolicyDetailPage() {
+  const { t } = useI18n();
   const { id } = useParams();
   const navigate = useNavigate();
   const { user, role } = useAuth();
@@ -375,12 +377,12 @@ export function PolicyDetailPage() {
   );
   if (loading) return <LoadingState label="Loading policy details" />;
   if (error) return <ErrorAlert message={error} />;
-  if (!policy) return <div>Policy not found</div>;
+  if (!policy) return <div>{t("Policy not found")}</div>;
 
   const mainTabs = [
-    { id: "info", label: "Policy Info" },
-    { id: "comments", label: `Comments (${allComments.length})` },
-    { id: "associates", label: "Associates" },
+    { id: "info", label: t("Policy Info") },
+    { id: "comments", label: `${t("Comments")} (${allComments.length})` },
+    { id: "associates", label: t("Associates") },
   ];
 
   const commentsSubTabs = [
@@ -399,7 +401,7 @@ export function PolicyDetailPage() {
               {displayPolicyTitle}
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              <strong className="font-medium">Policy Code:</strong> {policy.policyCode} • <strong className="font-medium">Read‑only view</strong>
+              <strong className="font-medium">{t("Policy Code:")}</strong> {policy.policyCode} • <strong className="font-medium">{t("Read-only view")}</strong>
             </p>
             <p className="mt-2 text-sm text-slate-600">{displayPolicyDescription}</p>
           </div>
@@ -410,7 +412,7 @@ export function PolicyDetailPage() {
               disabled={translatingPolicy}
               className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
             >
-              {translatingPolicy ? "Translating..." : "Translate"}
+              {translatingPolicy ? t("Translating...") : t("Translate")}
             </button>
             <select
               value={policyLanguage}
@@ -425,14 +427,14 @@ export function PolicyDetailPage() {
             </select>
             <Link to={`/policies/${id}/analytics`} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
               <svg className="h-4 w-4 text-teal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 3v18h18" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
-              View Analytics
+              {t("View Analytics")}
             </Link>
             <button onClick={() => runAction('clone', () => policyApi.clone(id), 'Policy cloned.')} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
               <Copy className="h-4 w-4" />
-              Clone Policy
+              {t("Clone Policy")}
             </button>
             <Link to="/policies" className="ml-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
-              ← Back
+              ← {t("Back")}
             </Link>
           </div>
         </div>
@@ -440,50 +442,50 @@ export function PolicyDetailPage() {
 
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border bg-white p-5 md:col-span-2">
-          <h3 className="text-lg font-bold mb-3">Description</h3>
+          <h3 className="text-lg font-bold mb-3">{t("Description")}</h3>
           <p className="text-sm text-slate-700 mb-4">{displayPolicyDescription}</p>
 
-          <h3 className="text-lg font-bold mb-3">Details</h3>
+          <h3 className="text-lg font-bold mb-3">{t("Details")}</h3>
           <dl className="grid gap-2 sm:grid-cols-2">
-            <dt className="font-semibold">Status:</dt>
+            <dt className="font-semibold">{t("Status:")}</dt>
             <dd><StatusBadge status={policy.status} /></dd>
 
-            <dt className="font-semibold">Target Regions:</dt>
-            <dd>{(policy.targetRegions || []).join(', ') || 'Addis Ababa'}</dd>
+            <dt className="font-semibold">{t("Target Regions:")}</dt>
+            <dd>{(policy.targetRegions || []).map((region) => t(region)).join(", ") || t("Addis Ababa")}</dd>
 
-            <dt className="font-semibold">Start Date:</dt>
+            <dt className="font-semibold">{t("Start Date:")}</dt>
             <dd>{formatDate(policy.startDate)}</dd>
 
-            <dt className="font-semibold">End Date:</dt>
+            <dt className="font-semibold">{t("End Date:")}</dt>
             <dd>{formatDate(policy.endDate)}</dd>
 
-            <dt className="font-semibold">Poll Type:</dt>
-            <dd>{policy.pollType || 'multipleChoice'}</dd>
+            <dt className="font-semibold">{t("Poll Type:")}</dt>
+            <dd>{t(policy.pollType || "multipleChoice")}</dd>
 
-            <dt className="font-semibold">Topics:</dt>
-            <dd>{(policy.topics || []).join(', ') || 'Tourism'}</dd>
+            <dt className="font-semibold">{t("Topics:")}</dt>
+            <dd>{(policy.topics || []).map((topic) => t(topic)).join(", ") || t("Tourism")}</dd>
 
-            <dt className="font-semibold">Created By:</dt>
-            <dd>{policy.createdBy?.email || 'Unknown'}</dd>
+            <dt className="font-semibold">{t("Created By:")}</dt>
+            <dd>{policy.createdBy?.email || t("Unknown")}</dd>
           </dl>
         </div>
 
         <div className="rounded-lg border bg-white p-5">
-          <p className="text-xs text-slate-500">Sentiment Counts</p>
+          <p className="text-xs text-slate-500">{t("Sentiment Counts")}</p>
           <div className="mt-2 flex items-center gap-3 text-sm">
-            <div className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">Pos: {stats?.sentimentCounts?.positive ?? stats?.positive ?? 0}</div>
-            <div className="rounded-md bg-rose-50 px-2 py-1 text-rose-700">Neg: {stats?.sentimentCounts?.negative ?? stats?.negative ?? 0}</div>
-            <div className="rounded-md bg-slate-50 px-2 py-1 text-slate-700">Neu: {stats?.sentimentCounts?.neutral ?? stats?.neutral ?? 0}</div>
+            <div className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">{t("Pos:")} {stats?.sentimentCounts?.positive ?? stats?.positive ?? 0}</div>
+            <div className="rounded-md bg-rose-50 px-2 py-1 text-rose-700">{t("Neg:")} {stats?.sentimentCounts?.negative ?? stats?.negative ?? 0}</div>
+            <div className="rounded-md bg-slate-50 px-2 py-1 text-slate-700">{t("Neu:")} {stats?.sentimentCounts?.neutral ?? stats?.neutral ?? 0}</div>
           </div>
 
           <div className="mt-4">
-            <p className="text-xs text-slate-500">Top Keywords</p>
+            <p className="text-xs text-slate-500">{t("Top Keywords")}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {(stats?.topKeywords || []).slice(0, 6).map((k, i) => (
                 <span key={k?.keyword || i} className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{k?.keyword || k}</span>
               ))}
               {(!stats?.topKeywords || stats.topKeywords.length === 0) && (
-                <span className="text-sm text-slate-500">No keywords</span>
+                <span className="text-sm text-slate-500">{t("No keywords")}</span>
               )}
             </div>
           </div>
@@ -1071,58 +1073,6 @@ export function PolicyDetailPage() {
               )}
             </div>
 
-            {/* Past Associates */}
-            <div>
-              <h4 className="text-md font-semibold text-slate-700 mb-2">
-                Past
-              </h4>
-              {associates.filter(
-                (a) =>
-                  a.displayStatus === "revoked" ||
-                  a.displayStatus === "expired",
-              ).length === 0 ? (
-                <p className="text-slate-500">
-                  No past associates or expired invitations.
-                </p>
-              ) : (
-                <div className="divide-y">
-                  {associates
-                    .filter(
-                      (a) =>
-                        a.displayStatus === "revoked" ||
-                        a.displayStatus === "expired",
-                    )
-                    .map((assoc) => (
-                      <div
-                        key={assoc._id}
-                        className="py-4 flex justify-between items-center opacity-70"
-                      >
-                        <div>
-                          <p className="font-semibold">
-                            {assoc.plannerId?.email}
-                            <span className="ml-2 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-                              {assoc.displayStatus === "revoked"
-                                ? "Revoked"
-                                : "Expired"}
-                            </span>
-                          </p>
-                            <p className="text-xs text-slate-500">
-                              Message: {assoc.metadata?.notes || "No message"}
-                          </p>
-                          {assoc.revokedAt && (
-                            <p className="text-xs text-slate-500">
-                              {assoc.displayStatus === "revoked"
-                                ? "Revoked"
-                                : "Expired"}
-                              : {formatDate(assoc.revokedAt || assoc.expiresAt)}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
           </div>
         </TabPane>
       </Tabs>

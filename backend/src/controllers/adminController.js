@@ -3,6 +3,9 @@ const Comment = require("..//models/Comment");
 const PlannerRequest = require("../models/PlannerRequest");
 const Policy = require("../models/Policy");
 const PolicyAssociate = require("../models/PolicyAssociate");
+const Vote = require("../models/Vote");
+const SmsSubscription = require("../models/SmsSubscription");
+const SmsActivity = require("../models/SmsActivity");
 const crypto = require("crypto");
 const mongoose = require("mongoose");
 const { hashPassword } = require("../utils/helpers");
@@ -20,6 +23,8 @@ const {
   sendError,
   ErrorCodes,
 } = require("../utils/responseHelper");
+const { normalizePhone, hashPhone } = require("../utils/helpers");
+const { simulateInboundSms } = require("../services/mockSmsService");
 // ========== PLANNER MANAGEMENT ==========
 
 // GET /admin/planners
@@ -1905,6 +1910,157 @@ exports.searchPlanners = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to search planners",
+      null,
+      500,
+    );
+  }
+};
+
+// ==================== MOCK SMS TOOLS ====================
+exports.simulateSms = async (req, res) => {
+  try {
+    const { phone, message } = req.body || {};
+    const result = await simulateInboundSms({ phone, message });
+
+    return sendSuccess(
+      res,
+      {
+        phoneHash: result.phoneHash,
+        phoneLast4: result.phoneLast4,
+        normalizedPhone: result.normalizedPhone,
+        command: result.command,
+        reply: result.reply,
+        statusCode: result.statusCode,
+        success: result.success,
+        subscription: result.subscription,
+        metadata: result.metadata,
+      },
+      "SMS simulated successfully",
+    );
+  } catch (err) {
+    logger.error({ error: err.message, stack: err.stack }, "Simulate SMS error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to simulate SMS",
+      null,
+      500,
+    );
+  }
+};
+
+exports.getSmsHistory = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, q = "", direction = "", command = "" } = req.query;
+    const numericPage = Math.max(1, Number.parseInt(page, 10) || 1);
+    const numericLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
+    const skip = (numericPage - 1) * numericLimit;
+
+    const filter = {};
+    if (direction) filter.direction = direction;
+    if (command) filter.command = command.toUpperCase();
+    if (q && q.trim()) {
+      const term = q.trim();
+      filter.$or = [
+        { command: { $regex: term, $options: "i" } },
+        { inboundMessage: { $regex: term, $options: "i" } },
+        { replyMessage: { $regex: term, $options: "i" } },
+        { phoneLast4: { $regex: term.slice(-4), $options: "i" } },
+      ];
+    }
+
+    const [activities, total, smsVotes] = await Promise.all([
+      SmsActivity.find(filter)
+        .populate("policyId", "title policyCode pollType")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(numericLimit)
+        .lean(),
+      SmsActivity.countDocuments(filter),
+      Vote.find({ channel: "sms" })
+        .populate("policyId", "title policyCode pollType status")
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .lean(),
+    ]);
+
+    return sendSuccess(
+      res,
+      {
+        total,
+        page: numericPage,
+        pages: Math.ceil(total / numericLimit),
+        activities,
+        votes: smsVotes,
+      },
+      "SMS history retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message, stack: err.stack }, "Get SMS history error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve SMS history",
+      null,
+      500,
+    );
+  }
+};
+
+exports.getSmsPhoneState = async (req, res) => {
+  try {
+    const { phone } = req.query;
+    if (!phone?.trim()) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Phone is required",
+        null,
+        400,
+      );
+    }
+
+    const normalizedPhone = normalizePhone(phone.trim());
+    const phoneHash = hashPhone(normalizedPhone);
+    const [subscription, votes, activities, appUser] = await Promise.all([
+      SmsSubscription.findOne({ phoneHash }).lean(),
+      Vote.find({ phoneHash, channel: "sms" })
+        .populate("policyId", "title policyCode pollType status")
+        .sort({ createdAt: -1 })
+        .lean(),
+      SmsActivity.find({ phoneHash })
+        .populate("policyId", "title policyCode pollType")
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean(),
+      User.findOne({ phoneHash, verified: true })
+        .select("email region verified")
+        .lean(),
+    ]);
+
+    return sendSuccess(
+      res,
+      {
+        phoneHash,
+        normalizedPhone,
+        phoneLast4: normalizedPhone.slice(-4),
+        subscription: {
+          subscribed: Boolean(subscription?.subscribed),
+          subscribedAt: subscription?.subscribedAt || null,
+          unsubscribedAt: subscription?.unsubscribedAt || null,
+        },
+        registeredAppUser: appUser,
+        votes,
+        activities,
+      },
+      "SMS phone state retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message, stack: err.stack }, "Get SMS phone state error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve SMS phone state",
       null,
       500,
     );

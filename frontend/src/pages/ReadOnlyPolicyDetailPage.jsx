@@ -10,8 +10,10 @@ import { BarChart3, Copy } from "lucide-react";
 import { analyticsApi } from "../api/analytics";
 import { showToast } from "../lib/toast";
 import { Activity, Bell, AlertTriangle, Users } from "lucide-react";
+import { useI18n } from "../i18n/I18nProvider";
 
 export function ReadOnlyPolicyDetailPage() {
+  const { t } = useI18n();
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -50,7 +52,7 @@ export function ReadOnlyPolicyDetailPage() {
     try {
       const result = await policyApi.clone(id);
       // Redirect to the edit page of the cloned draft
-      showToast('success', 'Policy cloned as a new draft. Redirecting to edit...');
+      showToast("success", t("Policy cloned as a new draft. Redirecting to edit..."));
       navigate(`/policies/${result.id}/edit`);
     } catch (err) {
       setError(getErrorMessage(err, "Clone failed"));
@@ -59,7 +61,7 @@ export function ReadOnlyPolicyDetailPage() {
 
   if (loading) return <LoadingState label="Loading policy details" />;
   if (error) return <ErrorAlert message={error} />;
-  if (!policy) return <div>Policy not found</div>;
+  if (!policy) return <div>{t("Policy not found")}</div>;
 
   const showAnalytics = ["active", "paused", "closed", "archived"].includes(
     policy.status,
@@ -72,13 +74,13 @@ export function ReadOnlyPolicyDetailPage() {
           <div>
             <h1 className="text-2xl font-bold text-slate-900">{policy.title}</h1>
             <p className="mt-1 text-sm text-slate-500">
-              <strong className="font-medium">Policy Code:</strong> {policy.policyCode} • <strong className="font-medium">Read‑only view</strong>
+              <strong className="font-medium">{t("Policy Code:")}</strong> {policy.policyCode} • <strong className="font-medium">{t("Read-only view")}</strong>
             </p>
-            <p className="mt-2 text-sm text-slate-600">{policy.description || "No description provided."}</p>
+            <p className="mt-2 text-sm text-slate-600">{policy.description || t("No description provided.")}</p>
             <div className="mt-3 flex flex-wrap gap-2 text-xs">
-              <span className="inline-flex items-center rounded-full bg-slate-50 px-3 py-1 text-slate-700">{(policy.targetRegions||[])[0] || 'Regional'}</span>
-              <span className="inline-flex items-center rounded-full bg-slate-50 px-3 py-1 text-slate-700">{policy.pollType}</span>
-              <span className="inline-flex items-center rounded-full bg-emerald-50 text-emerald-700 px-3 py-1 rounded-full">{policy.status}</span>
+              <span className="inline-flex items-center rounded-full bg-slate-50 px-3 py-1 text-slate-700">{t((policy.targetRegions || [])[0] || "Regional")}</span>
+              <span className="inline-flex items-center rounded-full bg-slate-50 px-3 py-1 text-slate-700">{t(policy.pollType)}</span>
+              <span className="inline-flex items-center rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">{t(policy.status)}</span>
               <span className="inline-flex items-center rounded-full bg-slate-50 px-3 py-1 text-slate-700">#{(policy._id||id).toString().slice(-6)}</span>
             </div>
           </div>
@@ -90,7 +92,7 @@ export function ReadOnlyPolicyDetailPage() {
                 className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
               >
                 <BarChart3 className="h-4 w-4" />
-                View Analytics
+                {t("View Analytics")}
               </button>
             )}
             <button
@@ -98,10 +100,10 @@ export function ReadOnlyPolicyDetailPage() {
               className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800"
             >
               <Copy className="h-4 w-4" />
-              Clone Policy
+              {t("Clone Policy")}
             </button>
             <button onClick={() => navigate('/policies')} className="ml-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
-              ← Back
+              ← {t("Back")}
             </button>
           </div>
         </div>
@@ -109,50 +111,50 @@ export function ReadOnlyPolicyDetailPage() {
 
       <div className="mt-4 grid gap-4 md:grid-cols-3">
         <div className="rounded-lg border bg-white p-5 md:col-span-2">
-          <h3 className="text-lg font-bold mb-3">Description</h3>
-          <p className="text-sm text-slate-700 mb-4">{policy.description || 'No description provided.'}</p>
+          <h3 className="text-lg font-bold mb-3">{t("Description")}</h3>
+          <p className="text-sm text-slate-700 mb-4">{policy.description || t("No description provided.")}</p>
 
-          <h3 className="text-lg font-bold mb-3">Details</h3>
+          <h3 className="text-lg font-bold mb-3">{t("Details")}</h3>
           <dl className="grid gap-2 sm:grid-cols-2">
-            <dt className="font-semibold">Status:</dt>
+            <dt className="font-semibold">{t("Status:")}</dt>
             <dd><StatusBadge status={policy.status} /></dd>
 
-            <dt className="font-semibold">Target Regions:</dt>
-            <dd>{(policy.targetRegions || []).join(', ') || 'None'}</dd>
+            <dt className="font-semibold">{t("Target Regions:")}</dt>
+            <dd>{(policy.targetRegions || []).map((region) => t(region)).join(", ") || t("None")}</dd>
 
-            <dt className="font-semibold">Start Date:</dt>
+            <dt className="font-semibold">{t("Start Date:")}</dt>
             <dd>{formatDate(policy.startDate)}</dd>
 
-            <dt className="font-semibold">End Date:</dt>
+            <dt className="font-semibold">{t("End Date:")}</dt>
             <dd>{formatDate(policy.endDate)}</dd>
 
-            <dt className="font-semibold">Poll Type:</dt>
-            <dd>{policy.pollType}</dd>
+            <dt className="font-semibold">{t("Poll Type:")}</dt>
+            <dd>{t(policy.pollType)}</dd>
 
-            <dt className="font-semibold">Topics:</dt>
-            <dd>{(policy.topics || []).join(', ') || 'None'}</dd>
+            <dt className="font-semibold">{t("Topics:")}</dt>
+            <dd>{(policy.topics || []).map((topic) => t(topic)).join(", ") || t("None")}</dd>
 
-            <dt className="font-semibold">Created By:</dt>
-            <dd>{policy.createdBy?.email || 'Unknown'}</dd>
+            <dt className="font-semibold">{t("Created By:")}</dt>
+            <dd>{policy.createdBy?.email || t("Unknown")}</dd>
           </dl>
         </div>
 
         <div className="rounded-lg border bg-white p-5">
-          <p className="text-xs text-slate-500">Sentiment Counts</p>
+          <p className="text-xs text-slate-500">{t("Sentiment Counts")}</p>
           <div className="mt-2 flex items-center gap-3 text-sm">
-            <div className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">Pos: {stats?.sentimentCounts?.positive ?? stats?.positive ?? 0}</div>
-            <div className="rounded-md bg-rose-50 px-2 py-1 text-rose-700">Neg: {stats?.sentimentCounts?.negative ?? stats?.negative ?? 0}</div>
-            <div className="rounded-md bg-slate-50 px-2 py-1 text-slate-700">Neu: {stats?.sentimentCounts?.neutral ?? stats?.neutral ?? 0}</div>
+            <div className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">{t("Pos:")} {stats?.sentimentCounts?.positive ?? stats?.positive ?? 0}</div>
+            <div className="rounded-md bg-rose-50 px-2 py-1 text-rose-700">{t("Neg:")} {stats?.sentimentCounts?.negative ?? stats?.negative ?? 0}</div>
+            <div className="rounded-md bg-slate-50 px-2 py-1 text-slate-700">{t("Neu:")} {stats?.sentimentCounts?.neutral ?? stats?.neutral ?? 0}</div>
           </div>
 
           <div className="mt-4">
-            <p className="text-xs text-slate-500">Top Keywords</p>
+            <p className="text-xs text-slate-500">{t("Top Keywords")}</p>
             <div className="mt-2 flex flex-wrap gap-2">
               {(stats?.topKeywords || []).slice(0, 6).map((k, i) => (
                 <span key={k?.keyword || i} className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{k?.keyword || k}</span>
               ))}
               {(!stats?.topKeywords || stats.topKeywords.length === 0) && (
-                <span className="text-sm text-slate-500">No keywords</span>
+                <span className="text-sm text-slate-500">{t("No keywords")}</span>
               )}
             </div>
           </div>

@@ -115,6 +115,10 @@ export function NotificationsPage() {
     const associateId = data?.associateId;
 
     switch (type) {
+      case "PLANNER_REQUEST_CREATED":
+        if (data?.requestId) navigate(`/planner-requests?highlight=${data.requestId}`);
+        else navigate(`/planner-requests`);
+        break;
       case "POLICY_ACTIVATED":
       case "POLICY_CLOSED":
       case "POLICY_EXTENDED":

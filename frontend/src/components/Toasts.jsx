@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
 import { registerShowToast } from "../lib/toast";
+import { useI18n } from "../i18n/I18nProvider";
 
 function Toast({ t, onClose }) {
+  const { t: translate } = useI18n();
   const bg = t.type === "error" ? "bg-rose-600" : "bg-emerald-600";
   return (
     <div className={`max-w-md w-full rounded-lg shadow-lg text-white p-4 ${bg} ring-1 ring-black/10`}> 
-      <div className="text-base font-semibold leading-6">{t.message}</div>
+      <div className="text-base font-semibold leading-6">{translate(t.message)}</div>
     </div>
   );
 }

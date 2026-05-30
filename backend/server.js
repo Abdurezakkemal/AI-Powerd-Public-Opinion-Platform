@@ -72,6 +72,7 @@ app.use("/api/votes", require("./src/routes/voteRoutes"));
 app.use("/api/comments", require("./src/routes/commentRoutes"));
 app.use("/api/analytics", require("./src/routes/analyticsRoutes"));
 app.use("/api/sms", require("./src/routes/smsRoutes"));
+app.use("/api/sms/mock", require("./src/routes/smsMockRoutes"));
 app.use("/api/admin", require("./src/routes/adminRoutes"));
 app.use("/api/users", require("./src/routes/userRoutes"));
 app.use("/api/planners", require("./src/routes/plannerRoutes"));

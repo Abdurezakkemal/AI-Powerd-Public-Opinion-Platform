@@ -14,9 +14,9 @@ import {
   UserCircle,
   ChevronDown,
   UserRound,
-  UserPlus,
   MessageSquare,
   Moon,
+  Smartphone,
   Sun,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -25,6 +25,8 @@ import { useAuth } from "../auth/AuthContext";
 import { userApi } from "../api/user";
 import { messageApi } from "../api/messages";
 import { plannerApi } from "../api/planners";
+import { useI18n } from "../i18n/I18nProvider";
+import { LocaleSwitcher } from "./LocaleSwitcher";
 
 const baseLinks = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -40,9 +42,8 @@ const plannerLinks = [
 const adminLinks = [
   { to: "/planners", label: "Planners", icon: Users },
   { to: "/citizens", label: "Citizens", icon: UserRound },
-  { to: "/planner-requests", label: "Planner Requests", icon: UserPlus },
   { to: "/comments/pending", label: "Pending Comments", icon: MessageSquare },
-  { to: "/comment-moderators", label: "Comment Moderators", icon: UserCircle },
+  { to: "/comment-moderators", label: "Comment Moderators", icon: Users },
 ];
 
 const moderatorLinks = [
@@ -70,6 +71,7 @@ function getInitialTheme() {
 }
 
 export function AppShell() {
+  const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [theme, setTheme] = useState(getInitialTheme);
@@ -127,6 +129,7 @@ export function AppShell() {
   useEffect(() => {
     try {
       window.localStorage.setItem(DASHBOARD_THEME_KEY, theme);
+      document.documentElement.dataset.uiTheme = theme;
     } catch {
       // Ignore storage errors.
     }
@@ -176,7 +179,7 @@ export function AppShell() {
           <button
             type="button"
             className="fixed inset-0 z-30 bg-slate-950/40"
-            aria-label="Close navigation"
+            aria-label={t("Close")}
             onClick={() => setSidebarOpen(false)}
           />
         )}
@@ -195,14 +198,14 @@ export function AppShell() {
             </span>
             <div>
               <p className="m-0 text-sm font-bold text-slate-950">
-                Civic Platform
+                {t("Civic Platform")}
               </p>
               <span className="mt-1 inline-block rounded-full bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-700">
                 {role === "admin"
-                  ? "Admin"
+                  ? t("Admin")
                   : role === "comment_moderator"
-                    ? "Comment Moderator"
-                    : "Planner"}
+                    ? t("Comment Moderator")
+                    : t("Planner")}
               </span>
             </div>
           </div>
@@ -238,7 +241,7 @@ export function AppShell() {
               >
                 <div className="flex items-center gap-3">
                   <Icon className="h-4 w-4" />
-                  {link.label}
+                  {t(link.label)}
                 </div>
                 {showBadge && (
                   <span className="ml-auto rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
@@ -272,15 +275,16 @@ export function AppShell() {
             </button>
             <div>
               <p className="text-sm font-semibold text-slate-500">
-                Welcome back
+                {t("Welcome back")}
               </p>
               <h1 className="text-base font-bold text-slate-950 sm:text-lg">
-                {user?.email || "Dashboard user"}
+                {user?.email || t("Dashboard user")}
               </h1>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
+            <LocaleSwitcher compact />
             {role !== "comment_moderator" && (
               <>
                 <button
@@ -292,7 +296,7 @@ export function AppShell() {
                       : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
                   }`}
                   aria-pressed={isDark}
-                  title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+                  title={isDark ? t("Switch to light mode") : t("Switch to dark mode")}
                 >
                   {isDark ? (
                     <Sun className="h-4 w-4" />
@@ -300,7 +304,7 @@ export function AppShell() {
                     <Moon className="h-4 w-4" />
                   )}
                   <span className="hidden sm:inline">
-                    {isDark ? "Light mode" : "Dark mode"}
+                    {isDark ? t("Light mode") : t("Dark mode")}
                   </span>
                 </button>
 
@@ -308,7 +312,7 @@ export function AppShell() {
                 <button
                   onClick={() => navigate("/messages")}
                   className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                  title="Messages"
+                  title={t("Messages")}
                 >
                   <MessageSquare className="h-5 w-5" />
                 </button>
@@ -317,7 +321,7 @@ export function AppShell() {
                 <button
                   onClick={() => navigate("/notifications")}
                   className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-                  title="Notifications"
+                  title={t("Notifications")}
                 >
                   <Bell className="h-5 w-5" />
                   {unreadNotifications > 0 && (
@@ -350,7 +354,7 @@ export function AppShell() {
                       className="flex w-full items-center gap-3 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                     >
                       <Settings className="h-4 w-4" />
-                      Settings
+                      {t("Settings")}
                     </button>
                     <hr className="my-1 border-slate-200" />
                     <button
@@ -358,7 +362,7 @@ export function AppShell() {
                       className="flex w-full items-center gap-3 px-4 py-2 text-sm text-rose-700 hover:bg-rose-50"
                     >
                       <LogOut className="h-4 w-4" />
-                      Logout
+                      {t("Logout")}
                     </button>
                   </div>
                 </div>

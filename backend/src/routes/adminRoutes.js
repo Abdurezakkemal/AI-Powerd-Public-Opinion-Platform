@@ -144,7 +144,6 @@ router.get(
   reportController.exportAuditLogs,
 );
 router.get("/ai/health", auth(["admin"]), reportController.getAIHealth);
-
 // ==================== MISC ADMIN ====================
 router.post(
   "/users/:id/initiate-password-reset",

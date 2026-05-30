@@ -76,6 +76,12 @@ router.get(
   plannerController.listPendingRequests,
 );
 
+router.get(
+  "/requests/history",
+  auth(["admin"]),
+  plannerController.listRequestHistory,
+);
+
 router.post(
   "/requests/:id/approve",
   auth(["admin"]),

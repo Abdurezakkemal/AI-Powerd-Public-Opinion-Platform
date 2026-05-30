@@ -11,7 +11,6 @@ import {
   Clock,
   CheckCircle2,
   AlertCircle,
-  MessageSquare,
 } from "lucide-react";
 import { useEffect, useState, useMemo } from "react";
 import { Link } from "react-router-dom";
@@ -36,6 +35,7 @@ import { LoadingState } from "../components/LoadingState";
 import { MetricCard } from "../components/MetricCard";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
+import { useI18n } from "../i18n/I18nProvider";
 import {
   formatDate,
   formatNumber,
@@ -89,6 +89,7 @@ const StatCard = ({
   href,
   color = "emerald",
 }) => {
+  const { t } = useI18n();
   const colorClasses = {
     emerald: "bg-emerald-50 border-emerald-200",
     blue: "bg-blue-50 border-blue-200",
@@ -107,12 +108,12 @@ const StatCard = ({
     <div className={`relative overflow-hidden rounded-2xl border ${colorClasses[color]} p-5 transition-all duration-300 hover:shadow-lg hover:-translate-y-0.5`}>
       <div className="flex items-start justify-between">
         <div className="space-y-1">
-          <p className="text-sm font-medium text-slate-600">{label}</p>
+          <p className="text-sm font-medium text-slate-600">{t(label)}</p>
           <p className="text-3xl font-bold text-slate-900 tracking-tight">{value}</p>
-          {subtext && <p className="text-xs text-slate-500">{subtext}</p>}
+          {subtext && <p className="text-xs text-slate-500">{t(subtext)}</p>}
           {trend && (
             <div className={`inline-flex items-center gap-1 text-xs font-medium ${trend.isPositive ? "text-emerald-600" : "text-rose-600"}`}>
-              {trend.isPositive ? "↑" : "↓"} {Math.abs(trend.value)}% vs last period
+              {trend.isPositive ? "↑" : "↓"} {Math.abs(trend.value)}% {t("vs last period")}
             </div>
           )}
         </div>
@@ -192,42 +193,47 @@ const TrendChart = ({ data }) => {
   );
 };
 
-const PolicyListItem = ({ policy }) => (
-  <Link
-    to={`/policies/${policy.id}`}
-    className="group grid gap-3 py-4 hover:bg-slate-50/80 transition-colors sm:grid-cols-[minmax(0,1fr)_auto_auto] rounded-xl px-3 -mx-3"
-  >
-    <div>
-      <div className="flex items-center gap-2">
-        <p className="font-semibold text-slate-900 group-hover:text-teal-700 transition-colors">
-          {policy.title}
+const PolicyListItem = ({ policy }) => {
+  const { t } = useI18n();
+
+  return (
+    <Link
+      to={`/policies/${policy.id}`}
+      className="policy-list-item group grid gap-3 rounded-xl px-3 py-4 transition-colors sm:grid-cols-[minmax(0,1fr)_auto_auto]"
+    >
+      <div>
+        <div className="flex items-center gap-2">
+          <p className="policy-list-item__title font-semibold text-slate-900 transition-colors">
+            {policy.title}
+          </p>
+          {policy.isPriority && (
+            <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+              {t("Priority")}
+            </span>
+          )}
+        </div>
+        <p className="policy-list-item__meta mt-1 text-sm text-slate-500">
+          {policy.policyCode} • {policy.targetRegions?.slice(0, 2).map((region) => t(region)).join(", ")}
+          {policy.targetRegions?.length > 2 && ` +${policy.targetRegions.length - 2}`}
         </p>
-        {policy.isPriority && (
-          <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-            Priority
-          </span>
-        )}
       </div>
-      <p className="mt-1 text-sm text-slate-500">
-        {policy.policyCode} • {policy.targetRegions?.slice(0, 2).join(", ")}
-        {policy.targetRegions?.length > 2 && ` +${policy.targetRegions.length - 2}`}
-      </p>
-    </div>
-    <div className="flex items-center">
-      <StatusBadge status={policy.status} size="sm" />
-    </div>
-    <div className="flex items-center gap-1 text-sm text-slate-500">
-      <Clock className="h-3.5 w-3.5" />
-      <span>{formatRelativeTime(policy.startDate)}</span>
-    </div>
-  </Link>
-);
+      <div className="flex items-center">
+        <StatusBadge status={policy.status} size="sm" />
+      </div>
+      <div className="policy-list-item__time flex items-center gap-1 text-sm text-slate-500">
+        <Clock className="h-3.5 w-3.5" />
+        <span>{t(formatRelativeTime(policy.startDate))}</span>
+      </div>
+    </Link>
+  );
+};
 
 // ─────────────────────────────────────────────────────────────
 // Main Dashboard Component
 // ─────────────────────────────────────────────────────────────
 
 export function DashboardPage() {
+  const { t } = useI18n();
   const { user, role } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -305,8 +311,6 @@ export function DashboardPage() {
     ...(role === "admin"
       ? [
           { to: "/planners?create=true", label: "Create Planner", icon: Users },
-          { to: "/comment-moderators", label: "Comment Moderators", icon: MessageSquare },
-          { to: "/planner-requests", label: "Requests", icon: Users },
           { to: "/comments/pending", label: "Moderate", icon: AlertCircle },
         ]
       : [{ to: "/policies", label: "My Policies", icon: FileText }]),
@@ -324,12 +328,12 @@ export function DashboardPage() {
                 <Sparkles className="h-4 w-4 text-amber-500" />
               </span>
             }
-            description="Track policy performance, engagement metrics, and civic participation at a glance."
+            description={t("Track policy performance, engagement metrics, and civic participation at a glance.")}
           />
           {lastUpdated && (
             <p className="mt-1 text-xs text-slate-500 flex items-center gap-1">
               <Clock className="h-3 w-3" />
-              Updated {formatRelativeTime(lastUpdated)}
+              {t("Updated")} {t(formatRelativeTime(lastUpdated))}
             </p>
           )}
         </div>
@@ -346,7 +350,7 @@ export function DashboardPage() {
               }`}
             >
               {action.icon && <action.icon className="h-4 w-4" />}
-              {action.label}
+              {t(action.label)}
             </Link>
           ))}
         </div>
@@ -364,16 +368,15 @@ export function DashboardPage() {
           <div className="max-w-2xl">
             <div className="inline-flex items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-emerald-100 ring-1 ring-white/20 backdrop-blur-sm">
               <Sparkles className="h-3.5 w-3.5" />
-              Live Dashboard
+              {t("Live Dashboard")}
             </div>
             <h2 className="mt-4 text-2xl font-bold tracking-tight sm:text-3xl">
               {role === "admin"
-                ? "Oversee policy activity, moderation workflows, and platform health"
-                : "Monitor your policies' performance and citizen engagement"}
+                ? t("Oversee policy activity, moderation workflows, and platform health")
+                : t("Monitor your policies' performance and citizen engagement")}
             </h2>
             <p className="mt-3 max-w-xl text-sm leading-6 text-slate-200 sm:text-base">
-              Your centralized command center for civic policy management. 
-              Make data-driven decisions with real-time insights.
+              {t("Your centralized command center for civic policy management. Make data-driven decisions with real-time insights.")}
             </p>
           </div>
 
@@ -390,9 +393,9 @@ export function DashboardPage() {
               >
                 <p className="text-2xl font-bold">{stat.value}</p>
                 <p className="mt-0.5 text-xs font-medium text-emerald-100/80">
-                  {stat.label}
+                  {t(stat.label)}
                 </p>
-                <p className="text-[10px] text-emerald-100/60">{stat.sub}</p>
+                <p className="text-[10px] text-emerald-100/60">{t(stat.sub)}</p>
               </div>
             ))}
           </div>

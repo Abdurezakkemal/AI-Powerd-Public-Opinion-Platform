@@ -9,8 +9,10 @@ import { StatusBadge } from "../components/StatusBadge";
 import { Tabs, TabPane } from "../components/Tabs";
 import { formatDate, getErrorMessage } from "../lib/format";
 import { BarChart3, LogOut, AlertCircle } from "lucide-react";
+import { useI18n } from "../i18n/I18nProvider";
 
 export function DelegatedPolicyDetailPage() {
+  const { t } = useI18n();
   const { id } = useParams();
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -63,18 +65,18 @@ export function DelegatedPolicyDetailPage() {
 
   if (loading) return <LoadingState label="Loading policy details" />;
   if (error) return <ErrorAlert message={error} />;
-  if (!policy) return <div>Policy not found</div>;
+  if (!policy) return <div>{t("Policy not found")}</div>;
 
   const analyticsAvailable = ["active", "paused", "closed"].includes(
     policy.status,
   );
-  const tabs = [{ id: "info", label: "Policy Info" }];
+  const tabs = [{ id: "info", label: t("Policy Info") }];
 
   return (
     <div>
       <PageHeader
         title={policy.title}
-        description={`Policy Code: ${policy.policyCode} • You are an associate`}
+        description={`${t("Policy Code:")} ${policy.policyCode} • ${t("You are an associate")}`}
         actions={
           <div className="flex gap-2">
             {analyticsAvailable && (
@@ -83,7 +85,7 @@ export function DelegatedPolicyDetailPage() {
                 className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800"
               >
                 <BarChart3 className="h-4 w-4" />
-                View Analytics
+                {t("View Analytics")}
               </button>
             )}
             <button
@@ -91,7 +93,7 @@ export function DelegatedPolicyDetailPage() {
               className="inline-flex items-center gap-2 rounded-lg border border-rose-200 bg-white px-4 py-2 text-sm font-bold text-rose-700 hover:bg-rose-50"
             >
               <LogOut className="h-4 w-4" />
-              Leave Policy
+              {t("Leave Policy")}
             </button>
           </div>
         }
@@ -103,10 +105,9 @@ export function DelegatedPolicyDetailPage() {
           <div className="flex items-start gap-2">
             <AlertCircle className="h-5 w-5 flex-shrink-0" />
             <div>
-              <p className="font-semibold">Policy not yet ready for analytics</p>
+              <p className="font-semibold">{t("Policy not yet ready for analytics")}</p>
               <p className="text-sm">
-                This policy is currently {policy.status}. Analytics will be
-                available once the policy becomes active.
+                {t("This policy is currently")} {t(policy.status)}. {t("Analytics will be available once the policy becomes active.")}
               </p>
             </div>
           </div>
@@ -118,25 +119,25 @@ export function DelegatedPolicyDetailPage() {
           <div className="rounded-lg border bg-white p-5 shadow-sm">
             {invitationMessage && (
               <div className="mb-4 rounded-lg border border-teal-100 bg-teal-50 p-3 text-sm text-teal-900">
-                <p className="font-semibold">Invitation Message</p>
+                <p className="font-semibold">{t("Invitation Message")}</p>
                 <p className="mt-1 whitespace-pre-wrap">{invitationMessage}</p>
               </div>
             )}
             <dl className="grid gap-2 sm:grid-cols-2">
-              <dt className="font-semibold">Status:</dt>
+              <dt className="font-semibold">{t("Status:")}</dt>
               <dd>
                 <StatusBadge status={policy.status} />
               </dd>
-              <dt className="font-semibold">Target Regions:</dt>
-              <dd>{policy.targetRegions?.join(", ") || "None"}</dd>
-              <dt className="font-semibold">Start Date:</dt>
+              <dt className="font-semibold">{t("Target Regions:")}</dt>
+              <dd>{policy.targetRegions?.map((region) => t(region)).join(", ") || t("None")}</dd>
+              <dt className="font-semibold">{t("Start Date:")}</dt>
               <dd>{formatDate(policy.startDate)}</dd>
-              <dt className="font-semibold">End Date:</dt>
+              <dt className="font-semibold">{t("End Date:")}</dt>
               <dd>{formatDate(policy.endDate)}</dd>
-              <dt className="font-semibold">Poll Type:</dt>
-              <dd>{policy.pollType}</dd>
-              <dt className="font-semibold">Topics:</dt>
-              <dd>{policy.topics?.join(", ") || "None"}</dd>
+              <dt className="font-semibold">{t("Poll Type:")}</dt>
+              <dd>{t(policy.pollType)}</dd>
+              <dt className="font-semibold">{t("Topics:")}</dt>
+              <dd>{policy.topics?.map((topic) => t(topic)).join(", ") || t("None")}</dd>
             </dl>
           </div>
         </TabPane>

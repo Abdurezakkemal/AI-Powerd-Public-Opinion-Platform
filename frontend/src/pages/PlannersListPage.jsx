@@ -9,6 +9,7 @@ import { Modal } from "../components/Modal";
 import { formatDate, getErrorMessage } from "../lib/format";
 import { showToast } from "../lib/toast";
 import { ETHIOPIAN_REGIONS } from "../constants/regions";
+import { useI18n } from "../i18n/I18nProvider";
 
 const AGE_RANGES = ["18-24", "25-34", "35-44", "45-54", "55+"];
 
@@ -45,6 +46,7 @@ const LANG_OPTIONS = [
 ];
 
 export function PlannersListPage() {
+  const { t } = useI18n();
   const location = useLocation();
   const [planners, setPlanners] = useState([]);
   const [totalPlanners, setTotalPlanners] = useState(0);
@@ -161,7 +163,7 @@ export function PlannersListPage() {
       try {
         showToast(
           "success",
-          "Planner account created. A password setup link was sent to the planner.",
+          t("Planner account created. A password setup link was sent to the planner."),
         );
       } catch {
         /* ignore */
@@ -193,7 +195,7 @@ export function PlannersListPage() {
             className="inline-flex items-center gap-2 rounded-xl bg-teal-700 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:bg-teal-800 transition-all duration-200"
           >
             <UserPlus className="h-4 w-4" />
-            Create Planner
+            {t("Create Planner")}
           </button>
         }
       />
@@ -211,7 +213,7 @@ export function PlannersListPage() {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-sm font-semibold text-slate-700">
-              Total planners: {totalPlanners}
+              {t("Total planners:")} {totalPlanners}
             </span>
             <select
               value={activeFilter}
@@ -221,9 +223,9 @@ export function PlannersListPage() {
               }}
               className="rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-teal-600"
             >
-              <option value="">All Status</option>
-              <option value="true">Active</option>
-              <option value="false">Inactive</option>
+              <option value="">{t("All Status")}</option>
+              <option value="true">{t("Active")}</option>
+              <option value="false">{t("Inactive")}</option>
             </select>
           </div>
         </div>
@@ -279,7 +281,7 @@ export function PlannersListPage() {
                             : "bg-slate-100 text-slate-600"
                         }`}
                       >
-                        {planner.active ? "Active" : "Inactive"}
+                        {planner.active ? t("Active") : t("Inactive")}
                       </span>
                     </td>
                     <td className="px-5 py-3 text-slate-600 text-xs">
@@ -299,7 +301,7 @@ export function PlannersListPage() {
                           className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
                         >
                           <Eye className="h-3.5 w-3.5" />
-                          View details
+                          {t("View details")}
                         </Link>
                         <button
                           onClick={() => toggleStatus(planner)}
@@ -313,8 +315,8 @@ export function PlannersListPage() {
                           {actionLoading[planner._id]
                             ? "..."
                             : planner.active
-                              ? "Deactivate"
-                              : "Activate"}
+                              ? t("Deactivate")
+                              : t("Activate")}
                         </button>
                       </div>
                     </td>
@@ -327,7 +329,7 @@ export function PlannersListPage() {
         {totalPages > 1 && (
           <div className="flex items-center justify-between">
             <p className="text-sm text-slate-600">
-              Page {page} of {totalPages}
+              {t("Page")} {page} {t("of")} {totalPages}
             </p>
             <div className="flex gap-2">
               <button
@@ -335,14 +337,14 @@ export function PlannersListPage() {
                 disabled={page === 1}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
-                Previous
+                {t("Previous")}
               </button>
               <button
                 onClick={() => setPage(Math.min(totalPages, page + 1))}
                 disabled={page === totalPages}
                 className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
               >
-                Next
+                {t("Next")}
               </button>
             </div>
           </div>

@@ -155,6 +155,7 @@ export function PublicPolicyAnalyticsPage() {
   useEffect(() => {
     try {
       window.localStorage.setItem(THEME_KEY, theme);
+      document.documentElement.dataset.uiTheme = theme;
     } catch {
       // Ignore storage errors.
     }

@@ -6,6 +6,10 @@ const SmsSubscription = require("../models/SmsSubscription");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
 const { createNotification } = require("../services/notificationService");
+const {
+  getPolicyVoteSummary,
+  recordOutboundSmsNotification,
+} = require("../services/mockSmsService");
 
 const autoClosePolicies = async () => {
   try {
@@ -105,6 +109,8 @@ const autoClosePolicies = async () => {
         });
       }
 
+      const smsSummary = await getPolicyVoteSummary(policy);
+
       // --- SMS notifications for subscribed SMS voters ---
       const smsVoterPhoneHashes = [
         ...new Set(
@@ -121,8 +127,21 @@ const autoClosePolicies = async () => {
 
       for (const phoneHash of smsVoterPhoneHashes) {
         if (!subscribedSet.has(phoneHash)) continue;
+        const reply =
+          `Policy "${policy.title}" has closed.\n` +
+          `Final results:\n${smsSummary}`;
+        await recordOutboundSmsNotification({
+          phoneHash,
+          message: reply,
+          policyId: policy._id,
+          metadata: {
+            policyCode: policy.policyCode,
+            pollType: policy.pollType,
+            totalVotes,
+          },
+        });
         logger.info(
-          `[SIMULATED SMS] To subscribed phone hash ${phoneHash}: Policy "${policy.title}" closed. Final average rating: ${avgRating} stars (${totalVotes} votes).`,
+          `[SIMULATED SMS] To subscribed phone hash ${phoneHash}: ${reply}`,
         );
       }
 

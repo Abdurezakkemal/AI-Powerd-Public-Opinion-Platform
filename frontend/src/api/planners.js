@@ -43,6 +43,9 @@ export const plannerApi = {
   listPendingRequests() {
     return apiClient.get("/planners/requests/pending");
   },
+  listRequestHistory(params = {}) {
+    return apiClient.get("/planners/requests/history", { params });
+  },
   approveRequest(id) {
     return apiClient.post(`/planners/requests/${id}/approve`);
   },

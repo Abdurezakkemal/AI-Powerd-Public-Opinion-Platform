@@ -136,4 +136,13 @@ export const adminApi = {
   searchPlanners(query) {
     return apiClient.get("/admin/planners/search", { params: { q: query } });
   },
+  simulateSms(payload) {
+    return apiClient.post("/admin/sms/simulate", payload);
+  },
+  getSmsHistory(params = {}) {
+    return apiClient.get("/admin/sms/history", { params });
+  },
+  getSmsPhoneState(phone) {
+    return apiClient.get("/admin/sms/phone-state", { params: { phone } });
+  },
 };
