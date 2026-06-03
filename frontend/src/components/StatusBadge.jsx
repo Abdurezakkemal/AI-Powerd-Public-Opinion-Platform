@@ -1,3 +1,5 @@
+import { useI18n } from "../i18n/I18nProvider";
+
 const STATUS_CLASSES = {
   draft: "bg-slate-100 text-slate-700",
   published: "bg-sky-100 text-sky-700",
@@ -7,6 +9,8 @@ const STATUS_CLASSES = {
 };
 
 export function StatusBadge({ status }) {
+  const { t } = useI18n();
+
   return (
     <span
       className={[
@@ -14,7 +18,7 @@ export function StatusBadge({ status }) {
         STATUS_CLASSES[status] || "bg-slate-100 text-slate-700",
       ].join(" ")}
     >
-      {status || "unknown"}
+      {t(status || "unknown")}
     </span>
   );
 }

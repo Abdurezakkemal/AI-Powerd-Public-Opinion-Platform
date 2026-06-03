@@ -320,7 +320,9 @@ exports.verifyOtp = async (req, res) => {
     // Role-based JWT expiry
     let expiresIn;
     if (user.role === "admin") expiresIn = "6h";
-    else if (user.role === "planner") expiresIn = "12h";
+    else if (user.role === "planner" || user.role === "comment_moderator") {
+      expiresIn = "12h";
+    }
     else expiresIn = "7d";
 
     const token = jwt.sign(
@@ -426,7 +428,9 @@ exports.login = async (req, res) => {
     // Role-based JWT expiry
     let expiresIn;
     if (user.role === "admin") expiresIn = "6h";
-    else if (user.role === "planner") expiresIn = "12h";
+    else if (user.role === "planner" || user.role === "comment_moderator") {
+      expiresIn = "12h";
+    }
     else expiresIn = "7d";
 
     const token = jwt.sign(

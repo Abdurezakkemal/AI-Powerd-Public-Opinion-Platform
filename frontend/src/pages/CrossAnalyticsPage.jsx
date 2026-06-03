@@ -2,6 +2,7 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -92,7 +93,6 @@ export function CrossAnalyticsPage() {
       // skip initial call because it already loaded
       loadAnalytics(debouncedFilters, false);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedFilters]);
 
   const handleFilterChange = (key, value) => {
@@ -104,13 +104,19 @@ export function CrossAnalyticsPage() {
     count: data?.sentimentCounts?.[name] || 0,
   }));
 
+  const sentimentColors = {
+    positive: "#10b981",
+    negative: "#ef4444",
+    neutral: "#64748b",
+  };
+
   if (loading) return <LoadingState label="Loading cross analytics" />;
 
   return (
     <div>
       <PageHeader
         title="Cross Analytics"
-        description="Compare shared engagement, sentiment, and keywords across policies. Apply demographic filters to narrow the analysis."
+        description="Compare engagement, sentiment, and keywords across the policies you own. Apply demographic filters to narrow the analysis."
       />
       <ErrorAlert message={error} />
 
@@ -231,8 +237,8 @@ export function CrossAnalyticsPage() {
                 value={formatNumber(data.totalComments)}
               />
               <MetricCard
-                label="Keywords"
-                value={formatNumber(data.topKeywords?.length)}
+                label="Policies included"
+                value={formatNumber(data.policyCount || 0)}
               />
             </div>
 
@@ -246,31 +252,103 @@ export function CrossAnalyticsPage() {
                   <XAxis dataKey="name" />
                   <YAxis allowDecimals={false} />
                   <Tooltip />
-                  <Bar dataKey="count" fill="#0f766e" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]}>
+                    {sentimentData.map((entry) => (
+                      <Cell
+                        key={entry.name}
+                        fill={sentimentColors[entry.name] || "#0f766e"}
+                      />
+                    ))}
+                  </Bar>
                 </BarChart>
               </ResponsiveContainer>
             </section>
 
-            <section className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-              <h3 className="mb-4 text-lg font-bold text-slate-950">
-                Top Keywords
-              </h3>
-              {data.topKeywords?.length ? (
-                <div className="flex flex-wrap gap-2">
-                  {data.topKeywords.map((item) => (
-                    <span
-                      key={item.keyword}
-                      className="rounded-full bg-slate-100 px-3 py-1 text-sm font-semibold text-slate-700"
-                    >
-                      {item.keyword} ({item.count})
+            <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="border-b border-slate-200 bg-slate-50 px-5 py-4">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                  <div>
+                    <h3 className="text-lg font-black text-slate-950">
+                      Top Keywords
+                    </h3>
+                    <p className="text-sm text-slate-500">
+                      Ranked by how often they appear in the current selection.
+                    </p>
+                  </div>
+                  {data.topKeywords?.length ? (
+                    <span className="inline-flex items-center rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">
+                      {data.topKeywords.length} terms analyzed
                     </span>
-                  ))}
+                  ) : null}
+                </div>
+              </div>
+
+              {data.topKeywords?.length ? (
+                <div className="space-y-3 p-5">
+                  {data.topKeywords.slice(0, 10).map((item, index) => {
+                      const maxCount = data.topKeywords?.[0]?.count || 1;
+                      const width = Math.max(8, Math.round((item.count / maxCount) * 100));
+                      const isTopThree = index < 3;
+
+                      return (
+                        <div
+                          key={item.keyword}
+                          className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 transition hover:-translate-y-0.5 hover:bg-white hover:shadow-sm"
+                        >
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`flex h-9 w-9 items-center justify-center rounded-full text-sm font-black ${
+                                  index === 0
+                                    ? "bg-emerald-600 text-white"
+                                    : index === 1
+                                      ? "bg-teal-600 text-white"
+                                      : index === 2
+                                        ? "bg-cyan-600 text-white"
+                                        : "bg-slate-200 text-slate-700"
+                                }`}
+                              >
+                                #{index + 1}
+                              </div>
+                              <div>
+                                <p className="text-base font-bold text-slate-950">
+                                  {item.keyword}
+                                </p>
+                                <p className="text-xs text-slate-500">
+                                  {isTopThree ? "High-frequency term" : "Supporting keyword"}
+                                </p>
+                              </div>
+                            </div>
+                            <span className="rounded-full bg-slate-100 px-3 py-1 text-sm font-black text-slate-700 ring-1 ring-slate-200">
+                              {item.count}
+                            </span>
+                          </div>
+
+                          <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+                            <div
+                              className={`h-full rounded-full ${
+                                index === 0
+                                  ? "bg-gradient-to-r from-emerald-600 to-lime-500"
+                                  : index === 1
+                                    ? "bg-gradient-to-r from-teal-600 to-emerald-500"
+                                    : index === 2
+                                      ? "bg-gradient-to-r from-cyan-600 to-teal-500"
+                                      : "bg-gradient-to-r from-slate-500 to-slate-400"
+                              }`}
+                              style={{ width: `${width}%` }}
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                 </div>
               ) : (
-                <EmptyState
-                  title="No keywords found"
-                  description="Try a broader filter."
-                />
+                <div className="p-5">
+                  <EmptyState
+                    title="No keywords found"
+                    description="Try a broader filter."
+                  />
+                </div>
               )}
             </section>
           </div>

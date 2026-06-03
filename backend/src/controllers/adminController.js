@@ -3,19 +3,28 @@ const Comment = require("..//models/Comment");
 const PlannerRequest = require("../models/PlannerRequest");
 const Policy = require("../models/Policy");
 const PolicyAssociate = require("../models/PolicyAssociate");
-const { sendEmail } = require("../utils/email");
+const Vote = require("../models/Vote");
+const SmsSubscription = require("../models/SmsSubscription");
+const SmsActivity = require("../models/SmsActivity");
 const crypto = require("crypto");
 const mongoose = require("mongoose");
 const { hashPassword } = require("../utils/helpers");
 const logger = require("../utils/logger");
 const { createAuditLog } = require("../utils/audit");
+const { createNotification } = require("../services/notificationService");
 const client = require("../config/redis");
-const { sendAdminInitiatedResetEmail } = require("../utils/email");
+const {
+  sendAdminInitiatedResetEmail,
+  sendPlannerPasswordSetupEmail,
+  sendRolePasswordSetupEmail,
+} = require("../utils/email");
 const {
   sendSuccess,
   sendError,
   ErrorCodes,
 } = require("../utils/responseHelper");
+const { normalizePhone, hashPhone } = require("../utils/helpers");
+const { simulateInboundSms } = require("../services/mockSmsService");
 // ========== PLANNER MANAGEMENT ==========
 
 // GET /admin/planners
@@ -137,13 +146,32 @@ exports.getPlannerById = async (req, res) => {
 // POST /admin/planners
 exports.createPlanner = async (req, res) => {
   try {
-    const { email, password } = req.body;
-    if (!email || !password) {
+    const {
+      email,
+      region,
+      ageRange,
+      gender,
+      occupation,
+      education,
+      preferredLanguage,
+      languagesSpoken,
+    } = req.body;
+
+    if (!email || !region || !ageRange || !gender || !occupation || !education) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Email and password are required",
-        { required: ["email", "password"] },
+        "Email, region, age range, gender, occupation, and education level are required",
+        {
+          required: [
+            "email",
+            "region",
+            "ageRange",
+            "gender",
+            "occupation",
+            "education",
+          ],
+        },
         400,
       );
     }
@@ -162,24 +190,31 @@ exports.createPlanner = async (req, res) => {
       );
     }
 
-    const passwordHash = await hashPassword(password);
+    const temporaryPassword = crypto.randomBytes(32).toString("hex");
+    const passwordHash = await hashPassword(temporaryPassword);
     const uniquePhonePlaceholder = `planner_no_phone_${Date.now()}_${Math.random().toString(36).substring(2)}`;
     const planner = new User({
       email,
       passwordHash,
       role: "planner",
       phoneHash: uniquePhonePlaceholder,
-      region: "",
-      ageRange: "25-34",
-      gender: "prefer-not-to-say",
-      occupation: "government-employee",
-      education: "bachelors",
-      languagesSpoken: ["en"],
+      region,
+      ageRange,
+      gender,
+      occupation,
+      education,
+      preferredLanguage: preferredLanguage || "en",
+      languagesSpoken: languagesSpoken || ["en"],
       verified: true,
       active: true,
       trainingCompletedAt: new Date(),
     });
     await planner.save();
+
+    const setupToken = crypto.randomBytes(32).toString("hex");
+    const setupTokenKey = `reset:token:${setupToken}`;
+    await client.setEx(setupTokenKey, 86400, planner._id.toString());
+    await sendPlannerPasswordSetupEmail(planner.email, setupToken);
 
     await createAuditLog({
       userId: req.user.id,
@@ -197,7 +232,7 @@ exports.createPlanner = async (req, res) => {
     return sendSuccess(
       res,
       { id: planner._id, email: planner.email },
-      "Planner account created successfully",
+      "Planner account created successfully. A password setup link was sent to the planner.",
       201,
     );
   } catch (err) {
@@ -358,6 +393,322 @@ exports.updatePlannerStatus = async (req, res) => {
   }
 };
 
+// ========== COMMENT MODERATOR MANAGEMENT ==========
+
+// GET /admin/comment-moderators
+exports.listCommentModerators = async (req, res) => {
+  try {
+    const { active, page = 1, limit = 10 } = req.query;
+
+    const query = { role: "comment_moderator" };
+    if (active !== undefined) query.active = active === "true";
+
+    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const [moderators, total] = await Promise.all([
+      User.find(query)
+        .select("-passwordHash -phoneHash")
+        .skip(skip)
+        .limit(parseInt(limit))
+        .sort({ createdAt: -1 }),
+      User.countDocuments(query),
+    ]);
+
+    logger.info(
+      `Admin ${req.user.id} listed comment moderators (page ${page}, total ${total})`,
+    );
+    return sendSuccess(
+      res,
+      {
+        total,
+        page: parseInt(page),
+        pages: Math.ceil(total / limit),
+        moderators,
+      },
+      "Comment moderators retrieved successfully",
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "List comment moderators error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve comment moderators. Please try again later.",
+      null,
+      500,
+    );
+  }
+};
+
+// POST /admin/comment-moderators
+exports.createCommentModerator = async (req, res) => {
+  try {
+    const {
+      email,
+      region,
+      ageRange,
+      gender,
+      occupation,
+      education,
+      preferredLanguage,
+      languagesSpoken,
+    } = req.body;
+
+    if (
+      !email ||
+      !region ||
+      !ageRange ||
+      !gender ||
+      !occupation ||
+      !education ||
+      !preferredLanguage
+    ) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Email, region, age range, gender, occupation, education, and preferred language are required",
+        {
+          required: [
+            "email",
+            "region",
+            "ageRange",
+            "gender",
+            "occupation",
+            "education",
+            "preferredLanguage",
+          ],
+        },
+        400,
+      );
+    }
+
+    const existing = await User.findOne({ email });
+    if (existing) {
+      logger.warn(
+        `Admin ${req.user.id} attempted to create comment moderator with existing email: ${email}`,
+      );
+      return sendError(
+        res,
+        ErrorCodes.DUPLICATE,
+        "A user with this email already exists",
+        null,
+        409,
+      );
+    }
+
+    const temporaryPassword = crypto.randomBytes(32).toString("hex");
+    const passwordHash = await hashPassword(temporaryPassword);
+    const uniquePhonePlaceholder = `comment_moderator_no_phone_${Date.now()}_${Math.random().toString(36).substring(2)}`;
+    const moderator = new User({
+      email,
+      passwordHash,
+      role: "comment_moderator",
+      phoneHash: uniquePhonePlaceholder,
+      region,
+      ageRange,
+      gender,
+      occupation,
+      education,
+      preferredLanguage,
+      languagesSpoken: Array.isArray(languagesSpoken)
+        ? languagesSpoken
+        : String(languagesSpoken || preferredLanguage)
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+      verified: true,
+      active: true,
+      trainingCompletedAt: null,
+    });
+    await moderator.save();
+
+    const setupToken = crypto.randomBytes(32).toString("hex");
+    const setupTokenKey = `reset:token:${setupToken}`;
+    await client.setEx(setupTokenKey, 86400, moderator._id.toString());
+    await sendRolePasswordSetupEmail(
+      moderator.email,
+      setupToken,
+      "Comment Moderator",
+    );
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "CREATE_COMMENT_MODERATOR",
+      targetType: "User",
+      targetId: moderator._id,
+      details: { email: moderator.email },
+      req,
+    });
+
+    logger.info(
+      `Admin ${req.user.id} created comment moderator: ${email} (${moderator._id})`,
+    );
+    return sendSuccess(
+      res,
+      { id: moderator._id, email: moderator.email },
+      "Comment moderator account created successfully. A password setup link was sent to the user.",
+      201,
+    );
+  } catch (err) {
+    logger.error(
+      {
+        error: err.message,
+        stack: err.stack,
+        name: err.name,
+        code: err.code,
+      },
+      "Create comment moderator error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to create comment moderator. Please try again.",
+      null,
+      500,
+    );
+  }
+};
+
+// PUT /admin/comment-moderators/:id
+exports.updateCommentModerator = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { password, active } = req.body;
+
+    const moderator = await User.findOne({ _id: id, role: "comment_moderator" });
+    if (!moderator) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment moderator not found",
+        null,
+        404,
+      );
+    }
+
+    const changes = {};
+    const updates = {};
+    if (password) {
+      updates.passwordHash = await hashPassword(password);
+      changes.password = "updated";
+    }
+    if (active !== undefined) {
+      updates.active = active;
+      changes.active = active;
+    }
+    if (Object.keys(updates).length) {
+      await User.updateOne(
+        { _id: moderator._id },
+        { $set: updates },
+        { runValidators: false },
+      );
+    }
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "UPDATE_COMMENT_MODERATOR",
+      targetType: "User",
+      targetId: moderator._id,
+      details: { email: moderator.email, changes },
+      req,
+    });
+
+    logger.info(
+      `Admin ${req.user.id} updated comment moderator: ${moderator.email} (${moderator._id})`,
+    );
+    return sendSuccess(
+      res,
+      {
+        id: moderator._id,
+        email: moderator.email,
+        active: active ?? moderator.active,
+      },
+      "Comment moderator updated successfully",
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Update comment moderator error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to update comment moderator. Please try again.",
+      null,
+      500,
+    );
+  }
+};
+
+// PUT /admin/comment-moderators/:id/status
+exports.updateCommentModeratorStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { active } = req.body;
+    if (active === undefined) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "active field is required (true/false)",
+        null,
+        400,
+      );
+    }
+
+    const moderator = await User.findOne({ _id: id, role: "comment_moderator" });
+    if (!moderator) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Comment moderator not found",
+        null,
+        404,
+      );
+    }
+
+    await User.updateOne(
+      { _id: moderator._id },
+      { $set: { active } },
+      { runValidators: false },
+    );
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "UPDATE_COMMENT_MODERATOR_STATUS",
+      targetType: "User",
+      targetId: moderator._id,
+      details: { email: moderator.email, active },
+      req,
+    });
+
+    const statusText = active ? "activated" : "deactivated";
+    logger.info(
+      `Admin ${req.user.id} ${statusText} comment moderator: ${moderator.email} (${moderator._id})`,
+    );
+    return sendSuccess(
+      res,
+      { moderatorId: moderator._id, active },
+      `Comment moderator account ${statusText} successfully`,
+    );
+  } catch (err) {
+    logger.error(
+      { error: err.message, stack: err.stack },
+      "Update comment moderator status error",
+    );
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to update comment moderator status",
+      null,
+      500,
+    );
+  }
+};
+
 // ========== COMMENT MANAGEMENT ==========
 
 // GET /admin/comments/pending – AI low confidence comments (visible)
@@ -366,6 +717,7 @@ exports.getPendingComments = async (req, res) => {
     const { policyId } = req.query;
     const user = req.user;
     const isAdmin = user.role === "admin";
+    const isCommentModerator = user.role === "comment_moderator";
 
     let filter = {
       visibility: "visible",
@@ -396,7 +748,7 @@ exports.getPendingComments = async (req, res) => {
         permissions: { $in: ["moderate_comments"] },
       });
 
-      if (!isAdmin && !isOwner && !isAssociate) {
+      if (!isAdmin && !isCommentModerator && !isOwner && !isAssociate) {
         return sendError(
           res,
           ErrorCodes.FORBIDDEN,
@@ -406,7 +758,7 @@ exports.getPendingComments = async (req, res) => {
         );
       }
       filter.policyId = new mongoose.Types.ObjectId(policyId);
-    } else if (!isAdmin) {
+    } else if (!isAdmin && !isCommentModerator) {
       // No policyId, planner: only show comments from policies they own or are associated with
       const ownedPolicies = await Policy.find({ createdBy: user.id }).distinct(
         "_id",
@@ -452,6 +804,7 @@ exports.getFlaggedComments = async (req, res) => {
     const { policyId } = req.query;
     const user = req.user;
     const isAdmin = user.role === "admin";
+    const isCommentModerator = user.role === "comment_moderator";
 
     let filter = {
       reportState: { $in: ["reported", "under_review"] },
@@ -475,10 +828,10 @@ exports.getFlaggedComments = async (req, res) => {
         policyId,
         plannerId: user.id,
         invitationStatus: "accepted",
-        permissions: "moderate_comments",
+        permissions: { $in: ["moderate_comments"] },
       });
 
-      if (!isAdmin && !isOwner && !isAssociate) {
+      if (!isAdmin && !isCommentModerator && !isOwner && !isAssociate) {
         return sendError(
           res,
           ErrorCodes.FORBIDDEN,
@@ -488,14 +841,14 @@ exports.getFlaggedComments = async (req, res) => {
         );
       }
       filter.policyId = new mongoose.Types.ObjectId(policyId);
-    } else if (!isAdmin) {
+    } else if (!isAdmin && !isCommentModerator) {
       const ownedPolicies = await Policy.find({ createdBy: user.id }).distinct(
         "_id",
       );
       const associatedPolicies = await PolicyAssociate.find({
         plannerId: user.id,
         invitationStatus: "accepted",
-        permissions: "moderate_comments",
+        permissions: { $in: ["moderate_comments"] },
       }).distinct("policyId");
       const allowedPolicyIds = [...ownedPolicies, ...associatedPolicies];
       if (allowedPolicyIds.length === 0) {
@@ -1194,6 +1547,7 @@ exports.getAppeals = async (req, res) => {
     const { status = "pending", page = 1, limit = 20, policyId } = req.query;
     const user = req.user;
     const isAdmin = user.role === "admin";
+    const isCommentModerator = user.role === "comment_moderator";
 
     let filter = { "appeal.status": status };
 
@@ -1214,10 +1568,10 @@ exports.getAppeals = async (req, res) => {
         policyId,
         plannerId: user.id,
         invitationStatus: "accepted",
-        permissions: "moderate_comments",
+        permissions: { $in: ["moderate_comments"] },
       });
 
-      if (!isAdmin && !isOwner && !isAssociate) {
+      if (!isAdmin && !isCommentModerator && !isOwner && !isAssociate) {
         return sendError(
           res,
           ErrorCodes.FORBIDDEN,
@@ -1227,14 +1581,14 @@ exports.getAppeals = async (req, res) => {
         );
       }
       filter.policyId = new mongoose.Types.ObjectId(policyId);
-    } else if (!isAdmin) {
+    } else if (!isAdmin && !isCommentModerator) {
       const ownedPolicies = await Policy.find({ createdBy: user.id }).distinct(
         "_id",
       );
       const associatedPolicies = await PolicyAssociate.find({
         plannerId: user.id,
         invitationStatus: "accepted",
-        permissions: "moderate_comments",
+        permissions: { $in: ["moderate_comments"] },
       }).distinct("policyId");
       const allowedPolicyIds = [...ownedPolicies, ...associatedPolicies];
       if (allowedPolicyIds.length === 0) {
@@ -1296,12 +1650,14 @@ exports.getAppeals = async (req, res) => {
 exports.resolveAppeal = async (req, res) => {
   try {
     const { commentId } = req.params;
-    const { decision, moderatorNote = "" } = req.body;
+    let { decision, moderatorNote = "" } = req.body;
+    if (decision === "approve") decision = "approved";
+    if (decision === "reject") decision = "rejected";
     if (!["approved", "rejected"].includes(decision)) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "Decision must be 'approved' or 'rejected'",
+        "Decision must be 'approve'/'approved' or 'reject'/'rejected'",
         null,
         400,
       );
@@ -1333,6 +1689,7 @@ exports.resolveAppeal = async (req, res) => {
 
     const user = req.user;
     const isAdmin = user.role === "admin";
+    const isCommentModerator = user.role === "comment_moderator";
     const policy = comment.policyId;
     if (!policy) {
       return sendError(
@@ -1345,7 +1702,7 @@ exports.resolveAppeal = async (req, res) => {
     }
 
     // Check permissions: admin, policy owner, or associate with moderate_comments
-    let isAuthorized = isAdmin;
+    let isAuthorized = isAdmin || isCommentModerator;
     if (!isAuthorized && policy.createdBy) {
       const isOwner = policy.createdBy.toString() === user.id.toString();
       if (isOwner) isAuthorized = true;
@@ -1354,7 +1711,7 @@ exports.resolveAppeal = async (req, res) => {
           policyId: policy._id,
           plannerId: user.id,
           invitationStatus: "accepted",
-          permissions: "moderate_comments",
+          permissions: { $in: ["moderate_comments"] },
         });
         if (associate) isAuthorized = true;
       }
@@ -1411,16 +1768,20 @@ exports.resolveAppeal = async (req, res) => {
       req,
     });
 
-    // Notify the appellant about the resolution
+    // Notify the appellant without blocking the response.
     if (comment.appeal.appellantId) {
-      await createNotification({
-        userId: comment.appeal.appellantId,
-        type: "APPEAL_RESOLVED",
-        title: `Appeal ${decision}`,
-        message: `Your appeal on a comment has been ${decision}. ${moderatorNote ? `Note: ${moderatorNote}` : ""}`,
-        data: { commentId: comment._id, decision },
-        severity: decision === "approved" ? "info" : "warning",
-        source: "system",
+      setImmediate(() => {
+        createNotification({
+          userId: comment.appeal.appellantId,
+          type: "APPEAL_RESOLVED",
+          title: `Appeal ${decision}`,
+          message: `Your appeal on a comment has been ${decision}. ${moderatorNote ? `Note: ${moderatorNote}` : ""}`,
+          data: { commentId: comment._id, decision },
+          severity: decision === "approved" ? "info" : "warning",
+          source: "system",
+        }).catch((err) => {
+          logger.error({ error: err.message }, "Deferred appeal notification failed");
+        });
       });
     }
 
@@ -1549,6 +1910,157 @@ exports.searchPlanners = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to search planners",
+      null,
+      500,
+    );
+  }
+};
+
+// ==================== MOCK SMS TOOLS ====================
+exports.simulateSms = async (req, res) => {
+  try {
+    const { phone, message } = req.body || {};
+    const result = await simulateInboundSms({ phone, message });
+
+    return sendSuccess(
+      res,
+      {
+        phoneHash: result.phoneHash,
+        phoneLast4: result.phoneLast4,
+        normalizedPhone: result.normalizedPhone,
+        command: result.command,
+        reply: result.reply,
+        statusCode: result.statusCode,
+        success: result.success,
+        subscription: result.subscription,
+        metadata: result.metadata,
+      },
+      "SMS simulated successfully",
+    );
+  } catch (err) {
+    logger.error({ error: err.message, stack: err.stack }, "Simulate SMS error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to simulate SMS",
+      null,
+      500,
+    );
+  }
+};
+
+exports.getSmsHistory = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, q = "", direction = "", command = "" } = req.query;
+    const numericPage = Math.max(1, Number.parseInt(page, 10) || 1);
+    const numericLimit = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
+    const skip = (numericPage - 1) * numericLimit;
+
+    const filter = {};
+    if (direction) filter.direction = direction;
+    if (command) filter.command = command.toUpperCase();
+    if (q && q.trim()) {
+      const term = q.trim();
+      filter.$or = [
+        { command: { $regex: term, $options: "i" } },
+        { inboundMessage: { $regex: term, $options: "i" } },
+        { replyMessage: { $regex: term, $options: "i" } },
+        { phoneLast4: { $regex: term.slice(-4), $options: "i" } },
+      ];
+    }
+
+    const [activities, total, smsVotes] = await Promise.all([
+      SmsActivity.find(filter)
+        .populate("policyId", "title policyCode pollType")
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(numericLimit)
+        .lean(),
+      SmsActivity.countDocuments(filter),
+      Vote.find({ channel: "sms" })
+        .populate("policyId", "title policyCode pollType status")
+        .sort({ createdAt: -1 })
+        .limit(100)
+        .lean(),
+    ]);
+
+    return sendSuccess(
+      res,
+      {
+        total,
+        page: numericPage,
+        pages: Math.ceil(total / numericLimit),
+        activities,
+        votes: smsVotes,
+      },
+      "SMS history retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message, stack: err.stack }, "Get SMS history error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve SMS history",
+      null,
+      500,
+    );
+  }
+};
+
+exports.getSmsPhoneState = async (req, res) => {
+  try {
+    const { phone } = req.query;
+    if (!phone?.trim()) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Phone is required",
+        null,
+        400,
+      );
+    }
+
+    const normalizedPhone = normalizePhone(phone.trim());
+    const phoneHash = hashPhone(normalizedPhone);
+    const [subscription, votes, activities, appUser] = await Promise.all([
+      SmsSubscription.findOne({ phoneHash }).lean(),
+      Vote.find({ phoneHash, channel: "sms" })
+        .populate("policyId", "title policyCode pollType status")
+        .sort({ createdAt: -1 })
+        .lean(),
+      SmsActivity.find({ phoneHash })
+        .populate("policyId", "title policyCode pollType")
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean(),
+      User.findOne({ phoneHash, verified: true })
+        .select("email region verified")
+        .lean(),
+    ]);
+
+    return sendSuccess(
+      res,
+      {
+        phoneHash,
+        normalizedPhone,
+        phoneLast4: normalizedPhone.slice(-4),
+        subscription: {
+          subscribed: Boolean(subscription?.subscribed),
+          subscribedAt: subscription?.subscribedAt || null,
+          unsubscribedAt: subscription?.unsubscribedAt || null,
+        },
+        registeredAppUser: appUser,
+        votes,
+        activities,
+      },
+      "SMS phone state retrieved",
+    );
+  } catch (err) {
+    logger.error({ error: err.message, stack: err.stack }, "Get SMS phone state error");
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve SMS phone state",
       null,
       500,
     );

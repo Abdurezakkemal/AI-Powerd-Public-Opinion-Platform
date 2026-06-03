@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { adminApi } from "../api/admin";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
-import { Modal } from "../components/Modal";
 import { PageHeader } from "../components/PageHeader";
 import { formatDate, getErrorMessage } from "../lib/format";
+import { showToast } from "../lib/toast";
 
 export function CitizenManagementPage() {
   const [citizens, setCitizens] = useState([]);
@@ -17,9 +17,6 @@ export function CitizenManagementPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [activeFilter, setActiveFilter] = useState("");
   const [searchEmail, setSearchEmail] = useState("");
-  const [resetModalOpen, setResetModalOpen] = useState(false);
-  const [selectedCitizen, setSelectedCitizen] = useState(null);
-  const [modalMessage, setModalMessage] = useState(null);
 
   const loadCitizens = async () => {
     setLoading(true);
@@ -65,49 +62,12 @@ export function CitizenManagementPage() {
       setSuccessMessage(
         `${citizen.email} ${updatedActive ? "activated" : "deactivated"}.`,
       );
+      try { showToast('success', `${citizen.email} ${updatedActive ? "activated" : "deactivated"}.`); } catch(e){}
       setTimeout(() => setSuccessMessage(""), 3000);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to update citizen status"));
     } finally {
       setActionLoading((prev) => ({ ...prev, [citizen._id]: false }));
-    }
-  };
-
-  const openResetModal = (citizen) => {
-    setSelectedCitizen(citizen);
-    setModalMessage(null);
-    setResetModalOpen(true);
-  };
-
-  const handlePasswordReset = async () => {
-    if (!selectedCitizen) return;
-    setError("");
-    setModalMessage(null);
-    setActionLoading((prev) => ({
-      ...prev,
-      [`reset-${selectedCitizen._id}`]: true,
-    }));
-    try {
-      await adminApi.initiatePasswordReset(selectedCitizen._id);
-      setModalMessage({
-        type: "success",
-        text: "Reset email sent successfully!",
-      });
-      setTimeout(() => {
-        setResetModalOpen(false);
-        setSelectedCitizen(null);
-        setModalMessage(null);
-      }, 2000);
-    } catch (err) {
-      setModalMessage({
-        type: "error",
-        text: getErrorMessage(err, "Failed to send reset email"),
-      });
-    } finally {
-      setActionLoading((prev) => ({
-        ...prev,
-        [`reset-${selectedCitizen._id}`]: false,
-      }));
     }
   };
 
@@ -117,7 +77,7 @@ export function CitizenManagementPage() {
     <div>
       <PageHeader
         title="Citizen Management"
-        description="View, filter, and manage citizen accounts. Activate or deactivate users and send password reset emails."
+        description="View, filter, and manage citizen accounts. Activate or deactivate users."
       />
       <div className="space-y-5">
         <ErrorAlert message={error} />
@@ -231,15 +191,6 @@ export function CitizenManagementPage() {
                               ? "Deactivate"
                               : "Activate"}
                         </button>
-                        <button
-                          onClick={() => openResetModal(citizen)}
-                          disabled={actionLoading[`reset-${citizen._id}`]}
-                          className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
-                        >
-                          {actionLoading[`reset-${citizen._id}`]
-                            ? "Sending..."
-                            : "Reset password"}
-                        </button>
                       </div>
                     </td>
                   </tr>
@@ -272,56 +223,6 @@ export function CitizenManagementPage() {
           </div>
         )}
       </div>
-      {resetModalOpen && selectedCitizen && (
-        <Modal title="Reset Password" onClose={() => setResetModalOpen(false)}>
-          <div className="space-y-4">
-            {modalMessage && (
-              <div
-                className={`rounded-lg p-3 text-sm font-semibold ${
-                  modalMessage.type === "success"
-                    ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                    : "bg-rose-50 border border-rose-200 text-rose-700"
-                }`}
-              >
-                {modalMessage.text}
-              </div>
-            )}
-            {!modalMessage && (
-              <>
-                <p className="text-sm text-slate-600">
-                  Send a password reset email to{" "}
-                  <strong>{selectedCitizen.email}</strong>?
-                </p>
-                <p className="text-sm text-slate-500">
-                  They will receive an email with a link to create a new
-                  password. The link expires in 1 hour.
-                </p>
-              </>
-            )}
-            <div className="flex gap-3 justify-end pt-4 border-t border-slate-200">
-              <button
-                onClick={() => setResetModalOpen(false)}
-                type="button"
-                className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-              >
-                Cancel
-              </button>
-              {!modalMessage && (
-                <button
-                  onClick={handlePasswordReset}
-                  disabled={actionLoading[`reset-${selectedCitizen._id}`]}
-                  type="button"
-                  className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-50"
-                >
-                  {actionLoading[`reset-${selectedCitizen._id}`]
-                    ? "Sending..."
-                    : "Send reset email"}
-                </button>
-              )}
-            </div>
-          </div>
-        </Modal>
-      )}
     </div>
   );
 }

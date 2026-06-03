@@ -1,16 +1,24 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { authApi } from "../api/auth";
 import { userApi } from "../api/user";
 import { clearStoredAuth, readStoredAuth, writeStoredAuth } from "../lib/storage";
 
 const AuthContext = createContext(null);
 
-const DASHBOARD_ROLES = ["planner", "admin"];
+const DASHBOARD_ROLES = ["planner", "comment_moderator", "admin"];
 
 export function AuthProvider({ children }) {
+  const location = useLocation();
   const [auth, setAuth] = useState(() => readStoredAuth());
   const [user, setUser] = useState(null);
-  const [initializing, setInitializing] = useState(Boolean(readStoredAuth()?.token));
+  const publicPaths = ["/", "/login", "/forgot-password", "/reset-password"];
+  const isPublicRoute =
+    publicPaths.includes(location.pathname) ||
+    location.pathname.startsWith("/public/");
+  const [initializing, setInitializing] = useState(
+    Boolean(readStoredAuth()?.token) && !isPublicRoute,
+  );
 
   const logout = useCallback(() => {
     clearStoredAuth();
@@ -42,17 +50,21 @@ export function AuthProvider({ children }) {
   }, [logout]);
 
   useEffect(() => {
-    if (initializing) {
-      refreshUser();
+    if (!readStoredAuth()?.token || isPublicRoute) {
+      setInitializing(false);
+      return;
     }
-  }, [initializing, refreshUser]);
+
+    setInitializing(true);
+    refreshUser();
+  }, [isPublicRoute, refreshUser, location.pathname]);
 
   const login = useCallback(async (email, password) => {
     const result = await authApi.login(email, password);
 
     if (!DASHBOARD_ROLES.includes(result.role)) {
       clearStoredAuth();
-      throw new Error("This dashboard is only available to planner and admin accounts.");
+      throw new Error("This dashboard is only available to planner, comment moderator, and admin accounts.");
     }
 
     const nextAuth = {

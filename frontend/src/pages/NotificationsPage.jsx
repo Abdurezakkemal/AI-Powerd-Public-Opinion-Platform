@@ -1,5 +1,7 @@
 import { ArrowLeft } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { io as socketIOClient } from "socket.io-client";
+import { showToast } from "../lib/toast";
 import { useNavigate } from "react-router-dom";
 import { API_BASE_URL } from "../api/client";
 import { userApi } from "../api/user";
@@ -40,24 +42,45 @@ export function NotificationsPage() {
     const userId = readStoredAuth()?.userId;
     if (!userId) return;
 
-    const apiUrl = new URL(API_BASE_URL, window.location.origin);
-    const protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:";
-    const socket = new WebSocket(
-      `${protocol}//${apiUrl.host}/socket.io/?EIO=4&transport=websocket`,
-    );
+    try {
+      const apiOrigin = new URL(API_BASE_URL, window.location.origin).origin;
+      const socket = socketIOClient(apiOrigin, {
+        auth: { userId },
+        transports: ["websocket"],
+        withCredentials: true,
+      });
 
-    socket.addEventListener("message", (event) => {
-      const payload = String(event.data);
-      if (payload.startsWith("0")) {
-        socket.send(`40${JSON.stringify({ auth: { userId } })}`);
-      } else if (payload === "2") {
-        socket.send("3");
-      } else if (payload.startsWith("42")) {
-        loadNotifications();
-      }
-    });
+      socket.on("connect", () => {
+        // for debugging during development
+        console.debug("notifications socket connected", socket.id);
+      });
 
-    return () => socket.close();
+      socket.on("notification", (payload) => {
+        // When a notification arrives, refresh list and show a toast
+        try {
+          loadNotifications();
+          if (payload && payload.title) {
+            showToast("info", payload.title + (payload.message ? ` — ${payload.message}` : ""));
+          }
+        } catch (e) {
+          // ignore errors during toast in render
+        }
+      });
+
+      socket.on("disconnect", (reason) => {
+        console.debug("notifications socket disconnected", reason);
+      });
+
+      return () => {
+        try {
+          socket.off("notification");
+          socket.disconnect();
+        } catch (e) {}
+      };
+    } catch (e) {
+      // If socket.io-client isn't available or connection fails, silently ignore
+      console.error("Failed to initialize notifications socket:", e);
+    }
   }, []);
 
   // Auto-mark as read when card becomes visible
@@ -92,6 +115,10 @@ export function NotificationsPage() {
     const associateId = data?.associateId;
 
     switch (type) {
+      case "PLANNER_REQUEST_CREATED":
+        if (data?.requestId) navigate(`/planner-requests?highlight=${data.requestId}`);
+        else navigate(`/planner-requests`);
+        break;
       case "POLICY_ACTIVATED":
       case "POLICY_CLOSED":
       case "POLICY_EXTENDED":

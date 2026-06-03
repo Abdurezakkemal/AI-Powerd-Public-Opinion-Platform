@@ -1,9 +1,34 @@
 const express = require("express");
+const multer = require("multer");
 const router = express.Router();
 const plannerController = require("../controllers/plannerController");
 const auth = require("../middleware/authMiddleware");
 const limiters = require("../config/rateLimits");
 const validateObjectId = require("../middleware/validateObjectId");
+
+const ALLOWED_PROOF_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+]);
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (ALLOWED_PROOF_MIME_TYPES.has(file.mimetype)) {
+      return cb(null, true);
+    }
+
+    const error = new multer.MulterError("LIMIT_UNEXPECTED_FILE", file.fieldname);
+    error.message = "Only image, PDF, DOC, or DOCX files are allowed.";
+    return cb(error, false);
+  },
+});
 
 const optionalCitizenAuth = (req, res, next) => {
   const token = req.header("Authorization")?.replace("Bearer ", "");
@@ -16,7 +41,27 @@ router.post(
   "/request",
   optionalCitizenAuth,
   limiters.plannerRequest,
+  upload.single("proofFile"),
   plannerController.requestPlanner,
+);
+
+router.post(
+  "/appeals",
+  limiters.plannerRequest,
+  plannerController.submitDeactivationAppeal,
+);
+
+router.get(
+  "/appeals",
+  auth(["admin"]),
+  plannerController.listDeactivationAppeals,
+);
+
+router.post(
+  "/appeals/:id/resolve",
+  auth(["admin"]),
+  validateObjectId("id"),
+  plannerController.resolveDeactivationAppeal,
 );
 
 router.post(
@@ -29,6 +74,12 @@ router.get(
   "/requests/pending",
   auth(["admin"]),
   plannerController.listPendingRequests,
+);
+
+router.get(
+  "/requests/history",
+  auth(["admin"]),
+  plannerController.listRequestHistory,
 );
 
 router.post(
@@ -116,6 +167,12 @@ router.get(
   "/associates/invitations/pending",
   auth(["planner"]),
   plannerController.getPendingInvitations,
+);
+
+router.get(
+  "/associates/invitations/history",
+  auth(["planner"]),
+  plannerController.getInvitationHistory,
 );
 
 // NEW: Get details of a single pending invitation (to preview policy before accepting)

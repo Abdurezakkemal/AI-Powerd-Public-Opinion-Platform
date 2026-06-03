@@ -1,8 +1,27 @@
+import { useEffect, useRef } from "react";
+import { showToast } from "../lib/toast";
+
 export function ErrorAlert({ message }) {
+  const lastShownMessageRef = useRef("");
+
+  useEffect(() => {
+    if (!message) {
+      lastShownMessageRef.current = "";
+      return;
+    }
+
+    if (lastShownMessageRef.current === message) {
+      return;
+    }
+
+    lastShownMessageRef.current = message;
+    try {
+      showToast("error", message);
+    } catch {
+      // Ignore toast failures.
+    }
+  }, [message]);
+
   if (!message) return null;
-  return (
-    <div className="rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-semibold text-rose-700">
-      {message}
-    </div>
-  );
+  return null;
 }

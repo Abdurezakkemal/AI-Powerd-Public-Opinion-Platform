@@ -1,13 +1,11 @@
 const express = require("express");
 const router = express.Router();
 const adminController = require("../controllers/adminController");
+const commentController = require("../controllers/commentController");
 const auth = require("../middleware/authMiddleware");
 const reportController = require("../controllers/reportController");
 const limiters = require("../config/rateLimits");
 const validateObjectId = require("../middleware/validateObjectId");
-const {
-  hasAssociatePermission,
-} = require("../middleware/permissionMiddleware");
 const {
   hasCommentPermission,
 } = require("../middleware/commentPermissionMiddleware");
@@ -41,21 +39,29 @@ router.put(
 // AI low confidence comments (planners with permissions can access)
 router.get(
   "/comments/pending",
-  auth(["planner", "admin"]),
+  auth(["planner", "comment_moderator", "admin"]),
   adminController.getPendingComments,
 );
 
 // Reported comments (hidden)
 router.get(
   "/comments/flagged",
-  auth(["planner", "admin"]),
+  auth(["planner", "comment_moderator", "admin"]),
   adminController.getFlaggedComments,
+);
+
+// Admin moderation action by comment id.
+router.put(
+  "/comments/:commentId/moderate",
+  auth(["comment_moderator", "admin"]),
+  validateObjectId("commentId"),
+  commentController.moderateComment,
 );
 
 // Manual override (sentiment/keywords) – admin only
 router.put(
   "/comments/:id",
-  auth(["admin"]),
+  auth(["comment_moderator", "admin"]),
   validateObjectId("id"),
   adminController.updateComment,
 );
@@ -63,14 +69,14 @@ router.put(
 // Retry single comment – admin only
 router.post(
   "/comments/:id/retry",
-  auth(["planner", "admin"]),
+  auth(["planner", "comment_moderator", "admin"]),
   hasCommentPermission("moderate_comments"),
   adminController.retryComment,
 );
 // Force retry single comment – admin only
 router.post(
   "/comments/:id/force-retry",
-  auth(["admin"]),
+  auth(["comment_moderator", "admin"]),
   validateObjectId("id"),
   adminController.forceRetryComment,
 );
@@ -78,7 +84,7 @@ router.post(
 // Bulk retry by IDs – admin only
 router.post(
   "/comments/bulk/retry-by-ids",
-  auth(["admin"]),
+  auth(["comment_moderator", "admin"]),
   limiters.bulkAdmin,
   adminController.bulkRetryCommentsByIds,
 );
@@ -86,7 +92,7 @@ router.post(
 // Soft delete comment – admin only
 router.delete(
   "/comments/:id",
-  auth(["admin"]),
+  auth(["comment_moderator", "admin"]),
   validateObjectId("id"),
   adminController.deleteComment,
 );
@@ -94,23 +100,23 @@ router.delete(
 // ==================== REPORT MANAGEMENT ====================
 router.get(
   "/comments/:commentId/reports",
-  auth(["admin"]),
+  auth(["comment_moderator", "admin"]),
   validateObjectId("commentId"),
   adminController.getCommentReports,
 );
 router.put(
   "/comments/:commentId/reports/:reportId",
-  auth(["admin"]),
+  auth(["comment_moderator", "admin"]),
   validateObjectId("commentId"),
   adminController.resolveReport,
 );
 
 // ==================== APPEAL MANAGEMENT ====================
 // Allow planners with moderate_comments permission
-router.get("/appeals", auth(["planner", "admin"]), adminController.getAppeals);
+router.get("/appeals", auth(["planner", "comment_moderator", "admin"]), adminController.getAppeals);
 router.post(
   "/appeals/:commentId/resolve",
-  auth(["planner", "admin"]),
+  auth(["planner", "comment_moderator", "admin"]),
   validateObjectId("commentId"),
   adminController.resolveAppeal,
 );
@@ -138,7 +144,6 @@ router.get(
   reportController.exportAuditLogs,
 );
 router.get("/ai/health", auth(["admin"]), reportController.getAIHealth);
-
 // ==================== MISC ADMIN ====================
 router.post(
   "/users/:id/initiate-password-reset",
@@ -155,6 +160,30 @@ router.get(
   "/planners/search",
   auth(["admin", "planner"]),
   adminController.searchPlanners,
+);
+
+// ==================== COMMENT MODERATOR MANAGEMENT ====================
+router.get(
+  "/comment-moderators",
+  auth(["admin"]),
+  adminController.listCommentModerators,
+);
+router.post(
+  "/comment-moderators",
+  auth(["admin"]),
+  adminController.createCommentModerator,
+);
+router.put(
+  "/comment-moderators/:id",
+  auth(["admin"]),
+  validateObjectId("id"),
+  adminController.updateCommentModerator,
+);
+router.put(
+  "/comment-moderators/:id/status",
+  auth(["admin"]),
+  validateObjectId("id"),
+  adminController.updateCommentModeratorStatus,
 );
 
 module.exports = router;

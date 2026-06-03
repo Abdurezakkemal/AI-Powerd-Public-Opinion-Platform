@@ -7,6 +7,8 @@ A multi‑channel platform for Ethiopian citizens to provide feedback on governm
 | Component  | Technology                        | Description                                                                  |
 | ---------- | --------------------------------- | ---------------------------------------------------------------------------- |
 | Backend    | Node.js + Express, MongoDB, Redis | User auth, policy management, feedback collection, analytics, SMS simulation |
+| Frontend   | React + Vite, Tailwind CSS        | Planner/admin dashboard for policy management, analytics, moderation         |
+| Mobile     | Flutter                           | Citizen mobile app for voting, commenting, and notifications                |
 | AI Service | Python FastAPI, Transformers      | Sentiment analysis, keyword extraction, language detection (fastText)        |
 
 ## Features
@@ -68,7 +70,7 @@ Auto‑activation and auto‑close workers run every minute (using `node-cron`) 
 
 **Backend**
 
-- Node.js 18+, Express 4.x
+- Node.js 20+, Express 5.x
 - MongoDB (Mongoose)
 - Redis
 - JWT authentication, bcrypt, nanoid
@@ -86,7 +88,11 @@ Auto‑activation and auto‑close workers run every minute (using `node-cron`) 
 Detailed API documentation is available inside each component:
 
 - **Backend API** – [`backend/API_DOCS.md`](backend/API_DOCS.md) (all REST endpoints, authentication, roles)
-- **AI Service API** – [`ai-service/API_DOCS.md`](ai-service/API.md) (sentiment, keywords, benchmarking)
+- **AI Service API** – [`ai-service/API_DOCS.md`](ai-service/API_DOCS.md) (sentiment, keywords, benchmarking)
+- **Frontend docs** – [`frontend/README.md`](frontend/README.md) (dashboard setup)
+- **Mobile app notes** – [`mobile/civic_engagement_app/README.md`](mobile/civic_engagement_app/README.md)
+
+For component-specific setup and local launch instructions, see the frontend and mobile README files above.
 
 For setup and environment variables, continue reading below.
 
@@ -94,7 +100,7 @@ For setup and environment variables, continue reading below.
 
 ### Local Development
 
-- Node.js 18+ and npm
+- Node.js 20+ and npm
 - Python 3.10+ (with `venv`)
 - MongoDB (running locally or via cloud)
 - Redis
@@ -164,6 +170,58 @@ sudo systemctl enable mongodb --now
    ```
 
    Backend runs on `http://localhost:5000`
+
+## Frontend Setup
+
+1. **Enter the frontend directory**
+
+   ```bash
+   cd ../frontend
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   npm install
+   ```
+
+3. **Configure environment**
+
+   ```bash
+   cp .env.example .env
+   ```
+
+4. **Start development server**
+
+   ```bash
+   npm run dev
+   ```
+
+   Frontend runs on `http://localhost:5173` by default and expects the backend API at `http://localhost:5000/api`.
+
+## Mobile App Setup
+
+The mobile app is a Flutter project in `mobile/civic_engagement_app`.
+
+1. **Enter the mobile directory**
+
+   ```bash
+   cd ../mobile/civic_engagement_app
+   ```
+
+2. **Install dependencies**
+
+   ```bash
+   flutter pub get
+   ```
+
+3. **Run the app**
+
+   ```bash
+   flutter run
+   ```
+
+   The mobile README is currently a starter template and may need further app-specific instructions.
 
 ## AI Service Setup
 

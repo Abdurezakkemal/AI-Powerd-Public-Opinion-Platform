@@ -7,7 +7,7 @@ const userSchema = new mongoose.Schema({
   region: { type: String, required: true },
   role: {
     type: String,
-    enum: ["citizen", "planner", "admin"],
+    enum: ["citizen", "planner", "comment_moderator", "admin"],
     default: "citizen",
   },
   verified: { type: Boolean, default: false },

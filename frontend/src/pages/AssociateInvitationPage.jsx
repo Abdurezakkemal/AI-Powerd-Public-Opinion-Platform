@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { plannerApi } from "../api/planners";
+import { plannerApi } from "../api/plannerApi";
 import { LoadingState } from "../components/LoadingState";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { PageHeader } from "../components/PageHeader";
@@ -23,22 +23,22 @@ export function AssociateInvitationPage() {
     // Fetch invitation details to show policy info
     plannerApi
       .getInvitationDetails(associateId)
-      .then((res) => setInvitation(res.data))
+      .then(setInvitation)
       .catch((err) =>
         setError(err.message || "Invitation not found or expired"),
       )
       .finally(() => setLoading(false));
   }, [associateId, searchParams]);
 
-  const performAction = async () => {
+  const performAction = async (requestedAction = action) => {
     setLoading(true);
     try {
-      if (action === "accept") {
+      if (requestedAction === "accept") {
         await plannerApi.acceptInvitation(associateId);
         navigate("/associates/policies", {
           state: { message: "Invitation accepted! You now have access." },
         });
-      } else if (action === "reject") {
+      } else if (requestedAction === "reject") {
         await plannerApi.rejectInvitation(
           associateId,
           "Rejected via email link",
@@ -58,6 +58,7 @@ export function AssociateInvitationPage() {
   if (!invitation) return <ErrorAlert message="Invitation not found" />;
 
   const isExpired = invitation.isExpired || invitation.daysRemaining <= 0;
+  const invitationMessage = invitation.metadata?.notes || "";
 
   return (
     <div className="mx-auto mt-12 max-w-lg">
@@ -75,8 +76,13 @@ export function AssociateInvitationPage() {
           </p>
           <div className="mt-4 text-sm text-slate-500">
             <p>Invited by: {invitation.assignedBy?.email}</p>
-            <p>Permissions: {invitation.permissions.join(", ")}</p>
             <p>Expires in: {invitation.daysRemaining} days</p>
+          </div>
+          <div className="mt-4 rounded-lg border border-teal-100 bg-teal-50 p-3 text-sm text-teal-900">
+            <p className="font-semibold">Invitation Message</p>
+            <p className="mt-1 whitespace-pre-wrap">
+              {invitationMessage || "No message provided."}
+            </p>
           </div>
           {action ? (
             <div className="mt-6">
@@ -95,7 +101,7 @@ export function AssociateInvitationPage() {
               <button
                 onClick={() => {
                   setAction("accept");
-                  performAction();
+                  performAction("accept");
                 }}
                 className="rounded-lg bg-teal-700 px-4 py-2 text-white"
               >
@@ -104,7 +110,7 @@ export function AssociateInvitationPage() {
               <button
                 onClick={() => {
                   setAction("reject");
-                  performAction();
+                  performAction("reject");
                 }}
                 className="rounded-lg border px-4 py-2"
               >

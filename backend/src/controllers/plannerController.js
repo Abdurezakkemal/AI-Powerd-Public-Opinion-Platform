@@ -1,15 +1,42 @@
 const User = require("../models/User");
 const PlannerRequest = require("../models/PlannerRequest");
+const PlannerAppeal = require("../models/PlannerAppeal");
 const Policy = require("../models/Policy");
 const PolicyAssociate = require("../models/PolicyAssociate");
+const crypto = require("crypto");
+const client = require("../config/redis");
 const { createAuditLog } = require("../utils/audit");
 const { createNotification } = require("../services/notificationService");
+const { comparePassword, hashPassword, hashPhone } = require("../utils/helpers");
+const { uploadBufferToCloudinary } = require("../utils/cloudinaryUpload");
 const {
   sendSuccess,
   sendError,
   ErrorCodes,
 } = require("../utils/responseHelper");
-const { sendEmail } = require("../utils/email");
+const { sendEmail, sendPlannerPasswordSetupEmail } = require("../utils/email");
+
+const escapeHtml = (value = "") =>
+  String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+
+const getProofResourceType = (mimetype = "") => {
+  if (
+    [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ].includes(mimetype)
+  ) {
+    return "raw";
+  }
+
+  return "image";
+};
 
 // Helper: convert permission keys to user‑friendly labels
 const formatPermissions = (perms) => {
@@ -21,19 +48,52 @@ const formatPermissions = (perms) => {
   return perms.map((p) => map[p] || p).join(", ");
 };
 
+const normalizeLanguageCode = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  const map = {
+    am: "am",
+    amharic: "am",
+    om: "om",
+    afaanoromoo: "om",
+    "afaan oromoo": "om",
+    oromo: "om",
+    ti: "ti",
+    tigrinya: "ti",
+    en: "en",
+    english: "en",
+  };
+  return map[normalized] || null;
+};
+
 // ==================== CITIZEN REQUESTS TO BECOME PLANNER ====================
 exports.requestPlanner = async (req, res) => {
   try {
     const {
       organization,
       reason,
-      proofFile,
       applicantType,
       fullName,
       email,
       phone,
       region,
+      ageRange,
+      gender,
+      occupation,
+      education,
+      preferredLanguage,
+      languagesSpoken,
     } = req.body;
+
+    if (!req.file) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Supporting proof file is required.",
+        null,
+        400,
+      );
+    }
+
     if (!reason || reason.length < 50) {
       return sendError(
         res,
@@ -45,23 +105,85 @@ exports.requestPlanner = async (req, res) => {
     }
     const userId = req.user?.id || null;
     const isCitizenRequest = !!userId;
+    const normalizedEmail = email ? email.trim().toLowerCase() : "";
+    const normalizedPhone = phone ? phone.trim() : "";
 
     if (!isCitizenRequest) {
-      if (!fullName || !email || !region) {
+      if (
+        !fullName ||
+        !email ||
+        !phone ||
+        !region ||
+        !ageRange ||
+        !gender ||
+        !occupation ||
+        !education ||
+        !preferredLanguage ||
+        !languagesSpoken ||
+        !organization
+      ) {
         return sendError(
           res,
           ErrorCodes.VALIDATION,
-          "Full name, email, and region are required for planner requests without login.",
+          "Full name, email, phone, region, age range, gender, occupation, education, preferred language, languages spoken, and organization are required for planner requests without login.",
           null,
           400,
         );
       }
+
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(normalizedEmail)) {
+        return sendError(
+          res,
+          ErrorCodes.VALIDATION,
+          "Invalid email address.",
+          null,
+          400,
+        );
+      }
+
+      const phoneRegex = /^(\+251|0)?9\d{8}$/;
+      if (!phoneRegex.test(normalizedPhone.replace(/\s/g, ""))) {
+        return sendError(
+          res,
+          ErrorCodes.VALIDATION,
+          "Invalid Ethiopian phone number format. Use +2519XXXXXXXX or 09XXXXXXXX.",
+          null,
+          400,
+        );
+      }
+
+      const existingPhoneOwner = await User.findOne({
+        phoneHash: hashPhone(normalizedPhone),
+      });
+      if (
+        existingPhoneOwner &&
+        existingPhoneOwner.email.toLowerCase() !== normalizedEmail
+      ) {
+        return sendError(
+          res,
+          ErrorCodes.DUPLICATE,
+          "Phone number already belongs to another account.",
+          null,
+          409,
+        );
+      }
     }
+
+    const spokenLanguages = Array.isArray(languagesSpoken)
+      ? languagesSpoken.filter(Boolean)
+      : String(languagesSpoken || "")
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean);
+    const normalizedLanguages = spokenLanguages
+      .map(normalizeLanguageCode)
+      .filter(Boolean);
 
     const existing = await PlannerRequest.findOne(
       isCitizenRequest
         ? { userId, status: "pending" }
-        : { email: email.trim().toLowerCase(), status: "pending" },
+        : { email: normalizedEmail, status: "pending" },
     );
     if (existing) {
       return sendError(
@@ -72,6 +194,23 @@ exports.requestPlanner = async (req, res) => {
         409,
       );
     }
+    let uploadResult = { secure_url: "" };
+    try {
+      uploadResult = await uploadBufferToCloudinary(req.file.buffer, {
+        resource_type: getProofResourceType(req.file.mimetype),
+        public_id: `planner-proof-${Date.now()}`,
+        context: {
+          applicant_email: normalizedEmail || userId || "citizen",
+          original_filename: req.file.originalname,
+        },
+      });
+    } catch (e) {
+      console.error("Cloudinary upload failed (falling back):", e);
+      // Continue without failing the request; store empty proof URL so admin
+      // can still review the submitted form data.
+      uploadResult = { secure_url: "" };
+    }
+
     const request = new PlannerRequest({
       userId,
       applicantType:
@@ -79,14 +218,44 @@ exports.requestPlanner = async (req, res) => {
           ? "citizen"
           : "nonCitizen",
       fullName: fullName || "",
-      email: email ? email.trim().toLowerCase() : "",
-      phone: phone || "",
+      email: normalizedEmail,
+      phone: normalizedPhone,
       region: region || "",
+      ageRange: ageRange || "",
+      gender: gender || "",
+      occupation: occupation || "",
+      education: education || "",
+      preferredLanguage: preferredLanguage || "",
+      languagesSpoken: normalizedLanguages.length
+        ? normalizedLanguages
+        : [preferredLanguage || "en"],
       organization: organization || "",
       reason,
-      proofFile: proofFile || null,
+      proofFile: uploadResult.secure_url,
     });
     await request.save();
+    // Notify admins about the new planner request
+    try {
+      const admins = await User.find({ role: "admin", active: true }).select("_id");
+      if (admins && admins.length) {
+        const notifyPromises = admins.map((a) =>
+          createNotification({
+            userId: a._id,
+            type: "PLANNER_REQUEST_CREATED",
+            title: "New Planner Request",
+            message: `${request.fullName || request.email} submitted a planner request.`,
+            data: { requestId: request._id },
+            severity: "info",
+            source: "system",
+          }),
+        );
+        // Don't block the request response on notification delivery
+        Promise.allSettled(notifyPromises).catch(() => {});
+      }
+    } catch (e) {
+      // Log but do not fail the request
+      console.error("Failed to notify admins of planner request:", e);
+    }
     if (userId) {
       await createAuditLog({
         userId,
@@ -136,6 +305,38 @@ exports.listPendingRequests = async (req, res) => {
   }
 };
 
+exports.listRequestHistory = async (req, res) => {
+  try {
+    const { status } = req.query;
+    const query = {};
+
+    if (status === "approved" || status === "rejected") {
+      query.status = status;
+    } else {
+      query.status = { $in: ["approved", "rejected"] };
+    }
+
+    const requests = await PlannerRequest.find(query)
+      .populate(
+        "userId",
+        "email region ageRange gender occupation education createdAt",
+      )
+      .populate("reviewedBy", "email")
+      .sort({ reviewedAt: -1, createdAt: -1 });
+
+    return sendSuccess(res, requests);
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to fetch request history",
+      null,
+      500,
+    );
+  }
+};
+
 exports.approveRequest = async (req, res) => {
   try {
     const { id } = req.params;
@@ -156,36 +357,58 @@ exports.approveRequest = async (req, res) => {
         null,
         400,
       );
-    if (!request.userId) {
-      return sendError(
-        res,
-        ErrorCodes.VALIDATION,
-        "This request is not linked to an existing citizen account. Create the planner account manually or ask the applicant to register first.",
-        null,
-        400,
-      );
+    let user = request.userId
+      ? await User.findById(request.userId)
+      : await User.findOne({ email: request.email });
+
+    if (!user) {
+      const temporaryPassword = crypto.randomBytes(32).toString("hex");
+      user = new User({
+        email: request.email,
+        passwordHash: await hashPassword(temporaryPassword),
+        phoneHash: hashPhone(request.phone),
+        role: "planner",
+        region: request.region,
+        ageRange: request.ageRange,
+        gender: request.gender,
+        occupation: request.occupation,
+        education: request.education,
+        preferredLanguage: request.preferredLanguage || "en",
+        languagesSpoken: request.languagesSpoken?.length
+          ? request.languagesSpoken
+          : [request.preferredLanguage || "en"],
+        verified: true,
+        active: true,
+        trainingCompletedAt: null,
+      });
     }
-    const user = await User.findById(request.userId);
-    if (!user)
-      return sendError(res, ErrorCodes.NOT_FOUND, "User not found", null, 404);
+
     user.role = "planner";
+    user.active = true;
+    user.verified = true;
     user.tokenVersion += 1;
     await user.save();
+
+    if (!request.userId) {
+      request.userId = user._id;
+    }
+
     request.status = "approved";
     request.reviewedBy = req.user.id;
     request.reviewedAt = new Date();
     await request.save();
+
+    const setupToken = crypto.randomBytes(32).toString("hex");
+    const setupTokenKey = `reset:token:${setupToken}`;
+    await client.setEx(setupTokenKey, 86400, user._id.toString());
+    await sendPlannerPasswordSetupEmail(user.email, setupToken);
+
     await createAuditLog({
       userId: user._id,
       userRole: "admin",
       action: "PLANNER_APPROVED",
-      details: { approvedBy: req.user.id },
+      details: { approvedBy: req.user.id, requestId: request._id },
       req,
-    });
-    await sendEmail({
-      to: user.email,
-      subject: "Planner Request Approved",
-      html: `<p>Congratulations! You are now a planner. Please log in and complete the mandatory training before creating policies.</p>`,
     });
     // In‑app notification
     await createNotification({
@@ -200,7 +423,7 @@ exports.approveRequest = async (req, res) => {
     return sendSuccess(
       res,
       null,
-      "Planner request approved. User role updated.",
+      "Planner request approved. A password setup link was sent to the applicant.",
     );
   } catch (err) {
     console.error(err);
@@ -248,12 +471,15 @@ exports.rejectRequest = async (req, res) => {
     request.reviewedAt = new Date();
     request.rejectionReason = rejectionReason;
     await request.save();
-    const user = await User.findById(request.userId);
-    if (user) {
+    const user = request.userId ? await User.findById(request.userId) : null;
+    const recipient = user?.email || request.email;
+    if (recipient) {
+      const safeReason = escapeHtml(rejectionReason);
       await sendEmail({
-        to: user.email,
+        to: recipient,
         subject: "Planner Request Rejected",
-        html: `<p>Your request to become a planner was rejected. Reason: ${rejectionReason}</p>`,
+        text: `Your request to become a planner was rejected.\n\nReason: ${rejectionReason}`,
+        html: `<p>Your request to become a planner was rejected.</p><p><strong>Reason:</strong> ${safeReason}</p>`,
       });
     }
     await createAuditLog({
@@ -270,6 +496,214 @@ exports.rejectRequest = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to reject request",
+      null,
+      500,
+    );
+  }
+};
+
+// ==================== DEACTIVATED PLANNER APPEALS ====================
+exports.submitDeactivationAppeal = async (req, res) => {
+  try {
+    const { email, password, reason } = req.body;
+    if (!email || !password || !reason || reason.trim().length < 20) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Email, password, and an appeal reason of at least 20 characters are required.",
+        null,
+        400,
+      );
+    }
+
+    const planner = await User.findOne({ email, role: "planner" });
+    if (!planner) {
+      return sendError(
+        res,
+        ErrorCodes.NOT_FOUND,
+        "Planner account not found.",
+        null,
+        404,
+      );
+    }
+    if (planner.active) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "This planner account is already active.",
+        null,
+        400,
+      );
+    }
+
+    const validPassword = await comparePassword(password, planner.passwordHash);
+    if (!validPassword) {
+      return sendError(
+        res,
+        ErrorCodes.INVALID_CREDENTIALS,
+        "Invalid email or password.",
+        null,
+        401,
+      );
+    }
+
+    const existing = await PlannerAppeal.findOne({
+      plannerId: planner._id,
+      status: "pending",
+    });
+    if (existing) {
+      return sendError(
+        res,
+        ErrorCodes.DUPLICATE,
+        "You already have a pending appeal. Please wait for admin review.",
+        null,
+        409,
+      );
+    }
+
+    const appeal = await PlannerAppeal.create({
+      plannerId: planner._id,
+      reason: reason.trim(),
+    });
+
+    await createAuditLog({
+      userId: planner._id,
+      userRole: "planner",
+      action: "PLANNER_DEACTIVATION_APPEAL_SUBMITTED",
+      targetType: "PlannerAppeal",
+      targetId: appeal._id,
+      details: { email: planner.email },
+      req,
+    });
+
+    return sendSuccess(
+      res,
+      { appealId: appeal._id },
+      "Your appeal has been submitted for admin review.",
+      201,
+    );
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to submit appeal",
+      null,
+      500,
+    );
+  }
+};
+
+exports.listDeactivationAppeals = async (req, res) => {
+  try {
+    const { status = "pending" } = req.query;
+    const filter =
+      status && status !== "all"
+        ? { status }
+        : { status: { $in: ["pending", "approved", "rejected"] } };
+    const appeals = await PlannerAppeal.find(filter)
+      .populate("plannerId", "email region active createdAt")
+      .populate("resolvedBy", "email")
+      .sort({ createdAt: -1 });
+    return sendSuccess(res, appeals, "Planner appeals retrieved");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve planner appeals",
+      null,
+      500,
+    );
+  }
+};
+
+exports.resolveDeactivationAppeal = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { decision, adminNote = "" } = req.body;
+    if (!["approve", "reject"].includes(decision)) {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        "Decision must be approve or reject.",
+        null,
+        400,
+      );
+    }
+
+    const appeal = await PlannerAppeal.findById(id).populate("plannerId");
+    if (!appeal) {
+      return sendError(res, ErrorCodes.NOT_FOUND, "Appeal not found", null, 404);
+    }
+    if (appeal.status !== "pending") {
+      return sendError(
+        res,
+        ErrorCodes.VALIDATION,
+        `Appeal already ${appeal.status}.`,
+        null,
+        400,
+      );
+    }
+
+    appeal.status = decision === "approve" ? "approved" : "rejected";
+    appeal.resolvedBy = req.user.id;
+    appeal.resolvedAt = new Date();
+    appeal.adminNote = adminNote.trim();
+    await appeal.save();
+
+    if (decision === "approve") {
+      await User.updateOne(
+        { _id: appeal.plannerId._id },
+        { $set: { active: true }, $inc: { tokenVersion: 1 } },
+        { runValidators: false },
+      );
+    }
+
+    await createAuditLog({
+      userId: req.user.id,
+      userRole: req.user.role,
+      action: "PLANNER_DEACTIVATION_APPEAL_RESOLVED",
+      targetType: "PlannerAppeal",
+      targetId: appeal._id,
+      details: {
+        plannerId: appeal.plannerId._id,
+        decision,
+        adminNote: appeal.adminNote,
+      },
+      req,
+    });
+
+    await sendEmail({
+      to: appeal.plannerId.email,
+      subject:
+        decision === "approve"
+          ? "Planner Appeal Approved"
+          : "Planner Appeal Rejected",
+      html: `<p>Your deactivation appeal was ${appeal.status}.</p>${
+        appeal.adminNote ? `<p>Admin note: ${escapeHtml(appeal.adminNote)}</p>` : ""
+      }`,
+    });
+
+    if (decision === "approve") {
+      await createNotification({
+        userId: appeal.plannerId._id,
+        type: "PLANNER_APPEAL_APPROVED",
+        title: "Planner Appeal Approved",
+        message: "Your account has been reactivated. You can log in again.",
+        data: { appealId: appeal._id },
+        severity: "info",
+        source: "system",
+      });
+    }
+
+    return sendSuccess(res, appeal, `Appeal ${appeal.status}.`);
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to resolve appeal",
       null,
       500,
     );
@@ -362,13 +796,15 @@ exports.searchPlannersByLanguage = async (req, res) => {
 exports.addAssociate = async (req, res) => {
   try {
     const { policyId } = req.params;
-    const { plannerEmail, permissions } = req.body;
+    const { plannerEmail, message } = req.body;
+    const invitationMessage = (message || "").trim();
+    const escapedInvitationMessage = escapeHtml(invitationMessage);
 
-    if (!plannerEmail || !permissions || !permissions.length) {
+    if (!plannerEmail || !invitationMessage) {
       return sendError(
         res,
         ErrorCodes.VALIDATION,
-        "plannerEmail and permissions array required",
+        "plannerEmail and invitation message required",
         null,
         400,
       );
@@ -442,33 +878,40 @@ exports.addAssociate = async (req, res) => {
     const associate = new PolicyAssociate({
       policyId,
       plannerId: associateUser._id,
-      permissions,
+      permissions: [],
       assignedBy: req.user.id,
+      metadata: {
+        notes: invitationMessage,
+        ipAddress: req.ip,
+        userAgent: req.get("user-agent"),
+      },
     });
     await associate.save();
 
-    // In‑app notification with formatted permissions
+    // In-app notification with the owner's invitation message.
     await createNotification({
       userId: associateUser._id,
       type: "ASSOCIATE_INVITED",
       title: "Policy Associate Invitation",
-      message: `You have been invited to become an associate on policy "${policy.title}" with permissions: ${formatPermissions(permissions)}. It expires on ${associate.expiresAt.toLocaleDateString()}.`,
-      data: { policyId, associateId: associate._id, permissions },
+      message: `You have been invited to help analyze policy "${policy.title}". It expires on ${associate.expiresAt.toLocaleDateString()}.`,
+      data: { policyId, associateId: associate._id, message: invitationMessage },
       severity: "info",
       source: "system",
     });
 
-    // Email with formatted permissions
-    const acceptUrl = `${process.env.FRONTEND_URL}/associates/invitation/${associate._id}?action=accept`;
-    const rejectUrl = `${process.env.FRONTEND_URL}/associates/invitation/${associate._id}?action=reject`;
+    // Email with the invitation message.
+    const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
+    const acceptUrl = `${frontendUrl}/associates/invitation/${associate._id}?action=accept`;
+    const rejectUrl = `${frontendUrl}/associates/invitation/${associate._id}?action=reject`;
     await sendEmail({
       to: associateUser.email,
       subject: `Invitation to become an associate for policy: ${policy.title}`,
-      html: `<p>You have been invited by ${req.user.email} to help manage policy "${policy.title}".</p>
-             <p>Permissions: ${formatPermissions(permissions)}.</p>
+      html: `<p>You have been invited by ${req.user.email} to help analyze policy "${policy.title}".</p>
+             <p><strong>Message from ${req.user.email}:</strong></p>
+             <p>${escapedInvitationMessage}</p>
              <p>This invitation expires on ${associate.expiresAt.toLocaleDateString()}.</p>
              <p><a href="${acceptUrl}">Accept Invitation</a> | <a href="${rejectUrl}">Reject Invitation</a></p>
-             <p>If you accept, you will be able to act according to the permissions above. If you reject, no further action is needed.</p>`,
+             <p>If you accept, you will be able to view the policy and analyze its analytics information. If you reject, no further action is needed.</p>`,
     });
 
     await createAuditLog({
@@ -480,7 +923,7 @@ exports.addAssociate = async (req, res) => {
       details: {
         policyId,
         plannerId: associateUser._id,
-        permissions,
+        message: invitationMessage,
         expiresAt: associate.expiresAt,
       },
       req,
@@ -488,7 +931,11 @@ exports.addAssociate = async (req, res) => {
 
     return sendSuccess(
       res,
-      { associateId: associate._id, expiresAt: associate.expiresAt },
+      {
+        associateId: associate._id,
+        expiresAt: associate.expiresAt,
+        message: invitationMessage,
+      },
       "Invitation sent. The associate must accept before it expires.",
     );
   } catch (err) {
@@ -948,6 +1395,7 @@ exports.getMyAssociatePolicies = async (req, res) => {
       associateId: assoc._id,
       policy: assoc.policyId,
       permissions: assoc.permissions,
+      message: assoc.metadata?.notes || "",
       assignedBy: assoc.assignedBy,
       acceptedAt: assoc.acceptedAt,
     }));
@@ -978,6 +1426,35 @@ exports.getPendingInvitations = async (req, res) => {
       res,
       ErrorCodes.INTERNAL,
       "Failed to retrieve pending invitations",
+      null,
+      500,
+    );
+  }
+};
+
+exports.getInvitationHistory = async (req, res) => {
+  try {
+    const invitations = await PolicyAssociate.find({ plannerId: req.user.id })
+      .populate(
+        "policyId",
+        "title description policyCode status startDate endDate pollType",
+      )
+      .populate("assignedBy", "email firstName lastName")
+      .sort({ createdAt: -1 });
+
+    const enriched = invitations.map((invitation) => ({
+      ...invitation.toObject(),
+      displayStatus: invitation.displayStatus,
+      daysRemaining: invitation.isPending ? invitation.daysRemaining : null,
+    }));
+
+    return sendSuccess(res, enriched, "Invitation history retrieved");
+  } catch (err) {
+    console.error(err);
+    return sendError(
+      res,
+      ErrorCodes.INTERNAL,
+      "Failed to retrieve invitation history",
       null,
       500,
     );

@@ -60,9 +60,21 @@ exports.getDashboardStats = async (req, res) => {
       Vote.countDocuments({ channel: "app" }),
       Vote.countDocuments({ channel: "sms" }),
       Comment.countDocuments(),
-      Comment.countDocuments({ moderationStatus: "needs_review" }),
       Comment.countDocuments({
-        moderationStatus: { $in: ["none", "reviewed"] },
+        $or: [
+          { "reviewFlags.sentimentReviewNeeded": true },
+          { aiStatus: "pending", lastAnalyzedAt: { $ne: null } },
+          { "appeal.status": "pending" },
+          {
+            reportState: { $in: ["reported", "under_review"] },
+            visibility: "hidden",
+          },
+        ],
+      }),
+      Comment.countDocuments({
+        visibility: "visible",
+        aiStatus: "processed",
+        "reviewFlags.sentimentReviewNeeded": false,
       }),
     ]);
 
@@ -369,10 +381,16 @@ exports.getAIHealth = async (req, res) => {
   try {
     const health = await getAIHealth();
     const pendingComments = await Comment.countDocuments({
-      moderationStatus: "needs_review",
+      $or: [
+        { "reviewFlags.sentimentReviewNeeded": true },
+        { aiStatus: "pending", lastAnalyzedAt: { $ne: null } },
+      ],
     });
     const failedComments = await Comment.countDocuments({
-      moderationStatus: "needs_review",
+      $or: [
+        { "reviewFlags.sentimentReviewNeeded": true },
+        { aiStatus: "failed" },
+      ],
       retryCount: { $gte: 5 },
     });
     return sendSuccess(

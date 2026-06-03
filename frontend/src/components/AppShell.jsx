@@ -2,7 +2,6 @@ import {
   BarChart3,
   Bell,
   FileText,
-  Inbox,
   LayoutDashboard,
   LogOut,
   Menu,
@@ -11,25 +10,29 @@ import {
   X,
   AlertCircle,
   TrendingUp,
-  ClipboardList,
   Mail,
   UserCircle,
   ChevronDown,
   UserRound,
-  UserPlus,
   MessageSquare,
+  Moon,
+  Smartphone,
+  Sun,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import { userApi } from "../api/user";
 import { messageApi } from "../api/messages";
 import { plannerApi } from "../api/planners";
+import { useI18n } from "../i18n/I18nProvider";
+import { LocaleSwitcher } from "./LocaleSwitcher";
 
 const baseLinks = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { to: "/policies", label: "Policies", icon: FileText },
   { to: "/analytics/cross", label: "Cross Analytics", icon: BarChart3 },
+  { to: "/messages", label: "Messages", icon: MessageSquare },
 ];
 
 const plannerLinks = [
@@ -39,24 +42,59 @@ const plannerLinks = [
 const adminLinks = [
   { to: "/planners", label: "Planners", icon: Users },
   { to: "/citizens", label: "Citizens", icon: UserRound },
-  { to: "/planner-requests", label: "Planner Requests", icon: UserPlus },
   { to: "/comments/pending", label: "Pending Comments", icon: MessageSquare },
-  { to: "/trends", label: "Trends", icon: TrendingUp },
-  { to: "/audit-logs", label: "Audit Logs", icon: ClipboardList },
+  { to: "/comment-moderators", label: "Comment Moderators", icon: Users },
 ];
 
+const moderatorLinks = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { to: "/comments/pending", label: "Comment Moderation", icon: MessageSquare },
+];
+
+const DASHBOARD_THEME_KEY = "civic_dashboard_theme";
+
+function getInitialTheme() {
+  if (typeof window === "undefined") return "dark";
+
+  try {
+    const storedTheme = window.localStorage.getItem(DASHBOARD_THEME_KEY);
+    if (storedTheme === "light" || storedTheme === "dark") {
+      return storedTheme;
+    }
+
+    return window.matchMedia?.("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
+  } catch {
+    return "dark";
+  }
+}
+
 export function AppShell() {
+  const { t } = useI18n();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [theme, setTheme] = useState(getInitialTheme);
+  const userMenuRef = useRef(null);
   const { user, role, logout } = useAuth();
   const navigate = useNavigate();
   const [unreadNotifications, setUnreadNotifications] = useState(0);
-  const [unreadMessages, setUnreadMessages] = useState(0);
   const [pendingInvitationsCount, setPendingInvitationsCount] = useState(0);
 
   let links = [...baseLinks];
+  if (role === "comment_moderator") links = [...moderatorLinks];
   if (role === "planner") links = [...links, ...plannerLinks];
-  if (role === "admin") links = [...links, ...adminLinks];
+  if (role === "admin") {
+    // For admins, show Trends directly after Cross Analytics in the sidebar
+    const trendsLink = { to: "/trends", label: "Trends", icon: TrendingUp };
+    const idx = links.findIndex((l) => l.to === "/analytics/cross");
+    if (idx !== -1) {
+      links.splice(idx + 1, 0, trendsLink);
+    } else {
+      links = [...links, trendsLink];
+    }
+    links = [...links, ...adminLinks];
+  }
 
   useEffect(() => {
     const fetchCounts = async () => {
@@ -66,11 +104,6 @@ export function AppShell() {
           limit: 1,
         });
         setUnreadNotifications(notifRes.total || 0);
-        const msgRes = await messageApi.getInbox({
-          unreadOnly: true,
-          limit: 1,
-        });
-        setUnreadMessages(msgRes.total || 0);
         if (role === "planner") {
           const invitationsRes = await plannerApi.getPendingInvitations();
           setPendingInvitationsCount(invitationsRes.data?.length || 0);
@@ -79,10 +112,42 @@ export function AppShell() {
         console.error("Failed to fetch counts", err);
       }
     };
+
+    const handleMessageChange = () => {
+      fetchCounts();
+    };
+
     fetchCounts();
+    window.addEventListener("messages:changed", handleMessageChange);
     const interval = setInterval(fetchCounts, 30000);
-    return () => clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("messages:changed", handleMessageChange);
+    };
   }, [role]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DASHBOARD_THEME_KEY, theme);
+      document.documentElement.dataset.uiTheme = theme;
+    } catch {
+      // Ignore storage errors.
+    }
+  }, [theme]);
+
+  useEffect(() => {
+    const handleDocumentClick = (event) => {
+      if (!userMenuRef.current) return;
+      if (!userMenuRef.current.contains(event.target)) {
+        setUserMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleDocumentClick);
+    return () => {
+      document.removeEventListener("mousedown", handleDocumentClick);
+    };
+  }, []);
 
   const isActive = (to) => {
     if (to === "/planners") {
@@ -99,15 +164,22 @@ export function AppShell() {
     navigate("/login", { replace: true });
   };
 
+  const isDark = theme === "dark";
+
   return (
-    <div className="min-h-screen bg-slate-100 text-slate-950">
+    <div
+      className={`dashboard-shell min-h-screen transition-colors duration-200 ${
+        isDark ? "bg-slate-950 text-slate-100" : "bg-slate-100 text-slate-950"
+      }`}
+      data-dashboard-theme={theme}
+    >
       {/* Mobile overlay */}
       <div className="lg:hidden">
         {sidebarOpen && (
           <button
             type="button"
             className="fixed inset-0 z-30 bg-slate-950/40"
-            aria-label="Close navigation"
+            aria-label={t("Close")}
             onClick={() => setSidebarOpen(false)}
           />
         )}
@@ -126,10 +198,14 @@ export function AppShell() {
             </span>
             <div>
               <p className="m-0 text-sm font-bold text-slate-950">
-                Civic Platform
+                {t("Civic Platform")}
               </p>
               <span className="mt-1 inline-block rounded-full bg-teal-100 px-2 py-0.5 text-xs font-bold text-teal-700">
-                {role === "admin" ? "Admin" : "Planner"}
+                {role === "admin"
+                  ? t("Admin")
+                  : role === "comment_moderator"
+                    ? t("Comment Moderator")
+                    : t("Planner")}
               </span>
             </div>
           </div>
@@ -146,8 +222,8 @@ export function AppShell() {
           {links.map((link) => {
             const Icon = link.icon;
             const showBadge =
-              link.to === "/associates/invitations" &&
-              pendingInvitationsCount > 0;
+              link.to === "/associates/invitations" && pendingInvitationsCount > 0;
+            const badgeCount = pendingInvitationsCount;
             return (
               <NavLink
                 key={link.to}
@@ -165,11 +241,11 @@ export function AppShell() {
               >
                 <div className="flex items-center gap-3">
                   <Icon className="h-4 w-4" />
-                  {link.label}
+                  {t(link.label)}
                 </div>
                 {showBadge && (
                   <span className="ml-auto rounded-full bg-amber-500 px-2 py-0.5 text-xs font-bold text-white">
-                    {pendingInvitationsCount}
+                    {badgeCount > 9 ? "9+" : badgeCount}
                   </span>
                 )}
               </NavLink>
@@ -199,45 +275,66 @@ export function AppShell() {
             </button>
             <div>
               <p className="text-sm font-semibold text-slate-500">
-                Welcome back
+                {t("Welcome back")}
               </p>
               <h1 className="text-base font-bold text-slate-950 sm:text-lg">
-                {user?.email || "Dashboard user"}
+                {user?.email || t("Dashboard user")}
               </h1>
             </div>
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Messages */}
-            <button
-              onClick={() => navigate("/messages")}
-              className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-              title="Messages"
-            >
-              <Inbox className="h-5 w-5" />
-              {unreadMessages > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-teal-600 text-[10px] font-bold text-white">
-                  {unreadMessages > 9 ? "9+" : unreadMessages}
-                </span>
-              )}
-            </button>
+            <LocaleSwitcher compact />
+            {role !== "comment_moderator" && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setTheme(isDark ? "light" : "dark")}
+                  className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-semibold transition ${
+                    isDark
+                      ? "border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
+                      : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  }`}
+                  aria-pressed={isDark}
+                  title={isDark ? t("Switch to light mode") : t("Switch to dark mode")}
+                >
+                  {isDark ? (
+                    <Sun className="h-4 w-4" />
+                  ) : (
+                    <Moon className="h-4 w-4" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {isDark ? t("Light mode") : t("Dark mode")}
+                  </span>
+                </button>
 
-            {/* Notifications */}
-            <button
-              onClick={() => navigate("/notifications")}
-              className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
-              title="Notifications"
-            >
-              <Bell className="h-5 w-5" />
-              {unreadNotifications > 0 && (
-                <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-teal-600 text-[10px] font-bold text-white">
-                  {unreadNotifications > 9 ? "9+" : unreadNotifications}
-                </span>
-              )}
-            </button>
+                {/* Messages */}
+                <button
+                  onClick={() => navigate("/messages")}
+                  className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                  title={t("Messages")}
+                >
+                  <MessageSquare className="h-5 w-5" />
+                </button>
+
+                {/* Notifications */}
+                <button
+                  onClick={() => navigate("/notifications")}
+                  className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100"
+                  title={t("Notifications")}
+                >
+                  <Bell className="h-5 w-5" />
+                  {unreadNotifications > 0 && (
+                    <span className="absolute -right-0.5 -top-0.5 flex h-4 w-4 items-center justify-center rounded-full bg-teal-600 text-[10px] font-bold text-white">
+                      {unreadNotifications > 9 ? "9+" : unreadNotifications}
+                    </span>
+                  )}
+                </button>
+              </>
+            )}
 
             {/* User dropdown */}
-            <div className="relative">
+            <div ref={userMenuRef} className="relative">
               <button
                 onClick={() => setUserMenuOpen(!userMenuOpen)}
                 className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
@@ -257,7 +354,7 @@ export function AppShell() {
                       className="flex w-full items-center gap-3 px-4 py-2 text-sm text-slate-700 hover:bg-slate-50"
                     >
                       <Settings className="h-4 w-4" />
-                      Settings
+                      {t("Settings")}
                     </button>
                     <hr className="my-1 border-slate-200" />
                     <button
@@ -265,7 +362,7 @@ export function AppShell() {
                       className="flex w-full items-center gap-3 px-4 py-2 text-sm text-rose-700 hover:bg-rose-50"
                     >
                       <LogOut className="h-4 w-4" />
-                      Logout
+                      {t("Logout")}
                     </button>
                   </div>
                 </div>

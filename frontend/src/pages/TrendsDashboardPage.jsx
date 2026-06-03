@@ -1,5 +1,6 @@
 import { CalendarClock, RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   LineChart,
   Line,
@@ -22,26 +23,27 @@ import {
 } from "../lib/format";
 
 export function TrendsDashboardPage() {
+  const [searchParams] = useSearchParams();
   const [trends, setTrends] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [interval, setInterval] = useState("day");
+  const [interval, setInterval] = useState(searchParams.get("interval") || "day");
   const [dates, setDates] = useState(() => ({
-    startDate: toDateInput(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
-    endDate: toDateInput(new Date()),
+    startDate: searchParams.get("startDate") || toDateInput(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+    endDate: searchParams.get("endDate") || toDateInput(new Date()),
   }));
 
-  const loadTrends = async () => {
+  const loadTrends = async (nextInterval = interval, nextDates = dates) => {
     setLoading(true);
     setError("");
     try {
       const result = await adminApi.getTrends({
-        interval,
-        startDate: dates.startDate
-          ? toIsoFromDateInput(dates.startDate)
+        interval: nextInterval,
+          startDate: nextDates.startDate
+            ? toIsoFromDateInput(nextDates.startDate)
           : undefined,
-        endDate: dates.endDate
-          ? toIsoFromDateInput(dates.endDate, true)
+        endDate: nextDates.endDate
+            ? toIsoFromDateInput(nextDates.endDate, true)
           : undefined,
       });
       setTrends(result);
@@ -53,9 +55,20 @@ export function TrendsDashboardPage() {
   };
 
   useEffect(() => {
-    loadTrends();
+    const nextInterval = searchParams.get("interval") || "day";
+    const nextStartDate = searchParams.get("startDate");
+    const nextEndDate = searchParams.get("endDate");
+
+    setInterval(nextInterval);
+    const nextDates = {
+      startDate:
+        nextStartDate || toDateInput(new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)),
+      endDate: nextEndDate || toDateInput(new Date()),
+    };
+    setDates(nextDates);
+    loadTrends(nextInterval, nextDates);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interval]);
+  }, [searchParams]);
 
   const handleDateChange = (field, value) => {
     setDates((prev) => ({ ...prev, [field]: value }));
@@ -81,58 +94,70 @@ export function TrendsDashboardPage() {
       <div className="space-y-5">
         <ErrorAlert message={error} />
 
-        <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm space-y-4">
-          <div className="flex items-center gap-2 mb-4">
-            <CalendarClock className="h-5 w-5 text-slate-600" />
-            <h3 className="font-bold text-slate-900">Filters</h3>
+        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 bg-slate-50 px-5 py-4">
+            <div className="flex items-center gap-2">
+              <CalendarClock className="h-5 w-5 text-teal-700" />
+              <div>
+                <h3 className="text-lg font-black text-slate-950">Trend Filters</h3>
+                <p className="text-sm text-slate-500">
+                  Refine the timeline and compare engagement patterns.
+                </p>
+              </div>
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <select
-              value={interval}
-              onChange={(e) => setInterval(e.target.value)}
-              className="rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
-            >
-              <option value="day">Daily</option>
-              <option value="week">Weekly</option>
-              <option value="month">Monthly</option>
-            </select>
+          <div className="space-y-5 p-5">
+            <div className="grid gap-4 lg:grid-cols-[220px_minmax(0,1fr)_minmax(0,1fr)]">
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-700">Daily</span>
+                <select
+                  value={interval}
+                  onChange={(e) => setInterval(e.target.value)}
+                  className="mt-1 w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-600 focus:bg-white focus:ring-4 focus:ring-teal-100"
+                >
+                  <option value="day">Daily</option>
+                  <option value="week">Weekly</option>
+                  <option value="month">Monthly</option>
+                </select>
+              </label>
 
-            <label className="block">
-              <span className="text-sm font-semibold text-slate-700">
-                Start Date
-              </span>
-              <input
-                type="date"
-                value={dates.startDate}
-                onChange={(e) => handleDateChange("startDate", e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
-              />
-            </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-700">
+                  Start Date
+                </span>
+                <input
+                  type="date"
+                  value={dates.startDate}
+                  onChange={(e) => handleDateChange("startDate", e.target.value)}
+                  className="mt-1 w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-600 focus:bg-white focus:ring-4 focus:ring-teal-100"
+                />
+              </label>
 
-            <label className="block">
-              <span className="text-sm font-semibold text-slate-700">
-                End Date
-              </span>
-              <input
-                type="date"
-                value={dates.endDate}
-                onChange={(e) => handleDateChange("endDate", e.target.value)}
-                className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-4 focus:ring-teal-100"
-              />
-            </label>
+              <label className="block">
+                <span className="text-sm font-semibold text-slate-700">
+                  End Date
+                </span>
+                <input
+                  type="date"
+                  value={dates.endDate}
+                  onChange={(e) => handleDateChange("endDate", e.target.value)}
+                  className="mt-1 w-full rounded-2xl border border-slate-300 bg-slate-50 px-4 py-3 text-sm outline-none transition focus:border-teal-600 focus:bg-white focus:ring-4 focus:ring-teal-100"
+                />
+              </label>
+            </div>
+
+            <div className="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-end">
+              <button
+                onClick={handleApplyFilter}
+                className="inline-flex items-center justify-center gap-2 rounded-2xl bg-teal-700 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-teal-800 hover:shadow-md"
+              >
+                <RefreshCw className="h-4 w-4" />
+                Apply Filter
+              </button>
+            </div>
           </div>
-
-          <div className="flex gap-2 pt-2">
-            <button
-              onClick={handleApplyFilter}
-              className="inline-flex items-center gap-2 rounded-lg bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800"
-            >
-              <RefreshCw className="h-4 w-4" />
-              Apply Filter
-            </button>
-          </div>
-        </div>
+        </section>
 
         {trends && (
           <div className="space-y-5">

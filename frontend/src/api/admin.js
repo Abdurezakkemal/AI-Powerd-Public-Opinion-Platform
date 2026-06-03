@@ -36,6 +36,23 @@ export const adminApi = {
     return apiClient.put(`/admin/planners/${id}/status`, { active });
   },
 
+  // Comment moderator management
+  listCommentModerators(params = {}) {
+    return apiClient.get("/admin/comment-moderators", { params });
+  },
+  getCommentModerator(id) {
+    return apiClient.get(`/admin/comment-moderators/${id}`);
+  },
+  createCommentModerator(payload) {
+    return apiClient.post("/admin/comment-moderators", payload);
+  },
+  updateCommentModerator(id, payload) {
+    return apiClient.put(`/admin/comment-moderators/${id}`, payload);
+  },
+  setCommentModeratorStatus(id, active) {
+    return apiClient.put(`/admin/comment-moderators/${id}/status`, { active });
+  },
+
   // Citizen management
   listCitizens(params = {}) {
     return apiClient.get("/admin/users/citizens", { params });
@@ -60,6 +77,10 @@ export const adminApi = {
   // Update comment (sentiment/keywords override)
   updateComment(id, payload) {
     return apiClient.put(`/admin/comments/${id}`, payload);
+  },
+
+  moderateComment(id, payload) {
+    return apiClient.put(`/admin/comments/${id}/moderate`, payload);
   },
 
   // Retry single comment (strict)
@@ -114,5 +135,14 @@ export const adminApi = {
   },
   searchPlanners(query) {
     return apiClient.get("/admin/planners/search", { params: { q: query } });
+  },
+  simulateSms(payload) {
+    return apiClient.post("/admin/sms/simulate", payload);
+  },
+  getSmsHistory(params = {}) {
+    return apiClient.get("/admin/sms/history", { params });
+  },
+  getSmsPhoneState(phone) {
+    return apiClient.get("/admin/sms/phone-state", { params: { phone } });
   },
 };

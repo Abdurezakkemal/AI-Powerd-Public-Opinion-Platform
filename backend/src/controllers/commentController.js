@@ -9,8 +9,10 @@ const {
   ErrorCodes,
 } = require("../utils/responseHelper");
 const { createNotification } = require("../services/notificationService");
+const { createAuditLog } = require("../utils/audit");
 
 const REPORT_AUTO_HIDE_THRESHOLD = 5;
+const COMMENT_MODERATOR_ROLES = ["planner", "comment_moderator", "admin"];
 
 const createEvent = ({ type, actor = null, data = {} }) => ({
   type,
@@ -26,6 +28,7 @@ const canEditComment = (comment) => {
 
 const buildVisibilityFilter = (user) => {
   if (user?.role === "admin") return {};
+  if (user?.role === "comment_moderator") return {};
   if (user?.role === "planner") return { visibility: { $ne: "removed" } };
   return { visibility: "visible" };
 };
@@ -958,7 +961,7 @@ exports.getCommentReports = async (req, res) => {
         null,
         404,
       );
-    if (!["planner", "admin"].includes(req.user.role))
+    if (!COMMENT_MODERATOR_ROLES.includes(req.user.role))
       return sendError(res, ErrorCodes.FORBIDDEN, "Unauthorized", null, 403);
 
     const reports = comment.reports.map((report) => ({
@@ -1008,8 +1011,10 @@ exports.getCommentReports = async (req, res) => {
 exports.moderateComment = async (req, res) => {
   try {
     const { commentId } = req.params;
-    const { action, reason, sentimentOverride } = req.body; // removed keywordsOverride
-    const allowedActions = ["approve", "hide", "remove", "restore"];
+    let { action, reason, sentimentOverride, sentiment, keywords } = req.body;
+    if (action === "delete" || action === "reject") action = "remove";
+    if (!sentimentOverride && sentiment) sentimentOverride = sentiment;
+    const allowedActions = ["approve", "hide", "remove", "restore", "reject"];
     if (!allowedActions.includes(action)) {
       return sendError(
         res,
@@ -1139,10 +1144,21 @@ exports.moderateComment = async (req, res) => {
       auditDetails.sentimentOverride = sentimentOverride;
     }
 
+    if (Array.isArray(keywords)) {
+      comment.keywords = keywords.map((keyword) => String(keyword).trim()).filter(Boolean);
+      comment.moderationActions.push({
+        action: "override_keywords",
+        reason: "manual override",
+        actor: req.user.id,
+        createdAt: new Date(),
+      });
+      auditDetails.keywords = comment.keywords;
+    }
+
     comment.events.push({
       type: "moderated",
       actor: req.user.id,
-      data: { action, reason, sentimentOverride },
+      data: { action, reason, sentimentOverride, keywords },
       createdAt: new Date(),
     });
 
@@ -1320,7 +1336,7 @@ exports.getCommentsNeedingReview = async (req, res) => {
   try {
     const { page = 1, limit = 20 } = req.query;
 
-    if (!["planner", "admin"].includes(req.user.role)) {
+    if (!COMMENT_MODERATOR_ROLES.includes(req.user.role)) {
       return sendError(res, ErrorCodes.FORBIDDEN, "Access denied", null, 403);
     }
 

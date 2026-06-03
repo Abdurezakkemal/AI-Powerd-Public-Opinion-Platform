@@ -3,9 +3,6 @@ const router = express.Router();
 const analyticsController = require("../controllers/analyticsController");
 const crossAnalyticsController = require("../controllers/crossAnalyticsController");
 const auth = require("../middleware/authMiddleware");
-const {
-  hasAssociatePermission,
-} = require("../middleware/permissionMiddleware");
 const limiters = require("../config/rateLimits");
 const validateObjectId = require("../middleware/validateObjectId");
 
@@ -20,14 +17,14 @@ router.get(
 
 router.get(
   "/heatmap",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   analyticsReadLimiter,
   analyticsController.getHeatmap,
 );
 
 router.get(
   "/:policyId/timeseries",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getTimeseries,
@@ -35,7 +32,7 @@ router.get(
 
 router.get(
   "/:policyId/correlation",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getCorrelation,
@@ -43,7 +40,7 @@ router.get(
 
 router.get(
   "/:policyId/demographics",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getDemographicBreakdown,
@@ -52,26 +49,25 @@ router.get(
 // ✅ Open analytics: any planner can view (no associate permission required)
 router.get(
   "/:policyId",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getAnalytics,
 );
 
-// Export still requires export_data permission
+// Export is available to admins, owners, and accepted associates.
 router.get(
   "/:policyId/export",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
-  hasAssociatePermission("export_data"),
   analyticsController.exportAnalytics,
 );
 
 // Comments list still requires moderate_comments permission
 router.get(
   "/:policyId/comments",
-  auth(["planner", "admin"]),
+  auth(["planner", "admin", "citizen"]),
   validateObjectId("policyId"),
   analyticsReadLimiter,
   analyticsController.getComments,

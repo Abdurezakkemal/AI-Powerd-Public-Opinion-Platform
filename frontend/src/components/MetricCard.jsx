@@ -1,9 +1,13 @@
+import { useI18n } from "../i18n/I18nProvider";
+
 export function MetricCard({ label, value, helper, icon: Icon }) {
+  const { t } = useI18n();
+
   return (
     <article className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-medium text-slate-500">{label}</p>
+          <p className="text-sm font-medium text-slate-500">{typeof label === "string" ? t(label) : label}</p>
           <p className="mt-2 text-3xl font-bold text-slate-950">{value}</p>
         </div>
         {Icon ? (
@@ -12,7 +16,7 @@ export function MetricCard({ label, value, helper, icon: Icon }) {
           </span>
         ) : null}
       </div>
-      {helper ? <p className="mt-3 text-sm text-slate-500">{helper}</p> : null}
+      {helper ? <p className="mt-3 text-sm text-slate-500">{typeof helper === "string" ? t(helper) : helper}</p> : null}
     </article>
   );
 }

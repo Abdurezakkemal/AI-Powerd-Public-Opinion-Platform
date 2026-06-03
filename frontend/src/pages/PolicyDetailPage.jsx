@@ -1,27 +1,28 @@
 import { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { useAuth } from "../auth/AuthContext";
 import { policyApi } from "../api/policies";
 import { adminApi } from "../api/admin";
 import { analyticsApi } from "../api/analytics";
 import { plannerApi } from "../api/plannerApi";
+import { commentApi } from "../api/comments";
+import { translateText } from "../api/translation";
 import { PageHeader } from "../components/PageHeader";
 import { LoadingState } from "../components/LoadingState";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { StatusBadge } from "../components/StatusBadge";
 import { Modal } from "../components/Modal";
+import LanguageSelector from "../components/LanguageSelector";
 import { Tabs, TabPane } from "../components/Tabs";
 import { MetricCard } from "../components/MetricCard";
-import { formatAuditDetails } from "../utils/auditFormatter";
 import {
   Activity,
   AlertTriangle,
   Bell,
   Users,
-  Edit,
   Trash2,
   RefreshCw,
   Eye,
-  History,
   Plus,
   XCircle,
   Save,
@@ -30,7 +31,16 @@ import {
   PenSquare,
 } from "lucide-react";
 import { formatDate, getErrorMessage, toIsoFromDateInput } from "../lib/format";
+import { showToast } from "../lib/toast";
 import { ETHIOPIAN_REGIONS } from "../constants/regions";
+import { useI18n } from "../i18n/I18nProvider";
+
+const TRANSLATION_LANGUAGES = [
+  { code: "en", label: "English" },
+  { code: "am", label: "Amharic" },
+  { code: "om", label: "Oromo" },
+  { code: "ti", label: "Tigrinya" },
+];
 
 function ActionButton({
   children,
@@ -38,6 +48,7 @@ function ActionButton({
   onClick,
   variant = "secondary",
   loading = false,
+  disabled = false,
 }) {
   const classes =
     variant === "primary"
@@ -48,7 +59,7 @@ function ActionButton({
   return (
     <button
       onClick={onClick}
-      disabled={loading}
+      disabled={loading || disabled}
       className={`inline-flex min-h-8 items-center gap-1 rounded-lg px-2 py-1 text-xs font-bold disabled:opacity-50 ${classes}`}
     >
       {loading ? (
@@ -61,27 +72,25 @@ function ActionButton({
   );
 }
 
-const formatPermission = (perm) => {
-  const map = {
-    moderate_comments: "Moderate Comments",
-    reply_official: "Official Replies",
-    export_data: "Export Data",
-  };
-  return map[perm] || perm;
-};
-
 export function PolicyDetailPage() {
+  const { t } = useI18n();
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user, role } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [policy, setPolicy] = useState(null);
+  const [isOwner, setIsOwner] = useState(false);
   const [selectedTab, setSelectedTab] = useState("info");
   const [stats, setStats] = useState(null);
   const [allComments, setAllComments] = useState([]);
   const [pendingComments, setPendingComments] = useState([]);
   const [reportedComments, setReportedComments] = useState([]);
+  const [translatedComments, setTranslatedComments] = useState({});
+  const [translatedPolicy, setTranslatedPolicy] = useState(null);
+  const [translatingPolicy, setTranslatingPolicy] = useState(false);
+  const [policyLanguage, setPolicyLanguage] = useState("en");
   const [appeals, setAppeals] = useState([]);
   const [associates, setAssociates] = useState([]);
   const [allPlanners, setAllPlanners] = useState([]);
@@ -94,16 +103,11 @@ export function PolicyDetailPage() {
   const [plannerTotal, setPlannerTotal] = useState(0);
   const [showAssociateModal, setShowAssociateModal] = useState(false);
   const [selectedAssociate, setSelectedAssociate] = useState(null);
-  const [selectedPermissions, setSelectedPermissions] = useState([]);
-  const [historyEvents, setHistoryEvents] = useState([]);
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [associateMessage, setAssociateMessage] = useState("");
   const [actionLoading, setActionLoading] = useState("");
   const [modalError, setModalError] = useState("");
   const [overrideComment, setOverrideComment] = useState(null);
   const [overrideSentiment, setOverrideSentiment] = useState("");
-  const [overrideKeywords, setOverrideKeywords] = useState("");
-  const [editingAssociate, setEditingAssociate] = useState(null);
-  const [editPermissions, setEditPermissions] = useState([]);
   const [reportsModal, setReportsModal] = useState({
     open: false,
     reports: [],
@@ -113,87 +117,119 @@ export function PolicyDetailPage() {
     comment: null,
     decision: "",
   });
-  const [commentErrors, setCommentErrors] = useState({}); // for per-comment errors
-  const fetchPlanners = async () => {
-    setLoadingPlanners(true);
+
+  const getCommentText = (comment) =>
+    comment?.text ||
+    comment?.comment?.text ||
+    comment?.content ||
+    comment?.body ||
+    comment?.message ||
+    "";
+
+  const setTranslatedComment = (commentId, translatedText) => {
+    setTranslatedComments((current) => ({
+      ...current,
+      [commentId]: translatedText,
+    }));
+  };
+
+  const revertTranslatedComment = (commentId) => {
+    setTranslatedComments((current) => {
+      const next = { ...current };
+      delete next[commentId];
+      return next;
+    });
+  };
+
+  const handlePolicyTranslation = async () => {
+    if (translatedPolicy) {
+      setTranslatedPolicy(null);
+      return;
+    }
+
+    const title = policy.title || `${(policy.targetRegions || ["Regional"])[0]} ${policy.pollType || ""} ${policy.status || ""} #${(policy._id || id).toString().slice(0, 6)}${policy.topics && policy.topics.length ? ` - ${policy.topics[0]}` : ""}`;
+    const description = policy.description || "Regional poll focused on Addis Ababa.";
+
+    setTranslatingPolicy(true);
+    setError("");
     try {
-      const params = {
-        page: plannerPage,
-        limit: 10,
-        search: plannerSearch,
-        region: plannerRegion,
-        language: plannerLanguage,
-      };
-      const result = await plannerApi.searchActivePlanners(params);
-      setAllPlanners(result.planners || []);
-      setPlannerTotalPages(result.totalPages || 1);
-      setPlannerTotal(result.total || 0);
+      const [translatedTitle, translatedDescription] = await Promise.all([
+        translateText({ text: title, targetLang: policyLanguage }),
+        translateText({ text: description, targetLang: policyLanguage }),
+      ]);
+
+      setTranslatedPolicy({
+        title: translatedTitle,
+        description: translatedDescription,
+      });
     } catch (err) {
-      console.error("Failed to fetch planners", err);
-      setAllPlanners([]);
+      setError(getErrorMessage(err, "Failed to translate policy text"));
     } finally {
-      setLoadingPlanners(false);
+      setTranslatingPolicy(false);
     }
   };
 
-  useEffect(() => {
-    if (showAssociateModal) fetchPlanners();
-  }, [
-    showAssociateModal,
-    plannerPage,
-    plannerSearch,
-    plannerRegion,
-    plannerLanguage,
-  ]);
+  const displayPolicyTitle =
+    translatedPolicy?.title ||
+    policy?.title ||
+    `${(policy?.targetRegions || ["Regional"])[0]} ${policy?.pollType || ""} ${policy?.status || ""} #${(policy?._id || id).toString().slice(0, 6)}${policy?.topics && policy.topics.length ? ` - ${policy.topics[0]}` : ""}`;
+  const displayPolicyDescription =
+    translatedPolicy?.description ||
+    policy?.description ||
+    "Regional poll focused on Addis Ababa.";
+  const [commentErrors, setCommentErrors] = useState({}); // for per-comment errors
+    
 
   useEffect(() => {
-    if (showAssociateModal) setPlannerPage(1);
-  }, [plannerSearch, plannerRegion, plannerLanguage]);
+    if (id && user) loadData();
+  }, [id, user]);
 
   const loadData = async () => {
     setLoading(true);
     setError("");
     try {
-      const [
-        policyData,
-        analytics,
-        all,
-        pending,
-        reported,
-        appealsData,
-        associatesData,
-        history,
-      ] = await Promise.all([
-        policyApi.get(id),
-        analyticsApi.summary(id),
-        analyticsApi.comments(id, { limit: 100 }),
-        adminApi.getAIReviewComments({ policyId: id }),
-        adminApi.getReportedComments({ policyId: id }),
-        adminApi.getPendingAppeals({ policyId: id }),
-        plannerApi.listAssociates(id).catch(() => []),
-        policyApi.history(id).catch(() => ({ events: [] })),
-      ]);
-      setPolicy(policyData);
-      setStats(analytics);
-      setAllComments(all.comments || []);
-      setPendingComments(pending.comments || []);
-      setReportedComments(reported.comments || []);
-      setAppeals(
-        Array.isArray(appealsData) ? appealsData : appealsData.appeals || [],
+      const policyResult = await policyApi.get(id);
+      setPolicy(policyResult);
+      setIsOwner(
+        policyResult.createdBy?._id === user?.id ||
+          policyResult.createdBy === user?.id,
       );
-      setAssociates(associatesData);
-      setHistoryEvents(history.events || []);
+
+      // analytics summary (best-effort)
+      try {
+        const statsResult = await analyticsApi.summary(id);
+        setStats(statsResult);
+      } catch (e) {
+        setStats(null);
+      }
+
+      // comments for this policy
+      try {
+        const commentsResult = await commentApi.getPolicyComments(id, {
+          limit: 1000,
+        });
+        const commentsList =
+          commentsResult?.comments || commentsResult?.data || commentsResult || [];
+        setAllComments(commentsList || []);
+        setPendingComments(
+          (commentsList || []).filter((c) => c.aiStatus === "pending"),
+        );
+        setReportedComments(
+          (commentsList || []).filter((c) => (c.reportCount || 0) > 0),
+        );
+        setAppeals((commentsList || []).filter((c) => c.appeal));
+      } catch (e) {
+        setAllComments([]);
+        setPendingComments([]);
+        setReportedComments([]);
+        setAppeals([]);
+      }
     } catch (err) {
-      console.error(err);
-      setError(getErrorMessage(err, "Failed to load policy data"));
+      setError(getErrorMessage(err, "Failed to load policy"));
     } finally {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    if (id) loadData();
-  }, [id]);
 
   // Redirect draft policies to edit page
   useEffect(() => {
@@ -213,7 +249,10 @@ export function PolicyDetailPage() {
     if (!options.suppressNotice) setNotice("");
     try {
       await action();
-      if (!options.suppressNotice && successMsg) setNotice(successMsg);
+      if (!options.suppressNotice && successMsg) {
+        setNotice(successMsg);
+        try { showToast('success', successMsg); } catch(e){}
+      }
       await loadData();
     } catch (err) {
       setError(getErrorMessage(err, "Action failed"));
@@ -233,17 +272,21 @@ export function PolicyDetailPage() {
   };
 
   const sendInvitation = async () => {
-    if (!selectedAssociate) return;
+    if (!selectedAssociate || !associateMessage.trim()) return;
     setActionLoading("associateAdd");
     setModalError("");
+    setError("");
+    setNotice("");
     try {
       await plannerApi.addAssociate(id, {
         plannerEmail: selectedAssociate.email,
-        permissions: selectedPermissions,
+        message: associateMessage.trim(),
       });
       setShowAssociateModal(false);
       setSelectedAssociate(null);
-      setSelectedPermissions([]);
+      setAssociateMessage("");
+      setNotice("Invitation sent successfully.");
+      try { showToast('success', 'Invitation sent successfully.'); } catch(e){}
       await loadData();
     } catch (err) {
       setModalError(getErrorMessage(err, "Failed to send invitation"));
@@ -252,31 +295,6 @@ export function PolicyDetailPage() {
     }
   };
 
-  const handleOverrideSubmit = async () => {
-    if (!overrideComment) return;
-    const sentimentLabel =
-      overrideSentiment === "positive"
-        ? "positive"
-        : overrideSentiment === "negative"
-          ? "negative"
-          : "neutral";
-    await runAction(
-      `override-${overrideComment._id}`,
-      () =>
-        adminApi.updateComment(overrideComment._id, {
-          sentiment: {
-            label: sentimentLabel,
-            confidence: 1,
-            overriddenByModerator: true,
-          },
-          keywords: overrideKeywords.split(",").map((k) => k.trim()),
-        }),
-      "Sentiment and keywords overridden.",
-    );
-    setOverrideComment(null);
-    setOverrideSentiment("");
-    setOverrideKeywords("");
-  };
   const viewReports = async (commentId) => {
     setActionLoading(`reports-${commentId}`);
     try {
@@ -289,24 +307,12 @@ export function PolicyDetailPage() {
     }
   };
 
-  const viewHistory = async (commentId) => {
-    setActionLoading(`history-${commentId}`);
-    try {
-      const versions = await commentApi.getVersions(commentId);
-      setHistoryEvents(versions || []); // assuming you have historyEvents state for modal
-      setHistoryPolicy({ id: commentId }); // to trigger history modal (you already have historyPolicy)
-      setShowHistoryModal(true);
-    } catch (err) {
-      setError(getErrorMessage(err, "Failed to load comment history"));
-    } finally {
-      setActionLoading("");
-    }
-  };
-
   const resolveAppeal = async (comment, decision) => {
-    setActionLoading(`appeal-${comment._id}`);
+    const id = comment && (comment._id || comment.commentId || comment.id);
+    if (!id) return setError('No comment selected for appeal resolution');
+    setActionLoading(`appeal-${id}`);
     try {
-      await adminApi.resolveAppeal(comment._id, decision);
+      await adminApi.resolveAppeal(id, decision);
       setAppealModal({ open: false, comment: null, decision: "" });
       await loadData(); // refresh all data
     } catch (err) {
@@ -337,13 +343,9 @@ export function PolicyDetailPage() {
       {comments.map((c) => {
         const commentId = c._id || c.id;
         const text = c.text || c.comment;
-        const userDisplayName =
-          c.userId?.displayName || c.userDisplayName || "Anonymous";
+        const userDisplayName = c.userId?.displayName || c.userDisplayName || "Anonymous";
         const createdAt = c.createdAt;
-        const sentimentLabel =
-          typeof c.sentiment === "string"
-            ? c.sentiment
-            : c.sentiment?.label || null;
+        const sentimentLabel = typeof c.sentiment === "string" ? c.sentiment : c.sentiment?.label || null;
         return (
           <div key={commentId} className="rounded-lg border p-3">
             <p className="text-sm font-semibold">{text}</p>
@@ -352,13 +354,9 @@ export function PolicyDetailPage() {
               <span>•</span>
               <span>{formatDate(createdAt)}</span>
               {sentimentLabel && (
-                <span className="rounded-full bg-slate-100 px-2 py-0.5">
-                  Sentiment: {sentimentLabel}
-                </span>
+                <span className="rounded-full bg-slate-100 px-2 py-0.5">Sentiment: {sentimentLabel}</span>
               )}
-              {c.reportCount !== undefined && (
-                <span className="text-rose-600">Reports: {c.reportCount}</span>
-              )}
+              {c.reportCount !== undefined && <span className="text-rose-600">Reports: {c.reportCount}</span>}
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
               {actions.map((act) => (
@@ -379,12 +377,12 @@ export function PolicyDetailPage() {
   );
   if (loading) return <LoadingState label="Loading policy details" />;
   if (error) return <ErrorAlert message={error} />;
-  if (!policy) return <div>Policy not found</div>;
+  if (!policy) return <div>{t("Policy not found")}</div>;
 
   const mainTabs = [
-    { id: "info", label: "Policy Info" },
-    { id: "comments", label: `Comments (${allComments.length})` },
-    { id: "associates", label: "Associates" },
+    { id: "info", label: t("Policy Info") },
+    { id: "comments", label: `${t("Comments")} (${allComments.length})` },
+    { id: "associates", label: t("Associates") },
   ];
 
   const commentsSubTabs = [
@@ -396,31 +394,104 @@ export function PolicyDetailPage() {
 
   return (
     <div>
-      <PageHeader
-        title={policy.title}
-        description={`Policy Code: ${policy.policyCode} • Created by ${policy.createdBy?.email || "Unknown"}`}
-        actions={
-          <div className="flex gap-2">
-            <Link
-              to="/policies"
-              className="rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50"
-            >
-              ← Back to Policies
-            </Link>
-            <ActionButton
-              icon={History}
-              onClick={() => setShowHistoryModal(true)}
-            >
-              History
-            </ActionButton>
+      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-slate-900">
+              {displayPolicyTitle}
+            </h1>
+            <p className="mt-1 text-sm text-slate-500">
+              <strong className="font-medium">{t("Policy Code:")}</strong> {policy.policyCode} • <strong className="font-medium">{t("Read-only view")}</strong>
+            </p>
+            <p className="mt-2 text-sm text-slate-600">{displayPolicyDescription}</p>
           </div>
-        }
-      />
-      {notice && (
-        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-          {notice}
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handlePolicyTranslation}
+              disabled={translatingPolicy}
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+            >
+              {translatingPolicy ? t("Translating...") : t("Translate")}
+            </button>
+            <select
+              value={policyLanguage}
+              onChange={(event) => setPolicyLanguage(event.target.value)}
+              className="rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 outline-none hover:bg-slate-50"
+            >
+              {TRANSLATION_LANGUAGES.map((option) => (
+                <option key={option.code} value={option.code}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <Link to={`/policies/${id}/analytics`} className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+              <svg className="h-4 w-4 text-teal-600" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M3 3v18h18" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
+              {t("View Analytics")}
+            </Link>
+            <button onClick={() => runAction('clone', () => policyApi.clone(id), 'Policy cloned.')} className="inline-flex items-center gap-2 rounded-lg bg-slate-950 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800">
+              <Copy className="h-4 w-4" />
+              {t("Clone Policy")}
+            </button>
+            <Link to="/policies" className="ml-2 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50">
+              ← {t("Back")}
+            </Link>
+          </div>
         </div>
-      )}
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-3">
+        <div className="rounded-lg border bg-white p-5 md:col-span-2">
+          <h3 className="text-lg font-bold mb-3">{t("Description")}</h3>
+          <p className="text-sm text-slate-700 mb-4">{displayPolicyDescription}</p>
+
+          <h3 className="text-lg font-bold mb-3">{t("Details")}</h3>
+          <dl className="grid gap-2 sm:grid-cols-2">
+            <dt className="font-semibold">{t("Status:")}</dt>
+            <dd><StatusBadge status={policy.status} /></dd>
+
+            <dt className="font-semibold">{t("Target Regions:")}</dt>
+            <dd>{(policy.targetRegions || []).map((region) => t(region)).join(", ") || t("Addis Ababa")}</dd>
+
+            <dt className="font-semibold">{t("Start Date:")}</dt>
+            <dd>{formatDate(policy.startDate)}</dd>
+
+            <dt className="font-semibold">{t("End Date:")}</dt>
+            <dd>{formatDate(policy.endDate)}</dd>
+
+            <dt className="font-semibold">{t("Poll Type:")}</dt>
+            <dd>{t(policy.pollType || "multipleChoice")}</dd>
+
+            <dt className="font-semibold">{t("Topics:")}</dt>
+            <dd>{(policy.topics || []).map((topic) => t(topic)).join(", ") || t("Tourism")}</dd>
+
+            <dt className="font-semibold">{t("Created By:")}</dt>
+            <dd>{policy.createdBy?.email || t("Unknown")}</dd>
+          </dl>
+        </div>
+
+        <div className="rounded-lg border bg-white p-5">
+          <p className="text-xs text-slate-500">{t("Sentiment Counts")}</p>
+          <div className="mt-2 flex items-center gap-3 text-sm">
+            <div className="rounded-md bg-emerald-50 px-2 py-1 text-emerald-700">{t("Pos:")} {stats?.sentimentCounts?.positive ?? stats?.positive ?? 0}</div>
+            <div className="rounded-md bg-rose-50 px-2 py-1 text-rose-700">{t("Neg:")} {stats?.sentimentCounts?.negative ?? stats?.negative ?? 0}</div>
+            <div className="rounded-md bg-slate-50 px-2 py-1 text-slate-700">{t("Neu:")} {stats?.sentimentCounts?.neutral ?? stats?.neutral ?? 0}</div>
+          </div>
+
+          <div className="mt-4">
+            <p className="text-xs text-slate-500">{t("Top Keywords")}</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {(stats?.topKeywords || []).slice(0, 6).map((k, i) => (
+                <span key={k?.keyword || i} className="inline-flex items-center rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">{k?.keyword || k}</span>
+              ))}
+              {(!stats?.topKeywords || stats.topKeywords.length === 0) && (
+                <span className="text-sm text-slate-500">{t("No keywords")}</span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+      {/* notices shown via global toasts */}
       <ErrorAlert message={error} />
 
       {/* Stats row */}
@@ -556,6 +627,7 @@ export function PolicyDetailPage() {
                     setNotice(
                       `Policy cloned as a new draft. Redirecting to edit...`,
                     );
+                    try { showToast('success', 'Policy cloned as a new draft. Redirecting to edit...'); } catch(e){}
                     navigate(`/policies/${result.id}/edit`);
                   } catch (err) {
                     setError(getErrorMessage(err, "Failed to clone policy"));
@@ -720,13 +792,10 @@ export function PolicyDetailPage() {
                         <CheckCircle className="h-3.5 w-3.5" /> Approve
                       </button>
                       <button
-                        onClick={() => {
-                          setOverrideComment(comment);
-                          setOverrideSentiment(sentimentLabel || "neutral");
-                          setOverrideKeywords(
-                            (comment.keywords || []).join(", "),
-                          );
-                        }}
+	                        onClick={() => {
+	                          setOverrideComment(comment);
+	                          setOverrideSentiment(sentimentLabel || "neutral");
+	                        }}
                         disabled={isLoading || isProcessing}
                         className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                       >
@@ -777,7 +846,28 @@ export function PolicyDetailPage() {
                     </div>
                   </div>
                   <div className="mb-3 rounded-lg bg-slate-50 p-3">
-                    <p className="text-sm text-slate-900">{comment.text}</p>
+                    <p className="text-sm text-slate-900">
+                      {translatedComments[comment._id] ||
+                        getCommentText(comment) ||
+                        "Comment unavailable"}
+                    </p>
+                    <div className="mt-3 flex flex-wrap items-center gap-3">
+                      <LanguageSelector
+                        text={getCommentText(comment)}
+                        onTranslated={(translatedText) =>
+                          setTranslatedComment(comment._id, translatedText)
+                        }
+                      />
+                      {translatedComments[comment._id] && (
+                        <button
+                          type="button"
+                          onClick={() => revertTranslatedComment(comment._id)}
+                          className="rounded-lg border border-slate-200 px-3 py-1 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                        >
+                          Show original
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-200">
                     <button
@@ -927,6 +1017,7 @@ export function PolicyDetailPage() {
                     .map((assoc) => {
                       const isPending = assoc.displayStatus === "pending";
                       const isAccepted = assoc.displayStatus === "accepted";
+                      const invitationMessage = assoc.metadata?.notes;
                       return (
                         <div
                           key={assoc._id}
@@ -942,10 +1033,7 @@ export function PolicyDetailPage() {
                               )}
                             </p>
                             <p className="text-xs text-slate-500">
-                              Permissions:{" "}
-                              {assoc.permissions
-                                ?.map(formatPermission)
-                                .join(", ") || "None"}
+                              Message: {invitationMessage || "No message"}
                             </p>
                             {isPending && assoc.daysRemaining !== null && (
                               <p className="text-xs text-amber-600">
@@ -959,17 +1047,6 @@ export function PolicyDetailPage() {
                             )}
                           </div>
                           <div className="flex gap-2">
-                            {isAccepted && (
-                              <ActionButton
-                                icon={Edit}
-                                onClick={() => {
-                                  setEditingAssociate(assoc);
-                                  setEditPermissions(assoc.permissions || []);
-                                }}
-                              >
-                                Edit Permissions
-                              </ActionButton>
-                            )}
                             {(isPending || isAccepted) && (
                               <ActionButton
                                 icon={Trash2}
@@ -982,7 +1059,6 @@ export function PolicyDetailPage() {
                                     isPending
                                       ? "Invitation cancelled."
                                       : "Associate revoked.",
-                                    { suppressNotice: true },
                                   )
                                 }
                               >
@@ -997,91 +1073,9 @@ export function PolicyDetailPage() {
               )}
             </div>
 
-            {/* Past Associates */}
-            <div>
-              <h4 className="text-md font-semibold text-slate-700 mb-2">
-                Past
-              </h4>
-              {associates.filter(
-                (a) =>
-                  a.displayStatus === "revoked" ||
-                  a.displayStatus === "expired",
-              ).length === 0 ? (
-                <p className="text-slate-500">
-                  No past associates or expired invitations.
-                </p>
-              ) : (
-                <div className="divide-y">
-                  {associates
-                    .filter(
-                      (a) =>
-                        a.displayStatus === "revoked" ||
-                        a.displayStatus === "expired",
-                    )
-                    .map((assoc) => (
-                      <div
-                        key={assoc._id}
-                        className="py-4 flex justify-between items-center opacity-70"
-                      >
-                        <div>
-                          <p className="font-semibold">
-                            {assoc.plannerId?.email}
-                            <span className="ml-2 inline-block rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-500">
-                              {assoc.displayStatus === "revoked"
-                                ? "Revoked"
-                                : "Expired"}
-                            </span>
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            Permissions:{" "}
-                            {assoc.permissions
-                              ?.map(formatPermission)
-                              .join(", ") || "None"}
-                          </p>
-                          {assoc.revokedAt && (
-                            <p className="text-xs text-slate-500">
-                              {assoc.displayStatus === "revoked"
-                                ? "Revoked"
-                                : "Expired"}
-                              : {formatDate(assoc.revokedAt || assoc.expiresAt)}
-                            </p>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                </div>
-              )}
-            </div>
           </div>
         </TabPane>
       </Tabs>
-      {/* History Modal */}
-      {showHistoryModal && (
-        <Modal
-          title={`Policy History: ${policy.title}`}
-          onClose={() => setShowHistoryModal(false)}
-        >
-          {historyEvents.length === 0 ? (
-            <p>No history events.</p>
-          ) : (
-            <ol className="space-y-2">
-              {historyEvents.map((ev, i) => (
-                <li key={i} className="border-b pb-2">
-                  <p className="font-semibold">{ev.action}</p>
-                  <p className="text-xs text-slate-500">
-                    {ev.userRole} • {formatDate(ev.timestamp)}
-                  </p>
-                  {ev.details && (
-                    <div className="mt-1 text-xs text-slate-600">
-                      {formatAuditDetails(ev)}
-                    </div>
-                  )}
-                </li>
-              ))}
-            </ol>
-          )}
-        </Modal>
-      )}
       {/* Override Sentiment Modal */}
       {overrideComment && (
         <Modal
@@ -1117,8 +1111,7 @@ export function PolicyDetailPage() {
                 runAction(
                   `override-${overrideComment._id}`,
                   () =>
-                    commentApi.moderate(overrideComment._id, {
-                      action: "approve",
+                    adminApi.updateComment(overrideComment._id, {
                       sentiment: { label: sentimentLabel, confidence: 1 },
                     }),
                   "Sentiment overridden.",
@@ -1140,7 +1133,11 @@ export function PolicyDetailPage() {
           onClose={
             actionLoading === "associateAdd"
               ? undefined
-              : () => setShowAssociateModal(false)
+              : () => {
+                  setShowAssociateModal(false);
+                  setSelectedAssociate(null);
+                  setAssociateMessage("");
+                }
           }
         >
           <div className="space-y-4">
@@ -1197,7 +1194,7 @@ export function PolicyDetailPage() {
                       className={`p-3 flex justify-between items-center hover:bg-slate-50 cursor-pointer ${selectedAssociate?._id === planner._id ? "bg-teal-50 border-teal-200" : ""}`}
                       onClick={() => {
                         setSelectedAssociate(planner);
-                        setSelectedPermissions([]);
+                        setAssociateMessage("");
                       }}
                     >
                       <div>
@@ -1242,84 +1239,25 @@ export function PolicyDetailPage() {
             )}
             {selectedAssociate && (
               <div className="space-y-3 border-t pt-3">
-                <p className="text-sm font-semibold">
-                  Permissions for{" "}
+                <label className="block text-sm font-semibold">
+                  Invitation message for{" "}
                   <span className="text-teal-700">
                     {selectedAssociate.email}
                   </span>
-                </p>
-                <div className="space-y-2">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      value="moderate_comments"
-                      checked={selectedPermissions.includes(
-                        "moderate_comments",
-                      )}
-                      onChange={(e) => {
-                        if (e.target.checked)
-                          setSelectedPermissions([
-                            ...selectedPermissions,
-                            e.target.value,
-                          ]);
-                        else
-                          setSelectedPermissions(
-                            selectedPermissions.filter(
-                              (p) => p !== e.target.value,
-                            ),
-                          );
-                      }}
-                    />
-                    Moderate Comments
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      value="reply_official"
-                      checked={selectedPermissions.includes("reply_official")}
-                      onChange={(e) => {
-                        if (e.target.checked)
-                          setSelectedPermissions([
-                            ...selectedPermissions,
-                            e.target.value,
-                          ]);
-                        else
-                          setSelectedPermissions(
-                            selectedPermissions.filter(
-                              (p) => p !== e.target.value,
-                            ),
-                          );
-                      }}
-                    />
-                    Official Replies
-                  </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      value="export_data"
-                      checked={selectedPermissions.includes("export_data")}
-                      onChange={(e) => {
-                        if (e.target.checked)
-                          setSelectedPermissions([
-                            ...selectedPermissions,
-                            e.target.value,
-                          ]);
-                        else
-                          setSelectedPermissions(
-                            selectedPermissions.filter(
-                              (p) => p !== e.target.value,
-                            ),
-                          );
-                      }}
-                    />
-                    Export Data
-                  </label>
-                </div>
+                </label>
+                <textarea
+                  value={associateMessage}
+                  onChange={(e) => setAssociateMessage(e.target.value)}
+                  rows={4}
+                  maxLength={1000}
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  placeholder="Describe how this associate should help analyze the policy results."
+                />
                 {modalError && <ErrorAlert message={modalError} />}
                 <ActionButton
                   onClick={sendInvitation}
                   disabled={
-                    selectedPermissions.length === 0 ||
+                    !associateMessage.trim() ||
                     actionLoading === "associateAdd"
                   }
                   loading={actionLoading === "associateAdd"}
@@ -1328,97 +1266,6 @@ export function PolicyDetailPage() {
                 </ActionButton>
               </div>
             )}
-          </div>
-        </Modal>
-      )}
-
-      {/* Edit Associate Permissions Modal */}
-      {editingAssociate && (
-        <Modal
-          title="Edit Associate Permissions"
-          onClose={() => setEditingAssociate(null)}
-        >
-          <div className="space-y-4">
-            <p className="text-sm text-slate-500">
-              Editing permissions for{" "}
-              <strong>{editingAssociate.plannerId?.email}</strong>
-            </p>
-            <div className="space-y-2">
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  value="moderate_comments"
-                  checked={editPermissions.includes("moderate_comments")}
-                  onChange={(e) => {
-                    if (e.target.checked)
-                      setEditPermissions([
-                        ...editPermissions,
-                        "moderate_comments",
-                      ]);
-                    else
-                      setEditPermissions(
-                        editPermissions.filter(
-                          (p) => p !== "moderate_comments",
-                        ),
-                      );
-                  }}
-                />
-                Moderate Comments
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  value="reply_official"
-                  checked={editPermissions.includes("reply_official")}
-                  onChange={(e) => {
-                    if (e.target.checked)
-                      setEditPermissions([
-                        ...editPermissions,
-                        "reply_official",
-                      ]);
-                    else
-                      setEditPermissions(
-                        editPermissions.filter((p) => p !== "reply_official"),
-                      );
-                  }}
-                />
-                Official Replies
-              </label>
-              <label className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  value="export_data"
-                  checked={editPermissions.includes("export_data")}
-                  onChange={(e) => {
-                    if (e.target.checked)
-                      setEditPermissions([...editPermissions, "export_data"]);
-                    else
-                      setEditPermissions(
-                        editPermissions.filter((p) => p !== "export_data"),
-                      );
-                  }}
-                />
-                Export Data
-              </label>
-            </div>
-            <ActionButton
-              icon={Save}
-              onClick={async () => {
-                await runAction(
-                  `edit-perms-${editingAssociate._id}`,
-                  () =>
-                    plannerApi.updateAssociatePermissions(
-                      id,
-                      editingAssociate._id,
-                      editPermissions,
-                    ),
-                  "Permissions updated.",
-                );
-                setEditingAssociate(null);
-              }}
-            >
-              Save Changes
-            </ActionButton>
           </div>
         </Modal>
       )}

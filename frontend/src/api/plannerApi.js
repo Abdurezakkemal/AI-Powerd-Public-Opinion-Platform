@@ -39,6 +39,9 @@ export const plannerApi = {
   getPendingInvitations() {
     return apiClient.get("/planners/associates/invitations/pending");
   },
+  getInvitationHistory() {
+    return apiClient.get("/planners/associates/invitations/history");
+  },
   getInvitationDetails(invitationId) {
     return apiClient.get(`/planners/associates/invitations/${invitationId}`);
   },

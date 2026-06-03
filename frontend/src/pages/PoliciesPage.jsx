@@ -21,6 +21,7 @@ import { StatusBadge } from "../components/StatusBadge";
 import { formatAuditDetails } from "../utils/auditFormatter";
 import { ETHIOPIAN_REGIONS, POLICY_STATUSES } from "../constants/regions";
 import { formatDate, getErrorMessage, toIsoFromDateInput } from "../lib/format";
+import { showToast } from "../lib/toast";
 import { useAuth } from "../auth/AuthContext";
 import { useDebounce } from "../hooks/useDebounce";
 
@@ -282,6 +283,7 @@ export function PoliciesPage() {
     try {
       await action();
       setNotice(successMessage);
+      try { showToast('success', successMessage); } catch (e) {}
       await loadDataForActiveTab();
       const otherTabs = ["my", "delegated", "other"].filter(
         (t) => t !== activeTab,
@@ -319,6 +321,7 @@ export function PoliciesPage() {
     try {
       const result = await policyApi.clone(policy.id);
       setNotice(`Policy cloned as a new draft. Redirecting to edit...`);
+      try { showToast('success', `Policy cloned as a new draft. Redirecting to edit...`); } catch (e) {}
       navigate(`/policies/${result.id}/edit`);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to clone policy"));
@@ -367,10 +370,7 @@ export function PoliciesPage() {
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3">Dates</th>
                 {tab === "delegated" && (
-                  <>
-                    <th className="px-4 py-3">Permissions</th>
-                    <th className="px-4 py-3">Invited By</th>
-                  </>
+                  <th className="px-4 py-3">Invited By</th>
                 )}
                 {role === "admin" && tab === "other" && (
                   <th className="px-4 py-3">Creator</th>
@@ -404,13 +404,9 @@ export function PoliciesPage() {
                         </Link>
                       )}
                       {tab === "delegated" && (
-                        <Link
-                          to={`/policies/${policy.id}/delegated`}
-                          state={{ permissions: policy.delegatedPermissions }}
-                          className="font-bold hover:text-teal-700"
-                        >
+                        <span className="font-bold text-slate-950">
                           {policy.title}
-                        </Link>
+                        </span>
                       )}
                       {tab === "other" && (
                         <Link
@@ -438,12 +434,7 @@ export function PoliciesPage() {
                       </div>
                     </td>
                     {tab === "delegated" && (
-                      <>
-                        <td className="px-4 py-4">
-                          {policy.delegatedPermissions?.join(", ") || "—"}
-                        </td>
-                        <td className="px-4 py-4">{policy.invitedBy}</td>
-                      </>
+                      <td className="px-4 py-4">{policy.invitedBy}</td>
                     )}
                     {role === "admin" && tab === "other" && (
                       <td className="px-4 py-4">
@@ -541,11 +532,7 @@ export function PoliciesPage() {
         }
       />
       <ErrorAlert message={error} />
-      {notice && (
-        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">
-          {notice}
-        </div>
-      )}
+      {/* notice is shown via global toasts */}
 
       <div className="mt-5 border-b">
         <nav className="flex gap-4">

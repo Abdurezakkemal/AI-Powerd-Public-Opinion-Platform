@@ -18,13 +18,14 @@ import {
 } from "recharts";
 import { analyticsApi } from "../api/analytics";
 import { policyApi } from "../api/policies";
-import { plannerApi } from "../api/planners";
+import { plannerApi } from "../api/plannerApi";
 import { EmptyState } from "../components/EmptyState";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { LoadingState } from "../components/LoadingState";
 import { MetricCard } from "../components/MetricCard";
 import { PageHeader } from "../components/PageHeader";
 import { StatusBadge } from "../components/StatusBadge";
+import LanguageSelector from "../components/LanguageSelector";
 import {
   formatDate,
   formatNumber,
@@ -114,7 +115,7 @@ function Tabs({ tabs, defaultTab, children }) {
   );
 }
 
-function TabPane({ tabId, children }) {
+function TabPane({ children }) {
   return <div>{children}</div>;
 }
 
@@ -132,11 +133,11 @@ export function PolicyAnalyticsPage() {
     sentiment: "",
   });
   const [selectedKeyword, setSelectedKeyword] = useState("");
+  const [translatedComments, setTranslatedComments] = useState({});
   const [loading, setLoading] = useState(true);
   const [commentsLoading, setCommentsLoading] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("overview");
   const [hasExportPermission, setHasExportPermission] = useState(false);
   const [isOwner, setIsOwner] = useState(false);
 
@@ -228,23 +229,42 @@ export function PolicyAnalyticsPage() {
     }
   }, [policy, analytics]);
 
-  // Check export permission
+  // CSV export is available to admins, policy owners, and accepted associates.
   useEffect(() => {
+    let active = true;
     if (!policy || !canViewAnalytics) {
       setHasExportPermission(false);
-      return;
+      return () => {
+        active = false;
+      };
     }
     if (role === "admin" || isOwner) {
       setHasExportPermission(true);
-      return;
+      return () => {
+        active = false;
+      };
     }
+    if (role !== "planner") {
+      setHasExportPermission(false);
+      return () => {
+        active = false;
+      };
+    }
+
     plannerApi
       .getMyAssociatePolicies()
       .then((delegated) => {
-        const match = delegated.find((d) => d.policy._id === id);
-        setHasExportPermission(!!match?.permissions?.includes("export_data"));
+        if (!active) return;
+        const match = delegated.find((d) => d.policy?._id === id);
+        setHasExportPermission(Boolean(match));
       })
-      .catch(() => setHasExportPermission(false));
+      .catch(() => {
+        if (active) setHasExportPermission(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, [policy, canViewAnalytics, role, isOwner, id]);
 
   // Load detailed data
@@ -352,6 +372,21 @@ export function PolicyAnalyticsPage() {
     ? comments.filter((comment) => comment.keywords?.includes(selectedKeyword))
     : comments;
   const totalCommentPages = Math.max(1, Math.ceil(commentTotal / PAGE_SIZE));
+
+  const handleCommentTranslation = (commentId, translatedText) => {
+    setTranslatedComments((current) => ({
+      ...current,
+      [commentId]: translatedText,
+    }));
+  };
+
+  const revertCommentTranslation = (commentId) => {
+    setTranslatedComments((current) => {
+      const next = { ...current };
+      delete next[commentId];
+      return next;
+    });
+  };
 
   const updateFilter = (name, value) => {
     setCommentPage(1);
@@ -498,7 +533,10 @@ export function PolicyAnalyticsPage() {
     ...(analytics?.pollType === "multipleChoice"
       ? [{ id: "correlation", label: "Correlation" }]
       : []),
-    { id: "comments", label: "Comments" },
+    {
+      id: "comments",
+      label: filters.sentiment ? `Comments (${commentTotal})` : "Comments",
+    },
   ];
 
   if (loading) return <LoadingState label="Loading analytics" />;
@@ -997,6 +1035,8 @@ export function PolicyAnalyticsPage() {
                       <p className="text-sm text-slate-500">
                         {selectedKeyword
                           ? `Filtered by keyword "${selectedKeyword}"`
+                          : filters.sentiment
+                            ? `Showing ${filters.sentiment} comments.`
                           : "Raw citizen comments with sentiment and keywords."}
                       </p>
                     </div>
@@ -1039,8 +1079,28 @@ export function PolicyAnalyticsPage() {
                             </span>
                           </div>
                           <p className="mt-3 text-sm leading-6 text-slate-700">
-                            {comment.text}
+                            {translatedComments[comment.id] || comment.text}
                           </p>
+                          <div className="mt-3 flex flex-wrap items-center gap-3">
+                            <LanguageSelector
+                              text={comment.text}
+                              onTranslated={(translatedText) =>
+                                handleCommentTranslation(
+                                  comment.id,
+                                  translatedText,
+                                )
+                              }
+                            />
+                            {translatedComments[comment.id] && (
+                              <button
+                                type="button"
+                                onClick={() => revertCommentTranslation(comment.id)}
+                                className="rounded-lg border border-slate-200 px-3 py-1 text-sm font-bold text-slate-700 hover:bg-slate-50"
+                              >
+                                Show original
+                              </button>
+                            )}
+                          </div>
                           {comment.keywords?.length && (
                             <div className="mt-3 flex flex-wrap gap-2">
                               {comment.keywords.map((keyword) => (

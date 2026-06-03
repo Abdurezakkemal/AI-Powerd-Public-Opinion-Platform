@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useI18n } from "../i18n/I18nProvider";
 
 export function Tabs({ tabs, defaultTab, children }) {
+  const { t } = useI18n();
   const [activeTab, setActiveTab] = useState(defaultTab || tabs[0]?.id);
   const activeContent = children.find(
     (child) => child.props.tabId === activeTab,
@@ -19,7 +21,7 @@ export function Tabs({ tabs, defaultTab, children }) {
                   : "text-slate-500 hover:text-slate-700"
               }`}
             >
-              {tab.label}
+              {typeof tab.label === "string" ? t(tab.label) : tab.label}
             </button>
           ))}
         </nav>

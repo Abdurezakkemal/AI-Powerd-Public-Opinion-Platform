@@ -105,7 +105,8 @@ const sendOtpEmail = async (to, otp) => {
 };
 
 const sendPasswordResetEmail = async (to, token) => {
-  const resetLink = `${process.env.FRONTEND_URL || "http://localhost:3000"}/reset-password?token=${token}`;
+  const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
+  const resetLink = `${frontendUrl}/reset-password?token=${token}`;
   await sendEmail(
     to,
     "Password Reset Request - Civic Engagement Platform",
@@ -117,7 +118,8 @@ const sendPasswordResetEmail = async (to, token) => {
 };
 
 const sendAdminInitiatedResetEmail = async (to, token) => {
-  const resetLink = `${process.env.FRONTEND_URL || "http://localhost:3000"}/reset-password?token=${token}`;
+  const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
+  const resetLink = `${frontendUrl}/reset-password?token=${token}`;
   await sendEmail(
     to,
     "Password Reset Initiated by Administrator",
@@ -128,9 +130,40 @@ const sendAdminInitiatedResetEmail = async (to, token) => {
   );
 };
 
+const sendPlannerPasswordSetupEmail = async (to, token) => {
+  const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
+  const setupLink = `${frontendUrl}/reset-password?token=${token}`;
+  await sendEmail(
+    to,
+    "Planner Account Created - Set Your Password",
+    `A planner account has been created for you. Click the link below to create your password (valid for 24 hours):\n\n${setupLink}\n\nIf you were not expecting this invitation, please contact support.`,
+    `<p>A planner account has been created for you.</p>
+     <p>Click the link below to create your password (valid for 24 hours):</p>
+     <p><a href="${setupLink}">${setupLink}</a></p>
+     <p>If you were not expecting this invitation, please contact support.</p>`,
+  );
+};
+
+const sendRolePasswordSetupEmail = async (to, token, roleLabel) => {
+  const frontendUrl = (process.env.FRONTEND_URL || "http://localhost:3000").replace(/\/$/, "");
+  const setupLink = `${frontendUrl}/reset-password?token=${token}`;
+  const label = roleLabel || "Account";
+  await sendEmail(
+    to,
+    `${label} Created - Set Your Password`,
+    `An account has been created for you as a ${label.toLowerCase()}. Click the link below to create your password (valid for 24 hours):\n\n${setupLink}\n\nIf you were not expecting this invitation, please contact support.`,
+    `<p>An account has been created for you as a ${label.toLowerCase()}.</p>
+     <p>Click the link below to create your password (valid for 24 hours):</p>
+     <p><a href="${setupLink}">${setupLink}</a></p>
+     <p>If you were not expecting this invitation, please contact support.</p>`,
+  );
+};
+
 module.exports = {
   sendEmail,
   sendOtpEmail,
   sendPasswordResetEmail,
   sendAdminInitiatedResetEmail,
+  sendPlannerPasswordSetupEmail,
+  sendRolePasswordSetupEmail,
 };

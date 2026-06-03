@@ -5,7 +5,7 @@ import { PageHeader } from "../components/PageHeader";
 import { LoadingState } from "../components/LoadingState";
 import { ErrorAlert } from "../components/ErrorAlert";
 import { Modal } from "../components/Modal";
-import { formatDate, daysRemaining } from "../lib/format";
+import { formatDate } from "../lib/format";
 
 export function PendingInvitationsPage() {
   const [searchParams] = useSearchParams();
@@ -14,15 +14,20 @@ export function PendingInvitationsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [invitations, setInvitations] = useState([]);
+  const [history, setHistory] = useState([]);
+  const [activeTab, setActiveTab] = useState("pending");
   const [previewInvitation, setPreviewInvitation] = useState(null);
   const [actionLoading, setActionLoading] = useState(null);
 
   const loadInvitations = async () => {
     setLoading(true);
     try {
-      const invitations = await plannerApi.getPendingInvitations();
-      console.log("Invitations:", invitations);
-      setInvitations(invitations);
+      const [pendingInvitations, invitationHistory] = await Promise.all([
+        plannerApi.getPendingInvitations(),
+        plannerApi.getInvitationHistory(),
+      ]);
+      setInvitations(pendingInvitations);
+      setHistory(invitationHistory);
     } catch (err) {
       setError(err.message || "Failed to load invitations");
     } finally {
@@ -89,11 +94,35 @@ export function PendingInvitationsPage() {
         title="Pending Invitations"
         description="Invitations to become an associate on policies"
       />
-      {invitations.length === 0 ? (
+
+      <div className="mt-5 flex gap-2 border-b border-slate-200">
+        <button
+          onClick={() => setActiveTab("pending")}
+          className={`rounded-t-lg px-4 py-2 text-sm font-bold ${
+            activeTab === "pending"
+              ? "border-b-2 border-teal-700 text-teal-700"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          Pending ({invitations.length})
+        </button>
+        <button
+          onClick={() => setActiveTab("history")}
+          className={`rounded-t-lg px-4 py-2 text-sm font-bold ${
+            activeTab === "history"
+              ? "border-b-2 border-teal-700 text-teal-700"
+              : "text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          History ({history.length})
+        </button>
+      </div>
+
+      {activeTab === "pending" && invitations.length === 0 ? (
         <div className="mt-6 rounded-lg border bg-white p-8 text-center text-slate-500">
           No pending invitations.
         </div>
-      ) : (
+      ) : activeTab === "pending" ? (
         <div className="mt-6 space-y-4">
           {invitations.map((inv) => (
             <div
@@ -114,9 +143,11 @@ export function PendingInvitationsPage() {
               </p>
               <div className="mt-2 flex flex-wrap gap-4 text-xs text-slate-500">
                 <span>Invited by: {inv.assignedBy?.email}</span>
-                <span>Permissions: {inv.permissions.join(", ")}</span>
                 <span>Invited: {formatDate(inv.invitedAt)}</span>
               </div>
+              <p className="mt-2 text-xs text-slate-500">
+                Message: {inv.metadata?.notes || "No message"}
+              </p>
               <div className="mt-3 flex gap-3">
                 <button
                   onClick={() => setPreviewInvitation(inv)}
@@ -142,6 +173,55 @@ export function PendingInvitationsPage() {
             </div>
           ))}
         </div>
+      ) : history.length === 0 ? (
+        <div className="mt-6 rounded-lg border bg-white p-8 text-center text-slate-500">
+          No invitation history yet.
+        </div>
+      ) : (
+        <div className="mt-6 overflow-hidden rounded-lg border bg-white shadow-sm">
+          <table className="min-w-full divide-y divide-slate-200 text-left text-sm">
+            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3 font-bold">Policy</th>
+                <th className="px-4 py-3 font-bold">Status</th>
+                <th className="px-4 py-3 font-bold">Invited by</th>
+                <th className="px-4 py-3 font-bold">Date</th>
+                <th className="px-4 py-3 font-bold">Result</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {history.map((inv) => (
+                <tr key={inv._id}>
+                  <td className="px-4 py-4 font-semibold text-slate-950">
+                    {inv.policyId?.title || "Deleted policy"}
+                  </td>
+                  <td className="px-4 py-4">
+                    <span className="rounded-full bg-slate-100 px-2 py-1 text-xs font-bold capitalize text-slate-700">
+                      {inv.displayStatus || inv.invitationStatus}
+                    </span>
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    {inv.assignedBy?.email || "Unknown"}
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    {formatDate(inv.invitedAt || inv.createdAt)}
+                  </td>
+                  <td className="px-4 py-4 text-slate-600">
+                    {inv.acceptedAt
+                      ? `Accepted ${formatDate(inv.acceptedAt)}`
+                      : inv.rejectedAt
+                        ? `Rejected ${formatDate(inv.rejectedAt)}`
+                        : inv.revokedAt
+                          ? `Revoked ${formatDate(inv.revokedAt)}`
+                          : inv.displayStatus === "expired"
+                            ? "Expired"
+                            : "Awaiting response"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {/* Preview Modal – same as before */}
@@ -155,6 +235,12 @@ export function PendingInvitationsPage() {
             <p className="whitespace-pre-wrap text-sm text-slate-700">
               {previewInvitation.policyId.description}
             </p>
+            <div className="rounded-lg border border-teal-100 bg-teal-50 p-3 text-sm text-teal-900">
+              <p className="font-semibold">Invitation Message</p>
+              <p className="mt-1 whitespace-pre-wrap">
+                {previewInvitation.metadata?.notes || "No message provided."}
+              </p>
+            </div>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <span className="font-semibold">Status:</span>
               <span>{previewInvitation.policyId.status}</span>

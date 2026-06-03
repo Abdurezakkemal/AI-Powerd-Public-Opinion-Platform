@@ -5,7 +5,7 @@ const authMiddleware = require("../middleware/authMiddleware");
 const limiters = require("../config/rateLimits");
 const validateObjectId = require("../middleware/validateObjectId");
 
-router.use(authMiddleware(["citizen", "planner", "admin"]));
+router.use(authMiddleware(["citizen", "planner", "comment_moderator", "admin"]));
 
 router.get("/me", userController.getMe);
 router.put("/me", limiters.userProfileUpdate, userController.updateMe);

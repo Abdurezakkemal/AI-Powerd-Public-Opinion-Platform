@@ -11,6 +11,11 @@ router.post(
   limiters.comment,
   messageController.sendMessage,
 );
+router.get(
+  "/conversations",
+  auth(["planner", "admin"]),
+  messageController.getConversations,
+);
 router.get("/inbox", auth(["planner", "admin"]), messageController.getInbox);
 router.get(
   "/:id",

@@ -30,7 +30,7 @@ app.use(helmet());
 // CORS – whitelist
 const allowedOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(",")
-  : ["http://localhost:3000", "http://localhost:5173"];
+  : ["http://localhost:3000", "http://localhost:5173", "http://localhost:5174"];
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -72,12 +72,14 @@ app.use("/api/votes", require("./src/routes/voteRoutes"));
 app.use("/api/comments", require("./src/routes/commentRoutes"));
 app.use("/api/analytics", require("./src/routes/analyticsRoutes"));
 app.use("/api/sms", require("./src/routes/smsRoutes"));
+app.use("/api/sms/mock", require("./src/routes/smsMockRoutes"));
 app.use("/api/admin", require("./src/routes/adminRoutes"));
 app.use("/api/users", require("./src/routes/userRoutes"));
 app.use("/api/planners", require("./src/routes/plannerRoutes"));
 app.use("/api/messages", require("./src/routes/messageRoutes"));
 app.use("/api/feed", require("./src/routes/feedRoutes"));
 app.use("/api/translate", require("./src/routes/translationRoutes"));
+app.use("/api/public", require("./src/routes/publicRoutes"));
 
 // ========== SOCKET.IO ==========
 const server = http.createServer(app);

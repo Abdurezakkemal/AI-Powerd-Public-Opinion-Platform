@@ -58,7 +58,7 @@ const limiters = {
 
   plannerRequest: createRateLimiter({
     windowMs: 24 * 60 * 60 * 1000,
-    max: 1,
+    max: intEnv("RATE_LIMIT_PLANNER_REQUEST_MAX", 100),
     keyPrefix: "rl:planner:request",
     keyGenerator: (req) => req.user?.id || req.ip,
   }),
@@ -129,7 +129,7 @@ const limiters = {
 
   smsReceive: createRateLimiter({
     windowMs: 60 * 1000,
-    max: intEnv("RATE_LIMIT_SMS_RECEIVE_MAX", 30),
+    max: intEnv("RATE_LIMIT_SMS_RECEIVE_MAX", 10),
     keyPrefix: "rl:sms:receive",
     keyGenerator: (req) => req.ip,
   }),
