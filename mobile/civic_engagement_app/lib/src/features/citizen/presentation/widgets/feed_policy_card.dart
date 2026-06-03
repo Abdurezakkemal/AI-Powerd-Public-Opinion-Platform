@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import '../../domain/entities/feed_policy.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/app_card.dart';
+import '../../../../core/widgets/policy_card_with_translation.dart';
 
 class FeedPolicyCard extends StatelessWidget {
   const FeedPolicyCard({
@@ -18,41 +18,13 @@ class FeedPolicyCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final dateFormat = DateFormat('MMM dd, yyyy');
 
-    return AppCard(
+    return PolicyCardWithTranslation(
+      title: policy.title,
+      description: policy.description,
       onTap: onTap,
-      margin: EdgeInsets.zero,
-      padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Text(
-                  policy.title,
-                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 18,
-                        height: 1.3,
-                        letterSpacing: -0.3,
-                      ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          Text(
-            policy.description,
-            style: TextStyle(
-              color: AppTheme.text.withValues(alpha: 0.7),
-              height: 1.5,
-              fontSize: 14,
-            ),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-          ),
-          const SizedBox(height: 24),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
@@ -90,7 +62,8 @@ class FeedPolicyCard extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: AppTheme.border.withValues(alpha: 0.5)),
+                          border: Border.all(
+                              color: AppTheme.border.withValues(alpha: 0.5)),
                         ),
                         child: Text(
                           region,

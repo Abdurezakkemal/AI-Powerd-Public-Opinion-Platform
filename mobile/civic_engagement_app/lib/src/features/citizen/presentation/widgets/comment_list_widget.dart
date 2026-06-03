@@ -3,7 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/error/api_exception.dart';
+import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/translatable_text.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../domain/entities/comment.dart';
 import '../cubit/comment_cubit.dart';
@@ -75,6 +77,7 @@ class _CommentListWidgetState extends State<CommentListWidget> {
         }
 
         if (state is CommentError) {
+          final l10n = AppLocalizations.of(context);
           return Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -83,7 +86,7 @@ class _CommentListWidgetState extends State<CommentListWidget> {
                     size: 48, color: Colors.red.shade300),
                 const SizedBox(height: 16),
                 Text(
-                  'Error loading comments',
+                  l10n.t('error.generic'),
                   style: Theme.of(context)
                       .textTheme
                       .titleMedium
@@ -101,7 +104,7 @@ class _CommentListWidgetState extends State<CommentListWidget> {
                         );
                   },
                   icon: const Icon(Icons.refresh_rounded),
-                  label: const Text('Retry'),
+                  label: Text(l10n.t('error.retry')),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: AppTheme.primary,
                     side: BorderSide(
@@ -114,6 +117,7 @@ class _CommentListWidgetState extends State<CommentListWidget> {
         }
 
         if (state is CommentLoaded) {
+          final l10n = AppLocalizations.of(context);
           if (state.comments.isEmpty) {
             return Center(
               child: Column(
@@ -121,14 +125,14 @@ class _CommentListWidgetState extends State<CommentListWidget> {
                 children: [
                   Icon(Icons.forum_outlined, size: 64, color: AppTheme.border),
                   const SizedBox(height: 16),
-                  const Text(
-                    'No comments yet.',
-                    style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                  Text(
+                    l10n.t('comment.empty'),
+                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    'Be the first to share your thoughts!',
-                    style: TextStyle(color: AppTheme.mutedText),
+                  Text(
+                    l10n.t('comment.empty_message'),
+                    style: const TextStyle(color: AppTheme.mutedText),
                   ),
                 ],
               ),
@@ -276,7 +280,7 @@ class _CommentCard extends StatelessWidget {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        'Reply',
+                        AppLocalizations.of(context).t('comment.reply'),
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
@@ -322,7 +326,7 @@ class _CommentCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            comment.userEmail ?? 'Anonymous Citizen',
+                            comment.userEmail ?? AppLocalizations.of(context).t('comment.autonomous_citizen'),
                             style: Theme.of(context)
                                 .textTheme
                                 .titleSmall
@@ -354,12 +358,12 @@ class _CommentCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 16),
-                Text(
-                  comment.text,
-                  style: const TextStyle(
+                TranslatableText(
+                  text: comment.text,
+                  style: TextStyle(
                     height: 1.5,
                     fontSize: 15,
-                    color: AppTheme.text,
+                    color: Theme.of(context).textTheme.bodyMedium?.color,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -384,8 +388,8 @@ class _CommentCard extends StatelessWidget {
                             const SizedBox(width: 4),
                             Text(
                                 comment.versionNumber > 1
-                                    ? 'Edited v${comment.versionNumber}'
-                                    : 'Edited',
+                                    ? '${AppLocalizations.of(context).t('comment.edited_version')}${comment.versionNumber}'
+                                    : AppLocalizations.of(context).t('comment.edited'),
                                 style: TextStyle(
                                     color: Colors.grey.shade600,
                                     fontSize: 11,
@@ -408,7 +412,7 @@ class _CommentCard extends StatelessWidget {
                             Icon(Icons.verified_rounded,
                                 size: 12, color: Colors.blue.shade700),
                             const SizedBox(width: 4),
-                            Text('Official',
+                            Text(AppLocalizations.of(context).t('comment.official_reply'),
                                 style: TextStyle(
                                     color: Colors.blue.shade700,
                                     fontSize: 11,
@@ -459,7 +463,7 @@ class _CommentCard extends StatelessWidget {
                             ? () => _showReplyDialog(context)
                             : null,
                         icon: const Icon(Icons.reply_rounded, size: 18),
-                        label: const Text('Reply'),
+                        label: Text(AppLocalizations.of(context).t('comment.reply')),
                         style: TextButton.styleFrom(
                           foregroundColor: AppTheme.primary,
                           padding: const EdgeInsets.symmetric(
@@ -535,8 +539,8 @@ class _CommentCard extends StatelessWidget {
                   ListTile(
                     leading:
                         const Icon(Icons.edit_rounded, color: AppTheme.text),
-                    title: const Text('Edit Comment',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    title: Text(AppLocalizations.of(context).t('comment.edit'),
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                     onTap: () {
                       Navigator.pop(bottomSheetContext);
                       _showEditDialog(context);
@@ -547,8 +551,8 @@ class _CommentCard extends StatelessWidget {
                   ListTile(
                     leading:
                         const Icon(Icons.flag_rounded, color: Colors.orange),
-                    title: const Text('Report Comment',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    title: Text(AppLocalizations.of(context).t('comment.report'),
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                     onTap: () {
                       Navigator.pop(bottomSheetContext);
                       _showReportDialog(context);
@@ -558,8 +562,8 @@ class _CommentCard extends StatelessWidget {
                   ListTile(
                     leading:
                         const Icon(Icons.gavel_rounded, color: Colors.blue),
-                    title: const Text('Appeal Decision',
-                        style: TextStyle(fontWeight: FontWeight.w600)),
+                    title: Text(AppLocalizations.of(context).t('comment.appeal'),
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
                     onTap: () {
                       Navigator.pop(bottomSheetContext);
                       _showAppealDialog(context);
@@ -731,6 +735,7 @@ class _StatusChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     Color color;
     String label;
 
@@ -746,14 +751,14 @@ class _StatusChip extends StatelessWidget {
         case 'moderator':
         case 'hidden_by_moderator':
           color = Colors.red;
-          label = comment.isDeleted ? 'Deleted' : 'Hidden';
+          label = comment.isDeleted ? l10n.t('comment.deleted') : l10n.t('comment.hidden');
         default:
           color = Colors.red;
-          label = comment.isDeleted ? 'Deleted' : 'Hidden';
+          label = comment.isDeleted ? l10n.t('comment.deleted') : l10n.t('comment.hidden');
       }
     } else if (comment.reportState == 'reported') {
       color = Colors.orange;
-      label = 'Reported';
+      label = l10n.t('comment.reported');
     } else if (comment.reportState == 'under_review' ||
         comment.reviewFlags?.any == true) {
       color = Colors.orange;
@@ -858,7 +863,7 @@ class _RepliesSection extends StatelessWidget {
           return TextButton.icon(
             onPressed: () => cubit.loadReplies(comment.id),
             icon: const Icon(Icons.forum_outlined, size: 16),
-            label: const Text('View replies'),
+            label: Text(AppLocalizations.of(context).t('comment.view_replies')),
             style: TextButton.styleFrom(
               foregroundColor: AppTheme.primary,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -882,11 +887,12 @@ class _RepliesSection extends StatelessWidget {
           );
         }
 
+        final l10n = AppLocalizations.of(context);
         return TextButton.icon(
           onPressed: () => cubit.loadReplies(comment.id),
           icon: const Icon(Icons.refresh_rounded, size: 16),
           label: Text(
-              '${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}'),
+              '${replies.length} ${replies.length == 1 ? l10n.t('comment.view_reply') : l10n.t('comment.view_replies')}'),
           style: TextButton.styleFrom(
             foregroundColor: AppTheme.primary,
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

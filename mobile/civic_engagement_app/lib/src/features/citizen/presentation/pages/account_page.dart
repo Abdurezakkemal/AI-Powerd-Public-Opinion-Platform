@@ -2,12 +2,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/state/request_status.dart';
+import '../../../../core/di/service_locator.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../../core/services/location_service.dart';
+import '../../../../core/localization/app_localizations.dart';
+import '../../../../core/settings/app_settings_controller.dart';
+import '../../../../core/settings/app_settings_scope.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
 import '../cubit/profile_cubit.dart';
 import 'planner_request_page.dart';
@@ -30,6 +33,7 @@ class _AccountPageState extends State<AccountPage> {
   final _locationService = LocationService();
   bool _isDetectingLocation = false;
   bool _logoutAfterPhoneVerify = false;
+  bool _hasManuallySelectedLanguage = false;
   String _selectedLanguage = 'en';
 
   @override
@@ -55,8 +59,10 @@ class _AccountPageState extends State<AccountPage> {
             _regionController.text != state.profile!.region) {
           _regionController.text = state.profile!.region;
         }
+        // Only set language from profile if user hasn't manually selected one
         if (state.profile != null &&
-            _selectedLanguage != state.profile!.preferredLanguage) {
+            _selectedLanguage != state.profile!.preferredLanguage &&
+            !_hasManuallySelectedLanguage) {
           _selectedLanguage = state.profile!.preferredLanguage;
         }
         if (state.actionStatus == RequestStatus.success &&
@@ -64,9 +70,7 @@ class _AccountPageState extends State<AccountPage> {
           if (state.message!.startsWith('Your data export')) {
             _showExportSuccess(context, state.message!);
           }
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(state.message!),
               backgroundColor: Colors.green.shade600,
               duration: state.message!.startsWith('Your data export')
@@ -84,26 +88,14 @@ class _AccountPageState extends State<AccountPage> {
         if (state.actionStatus == RequestStatus.failure &&
             state.message != null) {
           _logoutAfterPhoneVerify = false;
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(state.message!),
               backgroundColor: Colors.redAccent));
         }
       },
       builder: (context, state) {
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('Account'),
-            actions: [
-              IconButton(
-                tooltip: 'Refresh',
-                onPressed: () => context.read<ProfileCubit>().loadProfile(),
-                icon: const Icon(Icons.refresh_rounded),
-              ),
-              const SizedBox(width: 8),
-            ],
-          ),
+          backgroundColor: AppTheme.background,
           body: _body(context, state),
         );
       },
@@ -130,390 +122,647 @@ class _AccountPageState extends State<AccountPage> {
     }
 
     final busy = state.actionStatus == RequestStatus.loading;
+    final l10n = AppLocalizations.of(context);
 
     return RefreshIndicator(
       color: AppTheme.primary,
       backgroundColor: Colors.white,
       onRefresh: () => context.read<ProfileCubit>().loadProfile(),
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-        children: [
-          AppCard(
-            child: Row(
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(16),
+      child: CustomScrollView(
+        slivers: [
+          // Custom Header with elevation
+          SliverToBoxAdapter(
+            child: Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
-                  child: const Icon(
-                    Icons.person_rounded,
-                    color: AppTheme.primary,
-                    size: 28,
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                ],
+              ),
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        profile.email,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
-                            ?.copyWith(fontWeight: FontWeight.w900),
-                      ),
-                      const SizedBox(height: 4),
-                      Row(
-                        children: [
-                          Icon(Icons.location_on_rounded,
-                              size: 14,
-                              color: AppTheme.mutedText.withValues(alpha: 0.8)),
-                          const SizedBox(width: 4),
-                          Text(
-                            profile.region,
-                            style: const TextStyle(
-                                color: AppTheme.mutedText,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13),
-                          ),
-                          const SizedBox(width: 8),
-                          if (profile.verified) ...[
-                            Icon(Icons.verified_rounded,
-                                size: 14, color: Colors.blue.shade600),
-                            const SizedBox(width: 2),
-                            Text('Verified',
-                                style: TextStyle(
-                                    color: Colors.blue.shade600,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13)),
-                          ] else ...[
-                            Icon(Icons.pending_actions_rounded,
-                                size: 14, color: Colors.orange.shade600),
-                            const SizedBox(width: 2),
-                            Text('Unverified',
-                                style: TextStyle(
-                                    color: Colors.orange.shade600,
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 13)),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _SectionTitle(
-                  icon: Icons.translate_rounded,
-                  title: 'Language',
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  value: _selectedLanguage,
-                  decoration: const InputDecoration(
-                    labelText: 'Preferred translation language',
-                    prefixIcon: Icon(Icons.language_rounded),
-                  ),
-                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                  items: const [
-                    DropdownMenuItem(value: 'en', child: Text('English')),
-                    DropdownMenuItem(value: 'am', child: Text('Amharic')),
-                    DropdownMenuItem(value: 'om', child: Text('Oromo')),
-                    DropdownMenuItem(value: 'ti', child: Text('Tigrinya')),
-                  ],
-                  onChanged: busy
-                      ? null
-                      : (value) {
-                          if (value == null || value == _selectedLanguage) {
-                            return;
-                          }
-                          setState(() => _selectedLanguage = value);
-                          context
-                              .read<ProfileCubit>()
-                              .updatePreferredLanguage(value);
-                        },
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _SectionTitle(
-                  icon: Icons.work_outline_rounded,
-                  title: 'Become a Planner',
-                ),
-                const SizedBox(height: 12),
-                const Text(
-                  'Planners can create and manage policy proposals. Apply to become a planner if you work in policy development.',
-                  style: TextStyle(
-                    fontSize: 14,
-                    color: AppTheme.mutedText,
-                    height: 1.5,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: () {
-                    Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (context) => const PlannerRequestPage(),
-                      ),
-                    );
-                  },
-                  icon: const Icon(Icons.send_rounded),
-                  label: const Text('Request Planner Status'),
-                  style: _outlinedButtonStyle(),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _SectionTitle(
-                  icon: Icons.location_on_rounded,
-                  title: 'Region Update',
-                ),
-                const SizedBox(height: 16),
-                Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppTheme.primary.withValues(alpha: 0.03),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: AppTheme.primary.withValues(alpha: 0.15),
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            Icons.security_rounded,
-                            color: AppTheme.primary,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 8),
-                          const Text(
-                            'GPS Verification Required',
-                            style: TextStyle(
-                              fontWeight: FontWeight.w800,
-                              color: AppTheme.primary,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        'For security, region updates require GPS verification. Enable location services and tap the button below.',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: AppTheme.primary.withValues(alpha: 0.8),
-                          height: 1.4,
+                        l10n.t('account'),
+                        style: const TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.w900,
+                          color: AppTheme.text,
+                          letterSpacing: 0,
                         ),
                       ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: AppTextField(
-                              controller: _regionController,
-                              label: 'Current Region',
-                              icon: Icons.map_rounded,
-                              readOnly: true,
-                            ),
+                      const SizedBox(width: 12),
+                      Container(
+                        width: 44,
+                        height: 44,
+                        decoration: BoxDecoration(
+                          color: AppTheme.primary.withValues(alpha: 0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          tooltip: 'Refresh',
+                          onPressed: () =>
+                              context.read<ProfileCubit>().loadProfile(),
+                          icon: const Icon(
+                            Icons.refresh_rounded,
+                            color: AppTheme.primary,
                           ),
-                          const SizedBox(width: 12),
-                          Container(
-                            height: 56, // Match text field height
-                            width: 56,
-                            decoration: BoxDecoration(
-                              color: AppTheme.primary,
-                              borderRadius: BorderRadius.circular(16),
-                              boxShadow: [
-                                BoxShadow(
-                                  color:
-                                      AppTheme.primary.withValues(alpha: 0.3),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 4),
-                                )
-                              ],
-                            ),
-                            child: IconButton(
-                              onPressed:
-                                  _isDetectingLocation ? null : _detectLocation,
-                              icon: _isDetectingLocation
-                                  ? const SizedBox(
-                                      width: 24,
-                                      height: 24,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        color: Colors.white,
-                                      ),
-                                    )
-                                  : const Icon(Icons.my_location_rounded,
-                                      color: Colors.white),
-                              tooltip: 'Detect my location',
-                            ),
-                          ),
-                        ],
+                        ),
                       ),
                     ],
                   ),
                 ),
-              ],
+              ),
             ),
           ),
-          const SizedBox(height: 16),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _SectionTitle(
-                  icon: Icons.lock_outline_rounded,
-                  title: 'Password',
-                ),
-                const SizedBox(height: 16),
-                AppTextField(
-                  controller: _currentPasswordController,
-                  label: 'Current password',
-                  icon: Icons.lock_outline_rounded,
-                  obscureText: true,
-                ),
-                const SizedBox(height: 12),
-                AppTextField(
-                  controller: _newPasswordController,
-                  label: 'New password',
-                  icon: Icons.lock_reset_rounded,
-                  obscureText: true,
-                ),
-                const SizedBox(height: 16),
-                AppButton(
-                  label: 'Change password',
-                  icon: Icons.password_rounded,
-                  loading: busy,
-                  onPressed: _changePassword,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _SectionTitle(
-                  icon: Icons.alternate_email_rounded,
-                  title: 'Email change',
-                ),
-                const SizedBox(height: 16),
-                AppTextField(
-                  controller: _newEmailController,
-                  label: 'New email',
-                  icon: Icons.mail_outline_rounded,
-                  keyboardType: TextInputType.emailAddress,
-                ),
-                const SizedBox(height: 12),
-                OutlinedButton.icon(
-                  onPressed: busy ? null : _requestEmailChange,
-                  icon: const Icon(Icons.mark_email_read_outlined),
-                  label: const Text('Send verification code'),
-                  style: _outlinedButtonStyle(),
-                ),
-                const SizedBox(height: 16),
-                AppTextField(
-                  controller: _emailCodeController,
-                  label: 'Verification code',
-                  icon: Icons.pin_outlined,
-                  keyboardType: TextInputType.number,
-                  maxLength: 6,
-                ),
-                const SizedBox(height: 12),
-                AppButton(
-                  label: 'Verify email',
-                  icon: Icons.verified_rounded,
-                  loading: busy,
-                  onPressed: _verifyEmailChange,
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          AppCard(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const _SectionTitle(
-                    icon: Icons.logout_rounded, title: 'Session'),
-                const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: () => _confirmLogout(context),
-                  icon: const Icon(Icons.logout_rounded),
-                  label: const Text('Logout'),
-                  style: _outlinedButtonStyle(),
-                ),
-                const SizedBox(height: 24),
-                const Divider(height: 1),
-                const SizedBox(height: 16),
-                Text(
-                  'Data & Account',
-                  style: Theme.of(context)
-                      .textTheme
-                      .titleSmall
-                      ?.copyWith(fontWeight: FontWeight.w800),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Export your data before deleting your account. This includes profile, votes, comments, notifications, messages, and planner requests.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppTheme.mutedText,
-                    height: 1.5,
+
+          // Content
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                // Profile Card - Larger height
+                _buildElevatedCard(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 72,
+                          height: 72,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                AppTheme.primary.withValues(alpha: 0.2),
+                                AppTheme.primary.withValues(alpha: 0.1),
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Icon(
+                            Icons.person_rounded,
+                            color: AppTheme.primary,
+                            size: 36,
+                          ),
+                        ),
+                        const SizedBox(width: 20),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                profile.email,
+                                style: const TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppTheme.text,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  Icon(Icons.location_on_rounded,
+                                      size: 16,
+                                      color: AppTheme.mutedText
+                                          .withValues(alpha: 0.8)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    profile.region,
+                                    style: const TextStyle(
+                                        color: AppTheme.mutedText,
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  if (profile.verified) ...[
+                                    Icon(Icons.verified_rounded,
+                                        size: 16, color: Colors.blue.shade600),
+                                    const SizedBox(width: 4),
+                                    Text(l10n.t('account.verified'),
+                                        style: TextStyle(
+                                            color: Colors.blue.shade600,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14)),
+                                  ] else ...[
+                                    Icon(Icons.pending_actions_rounded,
+                                        size: 16,
+                                        color: Colors.orange.shade600),
+                                    const SizedBox(width: 4),
+                                    Text(l10n.t('account.unverified'),
+                                        style: TextStyle(
+                                            color: Colors.orange.shade600,
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14)),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
                 const SizedBox(height: 16),
-                OutlinedButton.icon(
-                  onPressed: busy
-                      ? null
-                      : () => context.read<ProfileCubit>().exportUserData(),
-                  icon: const Icon(Icons.file_download_outlined),
-                  label: const Text('Export my data'),
-                  style: _outlinedButtonStyle(),
-                ),
-                const SizedBox(height: 12),
-                TextButton.icon(
-                  onPressed: busy ? null : () => _confirmDelete(context),
-                  icon: const Icon(Icons.delete_forever_rounded),
-                  label: const Text('Delete account'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.redAccent,
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 24, vertical: 16),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
+
+                // Preferences Card (Language + Theme combined)
+                _buildElevatedCard(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SectionTitle(
+                          icon: Icons.tune_rounded,
+                          title: l10n.t('account.preferences'),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Language Section
+                        Row(
+                          children: [
+                            Icon(Icons.translate_rounded,
+                                color: AppTheme.mutedText, size: 20),
+                            const SizedBox(width: 12),
+                            Text(
+                              l10n.t('account.language'),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.text,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<String>(
+                          value: _selectedLanguage,
+                          decoration: InputDecoration(
+                            labelText: l10n.t('preferred_language'),
+                            prefixIcon: const Icon(Icons.language_rounded),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 14),
+                          ),
+                          icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                          items: AppLocalizations.supportedLocales
+                              .map(
+                                (locale) => DropdownMenuItem(
+                                  value: locale.languageCode,
+                                  child: Text(
+                                    AppLocalizations.languageName(
+                                        locale.languageCode),
+                                  ),
+                                ),
+                              )
+                              .toList(),
+                          onChanged: busy
+                              ? null
+                              : (value) {
+                                  if (value == null ||
+                                      value == _selectedLanguage) {
+                                    return;
+                                  }
+                                  setState(() {
+                                    _selectedLanguage = value;
+                                    _hasManuallySelectedLanguage = true;
+                                  });
+                                  serviceLocator<AppSettingsController>()
+                                      .setLocale(value);
+                                  context
+                                      .read<ProfileCubit>()
+                                      .updatePreferredLanguage(value);
+                                },
+                        ),
+
+                        const SizedBox(height: 24),
+                        const Divider(height: 1),
+                        const SizedBox(height: 24),
+
+                        // Theme Section
+                        Row(
+                          children: [
+                            Icon(Icons.dark_mode_outlined,
+                                color: AppTheme.mutedText, size: 20),
+                            const SizedBox(width: 12),
+                            Text(
+                              l10n.t('account.theme'),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.text,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        AnimatedBuilder(
+                          animation: AppSettingsScope.of(context),
+                          builder: (context, _) {
+                            final settings = AppSettingsScope.of(context);
+                            return SegmentedButton<ThemeMode>(
+                              segments: [
+                                ButtonSegment(
+                                  value: ThemeMode.system,
+                                  icon: const Icon(
+                                      Icons.settings_suggest_outlined,
+                                      size: 18),
+                                  label: Text(l10n.t('theme.system')),
+                                ),
+                                ButtonSegment(
+                                  value: ThemeMode.light,
+                                  icon: const Icon(Icons.light_mode_outlined,
+                                      size: 18),
+                                  label: Text(l10n.t('theme.light')),
+                                ),
+                                ButtonSegment(
+                                  value: ThemeMode.dark,
+                                  icon: const Icon(Icons.dark_mode_outlined,
+                                      size: 18),
+                                  label: Text(l10n.t('theme.dark')),
+                                ),
+                              ],
+                              selected: {settings.themeMode},
+                              onSelectionChanged: (selection) {
+                                settings.setThemeMode(selection.first);
+                              },
+                            );
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ],
+                const SizedBox(height: 16),
+
+                // Become Planner Card
+                _buildElevatedCard(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SectionTitle(
+                          icon: Icons.work_outline_rounded,
+                          title: l10n.t('account.become_planner'),
+                        ),
+                        const SizedBox(height: 16),
+                        Text(
+                          l10n.t('account.planner_description'),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            color: AppTheme.mutedText,
+                            height: 1.5,
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () {
+                              Navigator.of(context).push(
+                                MaterialPageRoute(
+                                  builder: (context) =>
+                                      const PlannerRequestPage(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.send_rounded, size: 18),
+                            label: Text(l10n.t('account.request_planner')),
+                            style: _outlinedButtonStyle(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Security & Account Card (Region, Password, Email, Settings)
+                _buildElevatedCard(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _SectionTitle(
+                          icon: Icons.security_rounded,
+                          title: l10n.t('account.security'),
+                        ),
+                        const SizedBox(height: 20),
+
+                        // Region Section
+                        Row(
+                          children: [
+                            Icon(Icons.location_on_rounded,
+                                color: AppTheme.mutedText, size: 20),
+                            const SizedBox(width: 12),
+                            Text(
+                              l10n.t('account.region'),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.text,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: AppTheme.primary.withValues(alpha: 0.03),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: AppTheme.primary.withValues(alpha: 0.15),
+                            ),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.info_outline_rounded,
+                                    color: AppTheme.primary,
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      l10n.t('account.gps_description'),
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: AppTheme.primary
+                                            .withValues(alpha: 0.8),
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: AppTextField(
+                                      controller: _regionController,
+                                      label: l10n.t('account.current_region'),
+                                      icon: Icons.map_rounded,
+                                      readOnly: true,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Container(
+                                    height: 56,
+                                    width: 56,
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primary,
+                                      borderRadius: BorderRadius.circular(16),
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: AppTheme.primary
+                                              .withValues(alpha: 0.3),
+                                          blurRadius: 8,
+                                          offset: const Offset(0, 4),
+                                        )
+                                      ],
+                                    ),
+                                    child: IconButton(
+                                      onPressed: _isDetectingLocation
+                                          ? null
+                                          : _detectLocation,
+                                      icon: _isDetectingLocation
+                                          ? const SizedBox(
+                                              width: 24,
+                                              height: 24,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2.5,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.my_location_rounded,
+                                              color: Colors.white),
+                                      tooltip:
+                                          l10n.t('account.detect_location'),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+                        const Divider(height: 1),
+                        const SizedBox(height: 24),
+
+                        // Password Section
+                        Row(
+                          children: [
+                            Icon(Icons.lock_outline_rounded,
+                                color: AppTheme.mutedText, size: 20),
+                            const SizedBox(width: 12),
+                            Text(
+                              l10n.t('login.password'),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.text,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        AppTextField(
+                          controller: _currentPasswordController,
+                          label: l10n.t('account.current_password'),
+                          icon: Icons.lock_outline_rounded,
+                          obscureText: true,
+                        ),
+                        const SizedBox(height: 12),
+                        AppTextField(
+                          controller: _newPasswordController,
+                          label: l10n.t('account.new_password'),
+                          icon: Icons.lock_reset_rounded,
+                          obscureText: true,
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: AppButton(
+                            label: l10n.t('account.change_password'),
+                            icon: Icons.password_rounded,
+                            loading: busy,
+                            onPressed: _changePassword,
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+                        const Divider(height: 1),
+                        const SizedBox(height: 24),
+
+                        // Email Section
+                        Row(
+                          children: [
+                            Icon(Icons.alternate_email_rounded,
+                                color: AppTheme.mutedText, size: 20),
+                            const SizedBox(width: 12),
+                            Text(
+                              l10n.t('account.email'),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.text,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        AppTextField(
+                          controller: _newEmailController,
+                          label: l10n.t('account.new_email'),
+                          icon: Icons.mail_outline_rounded,
+                          keyboardType: TextInputType.emailAddress,
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: busy ? null : _requestEmailChange,
+                            icon: const Icon(Icons.mark_email_read_outlined,
+                                size: 18),
+                            label: Text(l10n.t('account.send_code')),
+                            style: _outlinedButtonStyle(),
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        AppTextField(
+                          controller: _emailCodeController,
+                          label: l10n.t('account.verification_code'),
+                          icon: Icons.pin_outlined,
+                          keyboardType: TextInputType.number,
+                          maxLength: 6,
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: AppButton(
+                            label: l10n.t('account.verify_email'),
+                            icon: Icons.verified_rounded,
+                            loading: busy,
+                            onPressed: _verifyEmailChange,
+                          ),
+                        ),
+
+                        const SizedBox(height: 24),
+                        const Divider(height: 1),
+                        const SizedBox(height: 24),
+
+                        // Settings Section
+                        Row(
+                          children: [
+                            Icon(Icons.settings_rounded,
+                                color: AppTheme.mutedText, size: 20),
+                            const SizedBox(width: 12),
+                            Text(
+                              l10n.t('account.settings'),
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                                color: AppTheme.text,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: () => _confirmLogout(context),
+                            icon: const Icon(Icons.logout_rounded, size: 18),
+                            label: Text(l10n.t('account.logout')),
+                            style: _outlinedButtonStyle(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: OutlinedButton.icon(
+                            onPressed: busy
+                                ? null
+                                : () => context
+                                    .read<ProfileCubit>()
+                                    .exportUserData(),
+                            icon: const Icon(Icons.file_download_outlined,
+                                size: 18),
+                            label: Text(l10n.t('account.export_data')),
+                            style: _outlinedButtonStyle(),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        SizedBox(
+                          width: double.infinity,
+                          child: TextButton.icon(
+                            onPressed:
+                                busy ? null : () => _confirmDelete(context),
+                            icon: const Icon(Icons.delete_forever_rounded,
+                                size: 18),
+                            label: Text(l10n.t('account.delete_account')),
+                            style: TextButton.styleFrom(
+                              foregroundColor: Colors.redAccent,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 16),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ]),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildElevatedCard({required Widget child}) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: AppTheme.primary.withValues(alpha: 0.03),
+            blurRadius: 40,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: child,
     );
   }
 
@@ -577,27 +826,28 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _confirmDelete(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Delete account?',
-            style: TextStyle(fontWeight: FontWeight.w800)),
-        content: const Text(
-          'Your account will be anonymized and deactivated. This cannot be undone.',
-          style: TextStyle(color: AppTheme.mutedText),
+        title: Text(l10n.t('account.delete_confirm'),
+            style: const TextStyle(fontWeight: FontWeight.w800)),
+        content: Text(
+          l10n.t('account.delete_warning'),
+          style: const TextStyle(color: AppTheme.mutedText),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel',
-                style: TextStyle(fontWeight: FontWeight.w700)),
+            child: Text(l10n.t('cancel'),
+                style: const TextStyle(fontWeight: FontWeight.w700)),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Delete',
-                style: TextStyle(fontWeight: FontWeight.w800)),
+            child: Text(l10n.t('account.delete_account'),
+                style: const TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),
@@ -610,27 +860,28 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _confirmLogout(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text('Logout?',
-            style: TextStyle(fontWeight: FontWeight.w800)),
-        content: const Text(
-          'Are you sure you want to logout?',
-          style: TextStyle(color: AppTheme.mutedText),
+        title: Text(l10n.t('account.logout_confirm'),
+            style: const TextStyle(fontWeight: FontWeight.w800)),
+        content: Text(
+          l10n.t('account.logout_confirm'),
+          style: const TextStyle(color: AppTheme.mutedText),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel',
-                style: TextStyle(fontWeight: FontWeight.w700)),
+            child: Text(l10n.t('account.logout_no'),
+                style: const TextStyle(fontWeight: FontWeight.w700)),
           ),
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(true),
             style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Logout',
-                style: TextStyle(fontWeight: FontWeight.w800)),
+            child: Text(l10n.t('account.logout_yes'),
+                style: const TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),
@@ -642,13 +893,14 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _showExportSuccess(BuildContext context, String message) {
+    final l10n = AppLocalizations.of(context);
     return showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text(
-          'Export saved',
-          style: TextStyle(fontWeight: FontWeight.w800),
+        title: Text(
+          l10n.t('account.export_saved'),
+          style: const TextStyle(fontWeight: FontWeight.w800),
         ),
         content: SelectableText(
           message,
@@ -657,9 +909,9 @@ class _AccountPageState extends State<AccountPage> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text(
-              'Done',
-              style: TextStyle(fontWeight: FontWeight.w800),
+            child: Text(
+              l10n.t('account.done'),
+              style: const TextStyle(fontWeight: FontWeight.w800),
             ),
           ),
         ],
@@ -716,9 +968,7 @@ class _SectionTitle extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           title,
-          style: Theme.of(
-            context,
-          )
+          style: Theme.of(context)
               .textTheme
               .titleMedium
               ?.copyWith(fontWeight: FontWeight.w900, fontSize: 18),

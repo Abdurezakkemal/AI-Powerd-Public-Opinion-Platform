@@ -3,11 +3,14 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/di/service_locator.dart';
 import '../../../../core/state/request_status.dart';
+import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/date_formatters.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/error_view.dart';
+import '../../../../core/services/translation_service.dart';
+import '../../../../core/settings/app_settings_scope.dart';
 import '../../domain/entities/policy.dart';
 import '../../domain/entities/vote_value.dart';
 import '../../domain/repositories/citizen_repository.dart';
@@ -49,6 +52,7 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
       if (mounted && !_initialLoadAttempted) {
         _initialLoadAttempted = true;
         context.read<PolicyCubit>().loadPolicy(widget.policyId);
+        context.read<HistoryCubit>().loadHistory();
       }
     });
   }
@@ -67,65 +71,7 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
         return DefaultTabController(
           length: 2,
           child: Scaffold(
-            appBar: AppBar(
-              title: const Text('Policy Details'),
-              elevation: 0,
-              bottom: TabBar(
-                indicator: BoxDecoration(
-                  color: AppTheme.primary.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(32),
-                ),
-                indicatorSize: TabBarIndicatorSize.tab,
-                dividerColor: Colors.transparent,
-                labelColor: AppTheme.primary,
-                unselectedLabelColor: AppTheme.mutedText,
-                labelStyle:
-                    const TextStyle(fontWeight: FontWeight.w800, fontSize: 15),
-                unselectedLabelStyle:
-                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                tabs: [
-                  Tab(
-                    height: 56,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primary.withValues(alpha: 0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child:
-                              const Icon(Icons.info_outline_rounded, size: 18),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text('Overview'),
-                      ],
-                    ),
-                  ),
-                  Tab(
-                    height: 56,
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(6),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primary.withValues(alpha: 0.1),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(Icons.forum_outlined, size: 18),
-                        ),
-                        const SizedBox(width: 8),
-                        const Text('Discussion'),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            backgroundColor: AppTheme.background,
             body: failed
                 ? ErrorView(
                     message: state.message ?? 'Policy could not be loaded.',
@@ -133,37 +79,190 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                           widget.policyId,
                         ),
                   )
-                : TabBarView(
-                    children: [
-                      RefreshIndicator(
-                        onRefresh: () => context.read<PolicyCubit>().loadPolicy(
-                              widget.policyId,
+                : NestedScrollView(
+                    headerSliverBuilder: (context, innerBoxIsScrolled) {
+                      return [
+                        // Custom Elevated Header
+                        SliverToBoxAdapter(
+                          child: Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.06),
+                                  blurRadius: 12,
+                                  offset: const Offset(0, 4),
+                                ),
+                              ],
                             ),
-                        color: AppTheme.primary,
-                        backgroundColor: Colors.white,
-                        child: ListView(
-                          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-                          children: [
-                            if (state.detailStatus == RequestStatus.loading)
-                              const Padding(
-                                padding: EdgeInsets.only(bottom: 16),
-                                child: LinearProgressIndicator(
-                                    minHeight: 3,
-                                    borderRadius:
-                                        BorderRadius.all(Radius.circular(2))),
+                            child: SafeArea(
+                              bottom: false,
+                              child: Column(
+                                children: [
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                        16, 8, 16, 10),
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 44,
+                                          height: 44,
+                                          decoration: BoxDecoration(
+                                            color: AppTheme.primary
+                                                .withValues(alpha: 0.1),
+                                            shape: BoxShape.circle,
+                                          ),
+                                          child: IconButton(
+                                            onPressed: () =>
+                                                Navigator.of(context).pop(),
+                                            icon: const Icon(
+                                                Icons.arrow_back_rounded,
+                                                color: AppTheme.primary),
+                                            tooltip: 'Back',
+                                          ),
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            AppLocalizations.of(context)
+                                                .t('policy_details'),
+                                            style: const TextStyle(
+                                              fontSize: 28,
+                                              fontWeight: FontWeight.w900,
+                                              color: AppTheme.text,
+                                              letterSpacing: 0,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  // Tab Bar
+                                  Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                        16, 0, 16, 10),
+                                    child: Container(
+                                      padding: const EdgeInsets.all(4),
+                                      decoration: BoxDecoration(
+                                        color: AppTheme.background,
+                                        borderRadius: BorderRadius.circular(18),
+                                      ),
+                                      child: TabBar(
+                                        indicator: BoxDecoration(
+                                          color: AppTheme.primary
+                                              .withValues(alpha: 0.08),
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                        ),
+                                        indicatorSize: TabBarIndicatorSize.tab,
+                                        dividerColor: Colors.transparent,
+                                        labelColor: AppTheme.primary,
+                                        unselectedLabelColor:
+                                            AppTheme.mutedText,
+                                        labelStyle: const TextStyle(
+                                          fontWeight: FontWeight.w800,
+                                          fontSize: 14,
+                                          letterSpacing: 0,
+                                        ),
+                                        unselectedLabelStyle: const TextStyle(
+                                          fontWeight: FontWeight.w600,
+                                          fontSize: 14,
+                                          letterSpacing: 0,
+                                        ),
+                                        tabs: [
+                                          Tab(
+                                            height: 48,
+                                            child: Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.all(5),
+                                                  decoration: BoxDecoration(
+                                                    color: AppTheme.primary
+                                                        .withValues(alpha: 0.1),
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: const Icon(
+                                                      Icons
+                                                          .info_outline_rounded,
+                                                      size: 18),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                    AppLocalizations.of(context)
+                                                        .t('overview')),
+                                              ],
+                                            ),
+                                          ),
+                                          Tab(
+                                            height: 48,
+                                            child: Row(
+                                              mainAxisAlignment:
+                                                  MainAxisAlignment.center,
+                                              children: [
+                                                Container(
+                                                  padding:
+                                                      const EdgeInsets.all(5),
+                                                  decoration: BoxDecoration(
+                                                    color: AppTheme.primary
+                                                        .withValues(alpha: 0.1),
+                                                    shape: BoxShape.circle,
+                                                  ),
+                                                  child: const Icon(
+                                                      Icons.forum_outlined,
+                                                      size: 18),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(
+                                                    AppLocalizations.of(context)
+                                                        .t('discussion')),
+                                              ],
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
-                            _DetailHeader(policy: policy),
-                            const SizedBox(height: 16),
-                            _DescriptionCard(policy: policy),
-                            const SizedBox(height: 16),
-                            _VotingCard(
-                              policy: policy,
                             ),
-                          ],
+                          ),
                         ),
-                      ),
-                      _CommentsTab(policy: policy),
-                    ],
+                      ];
+                    },
+                    body: TabBarView(
+                      children: [
+                        RefreshIndicator(
+                          onRefresh: () =>
+                              context.read<PolicyCubit>().loadPolicy(
+                                    widget.policyId,
+                                  ),
+                          color: AppTheme.primary,
+                          backgroundColor: Colors.white,
+                          child: ListView(
+                            padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
+                            children: [
+                              if (state.detailStatus == RequestStatus.loading)
+                                const Padding(
+                                  padding: EdgeInsets.only(bottom: 16),
+                                  child: LinearProgressIndicator(
+                                      minHeight: 3,
+                                      borderRadius:
+                                          BorderRadius.all(Radius.circular(2))),
+                                ),
+                              _PolicyInfoCard(policy: policy),
+                              const SizedBox(height: 16),
+                              _VotingCard(
+                                policy: policy,
+                              ),
+                            ],
+                          ),
+                        ),
+                        _CommentsTab(policy: policy),
+                      ],
+                    ),
                   ),
           ),
         );
@@ -172,13 +271,112 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
   }
 }
 
-class _DetailHeader extends StatelessWidget {
+class _DetailHeader extends StatefulWidget {
   const _DetailHeader({required this.policy});
 
   final Policy policy;
 
   @override
+  State<_DetailHeader> createState() => _DetailHeaderState();
+}
+
+class _DetailHeaderState extends State<_DetailHeader> {
+  String? _translatedTitle;
+  String? _targetLanguage;
+  bool _loading = false;
+  bool _showTranslation = false;
+  String? _error;
+
+  Future<void> _translate(String targetLang) async {
+    if (_loading) return;
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final service = serviceLocator<TranslationService>();
+      final translated = await service.translate(
+        text: widget.policy.title,
+        sourceLang: 'en',
+        targetLang: targetLang,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _translatedTitle = translated;
+        _targetLanguage = targetLang;
+        _showTranslation = true;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = AppLocalizations.of(context).t('translation_failed');
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _showLanguageSelector() async {
+    final l10n = AppLocalizations.of(context);
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                l10n.t('select_language'),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 16),
+              ...AppLocalizations.supportedLocales.map((locale) {
+                final langCode = locale.languageCode;
+                final isSelected = _targetLanguage == langCode;
+                return ListTile(
+                  leading: Icon(
+                    isSelected
+                        ? Icons.check_circle_rounded
+                        : Icons.translate_rounded,
+                    color: isSelected ? AppTheme.primary : null,
+                  ),
+                  title: Text(
+                    AppLocalizations.languageName(langCode),
+                    style: TextStyle(
+                      fontWeight:
+                          isSelected ? FontWeight.w800 : FontWeight.w600,
+                      color: isSelected ? AppTheme.primary : null,
+                    ),
+                  ),
+                  onTap: () => Navigator.of(context).pop(langCode),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selected != null && selected != 'en') {
+      await _translate(selected);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final displayTitle = _showTranslation && _translatedTitle != null
+        ? _translatedTitle!
+        : widget.policy.title;
+
     return AppCard(
       margin: EdgeInsets.zero,
       padding: const EdgeInsets.all(24),
@@ -190,18 +388,140 @@ class _DetailHeader extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  policy.title,
+                  displayTitle,
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                         fontWeight: FontWeight.w900,
                         height: 1.25,
-                        letterSpacing: -0.5,
+                        letterSpacing: 0,
                       ),
                 ),
               ),
-              const SizedBox(width: 16),
-              StatusPill(status: policy.status),
+              const SizedBox(width: 12),
+              // Translation button
+              PopupMenuButton<String>(
+                enabled: !_loading,
+                icon: Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: _translatedTitle != null
+                        ? AppTheme.primary.withValues(alpha: 0.1)
+                        : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: _loading
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          Icons.translate_rounded,
+                          size: 20,
+                          color: _translatedTitle != null
+                              ? AppTheme.primary
+                              : Colors.grey.shade600,
+                        ),
+                ),
+                tooltip: AppLocalizations.of(context).t('translate'),
+                itemBuilder: (context) {
+                  final items = <PopupMenuEntry<String>>[];
+
+                  if (_translatedTitle != null) {
+                    items.add(
+                      PopupMenuItem<String>(
+                        value: 'toggle',
+                        child: Row(
+                          children: [
+                            Icon(
+                              _showTranslation
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              _showTranslation
+                                  ? AppLocalizations.of(context)
+                                      .t('show_original')
+                                  : AppLocalizations.of(context)
+                                      .t('show_translation'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                    items.add(const PopupMenuDivider());
+                  }
+
+                  items.add(
+                    PopupMenuItem<String>(
+                      enabled: false,
+                      child: Text(
+                        AppLocalizations.of(context).t('select_language'),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          color: AppTheme.mutedText,
+                        ),
+                      ),
+                    ),
+                  );
+
+                  for (final locale in AppLocalizations.supportedLocales) {
+                    final langCode = locale.languageCode;
+                    final isSelected = _targetLanguage == langCode;
+                    items.add(
+                      PopupMenuItem<String>(
+                        value: langCode,
+                        child: Row(
+                          children: [
+                            Icon(
+                              isSelected
+                                  ? Icons.check_circle_rounded
+                                  : Icons.language_rounded,
+                              size: 20,
+                              color: isSelected ? AppTheme.primary : null,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              AppLocalizations.languageName(langCode),
+                              style: TextStyle(
+                                fontWeight: isSelected
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                                color: isSelected ? AppTheme.primary : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  return items;
+                },
+                onSelected: (value) {
+                  if (value == 'toggle') {
+                    setState(() => _showTranslation = !_showTranslation);
+                  } else if (value != 'en') {
+                    _translate(value);
+                  }
+                },
+              ),
+              const SizedBox(width: 8),
+              StatusPill(status: widget.policy.status),
             ],
           ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _error!,
+              style: const TextStyle(
+                color: Colors.redAccent,
+                fontSize: 12,
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           Wrap(
             spacing: 12,
@@ -209,22 +529,24 @@ class _DetailHeader extends StatelessWidget {
             children: [
               _InfoChip(
                 icon: Icons.tag_rounded,
-                label: policy.policyCode,
+                label: widget.policy.policyCode,
               ),
-              if (policy.averageRating != null)
+              if (widget.policy.averageRating != null)
                 _InfoChip(
                   icon: Icons.star_rounded,
-                  label: '${policy.averageRating!.toStringAsFixed(1)} avg',
+                  label:
+                      '${widget.policy.averageRating!.toStringAsFixed(1)} avg',
                   iconColor: Colors.amber.shade600,
                   backgroundColor: Colors.amber.shade50,
                   textColor: Colors.amber.shade900,
                 ),
               _InfoChip(
                 icon: Icons.how_to_vote_rounded,
-                label: '${policy.totalVotes} votes',
+                label: '${widget.policy.totalVotes} votes',
               ),
-              if (policy.topics != null && policy.topics!.isNotEmpty)
-                ...policy.topics!.take(2).map(
+              if (widget.policy.topics != null &&
+                  widget.policy.topics!.isNotEmpty)
+                ...widget.policy.topics!.take(2).map(
                       (topic) => _InfoChip(
                         icon: Icons.label_outline_rounded,
                         label: topic,
@@ -238,35 +560,597 @@ class _DetailHeader extends StatelessWidget {
   }
 }
 
-class _DescriptionCard extends StatelessWidget {
+// Consolidated Policy Info Card (Title + Description)
+class _PolicyInfoCard extends StatefulWidget {
+  const _PolicyInfoCard({required this.policy});
+
+  final Policy policy;
+
+  @override
+  State<_PolicyInfoCard> createState() => _PolicyInfoCardState();
+}
+
+class _PolicyInfoCardState extends State<_PolicyInfoCard> {
+  String? _translatedTitle;
+  String? _translatedDescription;
+  String? _targetLanguage;
+  bool _loadingTitle = false;
+  bool _loadingDescription = false;
+  bool _showTitleTranslation = false;
+  bool _showDescriptionTranslation = false;
+  String? _error;
+
+  Future<void> _translateTitle(String targetLang) async {
+    if (_loadingTitle) return;
+
+    setState(() {
+      _loadingTitle = true;
+      _error = null;
+    });
+
+    try {
+      final service = serviceLocator<TranslationService>();
+      final translated = await service.translate(
+        text: widget.policy.title,
+        sourceLang: 'en',
+        targetLang: targetLang,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _translatedTitle = translated;
+        _targetLanguage = targetLang;
+        _showTitleTranslation = true;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = AppLocalizations.of(context).t('translation_failed');
+      });
+    } finally {
+      if (mounted) setState(() => _loadingTitle = false);
+    }
+  }
+
+  Future<void> _translateDescription(String targetLang) async {
+    if (_loadingDescription) return;
+
+    setState(() {
+      _loadingDescription = true;
+      _error = null;
+    });
+
+    try {
+      final service = serviceLocator<TranslationService>();
+      final translated = await service.translate(
+        text: widget.policy.description,
+        sourceLang: 'en',
+        targetLang: targetLang,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _translatedDescription = translated;
+        _targetLanguage = targetLang;
+        _showDescriptionTranslation = true;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = AppLocalizations.of(context).t('translation_failed');
+      });
+    } finally {
+      if (mounted) setState(() => _loadingDescription = false);
+    }
+  }
+
+  Future<void> _translateBoth(String targetLang) async {
+    await Future.wait([
+      _translateTitle(targetLang),
+      _translateDescription(targetLang),
+    ]);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final displayTitle = _showTitleTranslation && _translatedTitle != null
+        ? _translatedTitle!
+        : widget.policy.title;
+    final displayDescription =
+        _showDescriptionTranslation && _translatedDescription != null
+            ? _translatedDescription!
+            : widget.policy.description;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, 8),
+          ),
+          BoxShadow(
+            color: AppTheme.primary.withValues(alpha: 0.03),
+            blurRadius: 40,
+            offset: const Offset(0, 16),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title Section
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Text(
+                    displayTitle,
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          height: 1.25,
+                          letterSpacing: 0,
+                        ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Translation button
+                PopupMenuButton<String>(
+                  enabled: !_loadingTitle && !_loadingDescription,
+                  icon: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: (_translatedTitle != null ||
+                              _translatedDescription != null)
+                          ? AppTheme.primary.withValues(alpha: 0.1)
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: (_loadingTitle || _loadingDescription)
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            Icons.translate_rounded,
+                            size: 20,
+                            color: (_translatedTitle != null ||
+                                    _translatedDescription != null)
+                                ? AppTheme.primary
+                                : Colors.grey.shade600,
+                          ),
+                  ),
+                  tooltip: l10n.t('translate'),
+                  itemBuilder: (context) {
+                    final items = <PopupMenuEntry<String>>[];
+
+                    if (_translatedTitle != null ||
+                        _translatedDescription != null) {
+                      items.add(
+                        PopupMenuItem<String>(
+                          value: 'toggle',
+                          child: Row(
+                            children: [
+                              Icon(
+                                (_showTitleTranslation ||
+                                        _showDescriptionTranslation)
+                                    ? Icons.visibility_off_rounded
+                                    : Icons.visibility_rounded,
+                                size: 20,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                (_showTitleTranslation ||
+                                        _showDescriptionTranslation)
+                                    ? l10n.t('show_original')
+                                    : l10n.t('show_translation'),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                      items.add(const PopupMenuDivider());
+                    }
+
+                    items.add(
+                      PopupMenuItem<String>(
+                        enabled: false,
+                        child: Text(
+                          l10n.t('select_language'),
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w800,
+                            fontSize: 12,
+                            color: AppTheme.mutedText,
+                          ),
+                        ),
+                      ),
+                    );
+
+                    for (final locale in AppLocalizations.supportedLocales) {
+                      final langCode = locale.languageCode;
+                      final isSelected = _targetLanguage == langCode;
+                      items.add(
+                        PopupMenuItem<String>(
+                          value: langCode,
+                          child: Row(
+                            children: [
+                              Icon(
+                                isSelected
+                                    ? Icons.check_circle_rounded
+                                    : Icons.language_rounded,
+                                size: 20,
+                                color: isSelected ? AppTheme.primary : null,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                AppLocalizations.languageName(langCode),
+                                style: TextStyle(
+                                  fontWeight: isSelected
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                  color: isSelected ? AppTheme.primary : null,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }
+
+                    return items;
+                  },
+                  onSelected: (value) {
+                    if (value == 'toggle') {
+                      setState(() {
+                        _showTitleTranslation = !_showTitleTranslation;
+                        _showDescriptionTranslation =
+                            !_showDescriptionTranslation;
+                      });
+                    } else if (value != 'en') {
+                      _translateBoth(value);
+                    }
+                  },
+                ),
+                const SizedBox(width: 8),
+                StatusPill(status: widget.policy.status),
+              ],
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _error!,
+                style: const TextStyle(
+                  color: Colors.redAccent,
+                  fontSize: 12,
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+
+            // Info Chips
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                _InfoChip(
+                  icon: Icons.tag_rounded,
+                  label: widget.policy.policyCode,
+                ),
+                if (widget.policy.averageRating != null)
+                  _InfoChip(
+                    icon: Icons.star_rounded,
+                    label:
+                        '${widget.policy.averageRating!.toStringAsFixed(1)} avg',
+                    iconColor: Colors.amber.shade600,
+                    backgroundColor: Colors.amber.shade50,
+                    textColor: Colors.amber.shade900,
+                  ),
+                _InfoChip(
+                  icon: Icons.how_to_vote_rounded,
+                  label: '${widget.policy.totalVotes} votes',
+                ),
+                if (widget.policy.topics != null &&
+                    widget.policy.topics!.isNotEmpty)
+                  ...widget.policy.topics!.take(2).map(
+                        (topic) => _InfoChip(
+                          icon: Icons.label_outline_rounded,
+                          label: topic,
+                        ),
+                      ),
+              ],
+            ),
+
+            const SizedBox(height: 24),
+            const Divider(height: 1),
+            const SizedBox(height: 24),
+
+            // About Section
+            Text(
+              l10n.t('policy.about_title'),
+              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0,
+                  ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              displayDescription,
+              style: const TextStyle(
+                fontSize: 15,
+                height: 1.6,
+                color: AppTheme.text,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DescriptionCard extends StatefulWidget {
   const _DescriptionCard({required this.policy});
 
   final Policy policy;
 
   @override
+  State<_DescriptionCard> createState() => _DescriptionCardState();
+}
+
+class _DescriptionCardState extends State<_DescriptionCard> {
+  String? _translatedDescription;
+  String? _targetLanguage;
+  bool _loading = false;
+  bool _showTranslation = false;
+  String? _error;
+
+  Future<void> _translate(String targetLang) async {
+    if (_loading) return;
+
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+
+    try {
+      final service = serviceLocator<TranslationService>();
+      final translated = await service.translate(
+        text: widget.policy.description,
+        sourceLang: 'en',
+        targetLang: targetLang,
+      );
+
+      if (!mounted) return;
+      setState(() {
+        _translatedDescription = translated;
+        _targetLanguage = targetLang;
+        _showTranslation = true;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = AppLocalizations.of(context).t('translation_failed');
+      });
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _showLanguageSelector() async {
+    final l10n = AppLocalizations.of(context);
+    final selected = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                l10n.t('select_language'),
+                style: Theme.of(context)
+                    .textTheme
+                    .titleLarge
+                    ?.copyWith(fontWeight: FontWeight.w800),
+              ),
+              const SizedBox(height: 16),
+              ...AppLocalizations.supportedLocales.map((locale) {
+                final langCode = locale.languageCode;
+                final isSelected = _targetLanguage == langCode;
+                return ListTile(
+                  leading: Icon(
+                    isSelected
+                        ? Icons.check_circle_rounded
+                        : Icons.translate_rounded,
+                    color: isSelected ? AppTheme.primary : null,
+                  ),
+                  title: Text(
+                    AppLocalizations.languageName(langCode),
+                    style: TextStyle(
+                      fontWeight:
+                          isSelected ? FontWeight.w800 : FontWeight.w600,
+                      color: isSelected ? AppTheme.primary : null,
+                    ),
+                  ),
+                  onTap: () => Navigator.of(context).pop(langCode),
+                );
+              }),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    if (selected != null && selected != 'en') {
+      await _translate(selected);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+    final displayDescription =
+        _showTranslation && _translatedDescription != null
+            ? _translatedDescription!
+            : widget.policy.description;
+
     return AppCard(
       margin: EdgeInsets.zero,
       padding: const EdgeInsets.all(24),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'About this policy',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -0.3,
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  l10n.t('policy.about_title'),
+                  style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0,
+                      ),
                 ),
+              ),
+              // Translation button
+              PopupMenuButton<String>(
+                enabled: !_loading,
+                icon: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: _translatedDescription != null
+                        ? AppTheme.primary.withValues(alpha: 0.1)
+                        : Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: _loading
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : Icon(
+                          Icons.translate_rounded,
+                          size: 18,
+                          color: _translatedDescription != null
+                              ? AppTheme.primary
+                              : Colors.grey.shade600,
+                        ),
+                ),
+                tooltip: AppLocalizations.of(context).t('translate'),
+                itemBuilder: (context) {
+                  final items = <PopupMenuEntry<String>>[];
+
+                  if (_translatedDescription != null) {
+                    items.add(
+                      PopupMenuItem<String>(
+                        value: 'toggle',
+                        child: Row(
+                          children: [
+                            Icon(
+                              _showTranslation
+                                  ? Icons.visibility_off_rounded
+                                  : Icons.visibility_rounded,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              _showTranslation
+                                  ? AppLocalizations.of(context)
+                                      .t('show_original')
+                                  : AppLocalizations.of(context)
+                                      .t('show_translation'),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                    items.add(const PopupMenuDivider());
+                  }
+
+                  items.add(
+                    PopupMenuItem<String>(
+                      enabled: false,
+                      child: Text(
+                        AppLocalizations.of(context).t('select_language'),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          color: AppTheme.mutedText,
+                        ),
+                      ),
+                    ),
+                  );
+
+                  for (final locale in AppLocalizations.supportedLocales) {
+                    final langCode = locale.languageCode;
+                    final isSelected = _targetLanguage == langCode;
+                    items.add(
+                      PopupMenuItem<String>(
+                        value: langCode,
+                        child: Row(
+                          children: [
+                            Icon(
+                              isSelected
+                                  ? Icons.check_circle_rounded
+                                  : Icons.language_rounded,
+                              size: 20,
+                              color: isSelected ? AppTheme.primary : null,
+                            ),
+                            const SizedBox(width: 12),
+                            Text(
+                              AppLocalizations.languageName(langCode),
+                              style: TextStyle(
+                                fontWeight: isSelected
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                                color: isSelected ? AppTheme.primary : null,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+
+                  return items;
+                },
+                onSelected: (value) {
+                  if (value == 'toggle') {
+                    setState(() => _showTranslation = !_showTranslation);
+                  } else if (value != 'en') {
+                    _translate(value);
+                  }
+                },
+              ),
+            ],
           ),
           const SizedBox(height: 12),
           Text(
-            policy.description,
-            style: const TextStyle(
-              color: AppTheme.text,
+            displayDescription,
+            style: TextStyle(
+              color: Theme.of(context).textTheme.bodyMedium?.color,
               height: 1.6,
               fontSize: 15,
             ),
           ),
+          if (_error != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              _error!,
+              style: const TextStyle(
+                color: Colors.redAccent,
+                fontSize: 12,
+              ),
+            ),
+          ],
           const SizedBox(height: 24),
           Container(
             padding: const EdgeInsets.all(20),
@@ -279,21 +1163,21 @@ class _DescriptionCard extends StatelessWidget {
                 _DetailRow(
                   icon: Icons.map_outlined,
                   label: 'Regions',
-                  value: policy.targetRegions.isEmpty
+                  value: widget.policy.targetRegions.isEmpty
                       ? 'Not specified'
-                      : policy.targetRegions.join(', '),
+                      : widget.policy.targetRegions.join(', '),
                 ),
                 const SizedBox(height: 12),
                 _DetailRow(
                   icon: Icons.event_available_outlined,
                   label: 'Starts',
-                  value: DateFormatters.short(policy.startDate),
+                  value: DateFormatters.short(widget.policy.startDate),
                 ),
                 const SizedBox(height: 12),
                 _DetailRow(
                   icon: Icons.event_busy_outlined,
                   label: 'Ends',
-                  value: DateFormatters.short(policy.endDate),
+                  value: DateFormatters.short(widget.policy.endDate),
                 ),
               ],
             ),
@@ -361,40 +1245,43 @@ class _VotingCardState extends State<_VotingCard> {
   }
 
   String get _pollTypeLabel {
+    final l10n = AppLocalizations.of(context);
     switch (widget.policy.pollType) {
       case 'binary':
-        return 'Vote Yes or No';
+        return l10n.t('vote.submit');
       case 'multipleChoice':
-        return 'Select Options';
+        return l10n.t('vote.submit');
       case 'likert':
-        return 'Rate on Scale';
+        return l10n.t('vote.submit');
       case 'approval':
-        return 'Approve or Reject';
+        return l10n.t('vote.submit');
       case 'rating':
-        return 'Rate Policy';
+        return l10n.t('vote.submit');
       case 'rankedChoice':
-        return 'Rank Choices';
+        return l10n.t('vote.submit');
       default:
-        return 'Vote on Policy';
+        return l10n.t('vote.submit');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final policy = widget.policy;
-    final title = policy.canVote ? 'Ready for your feedback' : 'Voting paused';
-    final message = policy.canVote
-        ? 'Submit one vote for this policy. Comments belong in the Discussion tab.'
-        : 'This policy is visible, but voting is temporarily paused.';
+    final title =
+        policy.canVote ? l10n.t('vote.submit') : l10n.t('policy.status.closed');
+    final message =
+        policy.canVote ? l10n.t('vote.submit') : l10n.t('policy.status.closed');
 
     return BlocConsumer<VoteCubit, VoteState>(
       listener: (context, state) {
+        final l10n = AppLocalizations.of(context);
         if (state.status == RequestStatus.success) {
           setState(() => _submitted = true);
           final message = state.message ??
               (state.alreadyVoted
-                  ? 'You have already voted on this policy.'
-                  : 'Vote submitted successfully!');
+                  ? l10n.t('vote.already_voted')
+                  : l10n.t('vote.success'));
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(message),
@@ -410,7 +1297,7 @@ class _VotingCardState extends State<_VotingCard> {
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(
-                state.message ?? 'Failed to submit vote. Please try again.',
+                state.message ?? l10n.t('vote.error'),
               ),
               backgroundColor: Colors.redAccent,
             ),
@@ -418,12 +1305,15 @@ class _VotingCardState extends State<_VotingCard> {
         }
       },
       builder: (context, voteState) {
+        final l10n = AppLocalizations.of(context);
         return BlocBuilder<HistoryCubit, HistoryState>(
           builder: (context, historyState) {
+            final historyReady = historyState.status == RequestStatus.success;
             final alreadyVoted = _submitted ||
                 historyState.history.any((item) => item.policyId == policy.id);
             final isLoading = voteState.status == RequestStatus.loading;
-            final canVote = policy.canVote && !alreadyVoted;
+            final checkingHistory = policy.canVote && !historyReady;
+            final canVote = policy.canVote && historyReady && !alreadyVoted;
 
             return AppCard(
               margin: EdgeInsets.zero,
@@ -437,24 +1327,32 @@ class _VotingCardState extends State<_VotingCard> {
                       Icon(
                         alreadyVoted
                             ? Icons.check_circle_rounded
-                            : policy.canVote
-                                ? Icons.feedback_rounded
-                                : Icons.pause_circle_filled_rounded,
+                            : checkingHistory
+                                ? Icons.manage_search_rounded
+                                : policy.canVote
+                                    ? Icons.feedback_rounded
+                                    : Icons.pause_circle_filled_rounded,
                         color: alreadyVoted
                             ? Colors.green.shade600
-                            : policy.canVote
-                                ? AppTheme.primary
-                                : AppTheme.mutedText,
+                            : checkingHistory
+                                ? Colors.orange.shade700
+                                : policy.canVote
+                                    ? AppTheme.primary
+                                    : AppTheme.mutedText,
                         size: 24,
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
-                          alreadyVoted ? 'Vote submitted' : title,
+                          alreadyVoted
+                              ? l10n.t('vote.already_voted')
+                              : checkingHistory
+                                  ? l10n.t('vote.checking_history')
+                                  : title,
                           style:
                               Theme.of(context).textTheme.titleLarge?.copyWith(
                                     fontWeight: FontWeight.w800,
-                                    letterSpacing: -0.3,
+                                    letterSpacing: 0,
                                   ),
                         ),
                       ),
@@ -463,8 +1361,10 @@ class _VotingCardState extends State<_VotingCard> {
                   const SizedBox(height: 10),
                   Text(
                     alreadyVoted
-                        ? 'You have already voted on this policy.'
-                        : message,
+                        ? l10n.t('vote.already_voted')
+                        : checkingHistory
+                            ? l10n.t('vote.checking_history_message')
+                            : message,
                     style: TextStyle(
                       color: AppTheme.text.withValues(alpha: 0.7),
                       height: 1.5,
@@ -484,11 +1384,17 @@ class _VotingCardState extends State<_VotingCard> {
                   ],
                   const SizedBox(height: 24),
                   AppButton(
-                    label: alreadyVoted ? 'Already Voted' : 'Submit Vote',
+                    label: alreadyVoted
+                        ? l10n.t('vote.already_voted')
+                        : checkingHistory
+                            ? l10n.t('vote.checking_history')
+                            : l10n.t('vote.submit'),
                     icon: alreadyVoted
                         ? Icons.check_circle_outline_rounded
-                        : Icons.send_rounded,
-                    loading: isLoading,
+                        : checkingHistory
+                            ? Icons.manage_search_rounded
+                            : Icons.send_rounded,
+                    loading: isLoading || checkingHistory,
                     onPressed: canVote && _canSubmit && !isLoading
                         ? () => context.read<VoteCubit>().submitVote(
                               policyId: policy.id,

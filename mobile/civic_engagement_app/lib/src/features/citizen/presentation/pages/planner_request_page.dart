@@ -66,7 +66,7 @@ class _HeaderCard extends StatelessWidget {
                   'Apply to become a policy planner',
                   style: theme.textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w900,
-                    letterSpacing: -0.3,
+                    letterSpacing: 0,
                   ),
                 ),
                 const SizedBox(height: 8),

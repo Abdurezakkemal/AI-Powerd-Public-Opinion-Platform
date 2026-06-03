@@ -1,15 +1,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
-import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/services/location_service.dart';
 import '../../domain/entities/user_demographics.dart';
 import '../cubit/auth_cubit.dart';
 
-enum _AuthMode { login, register, verify, reset }
+enum AuthScreen {
+  login,
+  register,
+  forgotPassword,
+  verifyOtp,
+  createNewPassword
+}
 
 class AuthPage extends StatefulWidget {
   const AuthPage({
@@ -26,7 +32,7 @@ class AuthPage extends StatefulWidget {
 }
 
 class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
-  late _AuthMode _mode;
+  late AuthScreen _currentScreen;
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -36,11 +42,12 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
   final _otpController = TextEditingController();
   final _resetTokenController = TextEditingController();
   final _newPasswordController = TextEditingController();
+  final _confirmPasswordController = TextEditingController();
   final _locationService = LocationService();
   bool _isDetectingLocation = false;
   bool _hasRequestedInitialLocation = false;
 
-  // New: Demographic fields
+  // Demographic fields
   String? _selectedAgeRange;
   String? _selectedGender;
   String? _selectedOccupation;
@@ -50,8 +57,9 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _mode = widget.initialRegister ? _AuthMode.register : _AuthMode.login;
-    if (_mode == _AuthMode.register) {
+    _currentScreen =
+        widget.initialRegister ? AuthScreen.register : AuthScreen.login;
+    if (_currentScreen == AuthScreen.register) {
       _hasRequestedInitialLocation = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _detectLocation();
@@ -70,13 +78,14 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
     _otpController.dispose();
     _resetTokenController.dispose();
     _newPasswordController.dispose();
+    _confirmPasswordController.dispose();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed &&
-        _mode == _AuthMode.register &&
+        _currentScreen == AuthScreen.register &&
         _regionController.text.trim().isEmpty) {
       _detectLocation();
     }
@@ -88,25 +97,34 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
     final region = await _locationService.getCurrentRegion();
     if (region != null && mounted) {
       _regionController.text = region;
+      final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('✅ Location detected: $region'),
+          content: Text('${l10n.t('register.location_detected')}$region'),
           backgroundColor: Colors.green,
         ),
       );
     } else if (mounted) {
       _regionController.text = '';
+      final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Please enable location services. Your region will be detected automatically when you return.'),
+        SnackBar(
+          content: Text(l10n.t('register.location_enable')),
           backgroundColor: Colors.orange,
-          duration: Duration(seconds: 5),
+          duration: const Duration(seconds: 5),
         ),
       );
     }
     if (mounted) {
       setState(() => _isDetectingLocation = false);
+    }
+  }
+
+  void _navigateToScreen(AuthScreen screen) {
+    setState(() => _currentScreen = screen);
+    if (screen == AuthScreen.register && !_hasRequestedInitialLocation) {
+      _hasRequestedInitialLocation = true;
+      _detectLocation();
     }
   }
 
@@ -116,114 +134,84 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
       listener: (context, state) {
         if (state.status == AuthStatus.otpPending) {
           _emailController.text = state.email ?? _emailController.text;
-          setState(() => _mode = _AuthMode.verify);
+          _navigateToScreen(AuthScreen.verifyOtp);
         }
         if (state.status == AuthStatus.passwordResetSuccess) {
           _resetTokenController.clear();
           _newPasswordController.clear();
+          _confirmPasswordController.clear();
           _passwordController.clear();
-          setState(() => _mode = _AuthMode.login);
+          _navigateToScreen(AuthScreen.login);
         }
         if (state.message != null &&
             state.status != AuthStatus.authenticated &&
             state.status != AuthStatus.loading) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(SnackBar(content: Text(state.message!)));
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(state.message!)),
+          );
         }
       },
       builder: (context, state) {
         return Scaffold(
+          backgroundColor: AppTheme.background,
           body: SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(20, 22, 20, 28),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  if (widget.onBack != null)
-                    Align(
-                      alignment: Alignment.centerLeft,
+            child: Stack(
+              children: [
+                const _AuthBackdrop(),
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    // Use slide transition for login/register/forgot password
+                    // Use fade transition for OTP and create new password
+                    if (_currentScreen == AuthScreen.verifyOtp ||
+                        _currentScreen == AuthScreen.createNewPassword) {
+                      return FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      );
+                    }
+
+                    return SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0.3, 0),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: _buildCurrentScreen(state),
+                ),
+                // Floating back button
+                if (widget.onBack != null)
+                  Positioned(
+                    top: 16,
+                    left: 16,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.1),
+                            blurRadius: 8,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
                       child: IconButton(
-                        icon: const Icon(Icons.arrow_back_rounded),
+                        icon: const Icon(Icons.arrow_back_ios_new_rounded),
                         onPressed: widget.onBack,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
+                        color: AppTheme.text,
+                        iconSize: 20,
                       ),
                     ),
-                  if (widget.onBack != null) const SizedBox(height: 16),
-                  const _AuthHeader(),
-                  const SizedBox(height: 26),
-                  _ModeSelector(
-                    mode: _mode,
-                    onChanged: (mode) {
-                      setState(() => _mode = mode);
-                      if (mode == _AuthMode.register &&
-                          !_hasRequestedInitialLocation) {
-                        _hasRequestedInitialLocation = true;
-                        _detectLocation();
-                      }
-                    },
                   ),
-                  const SizedBox(height: 16),
-                  AppCard(
-                    margin: EdgeInsets.zero,
-                    padding: const EdgeInsets.all(18),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 180),
-                      child: switch (_mode) {
-                        _AuthMode.login => _LoginForm(
-                            key: const ValueKey('login'),
-                            emailController: _emailController,
-                            passwordController: _passwordController,
-                            captchaController: _captchaController,
-                            loading: state.isBusy,
-                            onSubmit: _login,
-                          ),
-                        _AuthMode.register => _RegisterForm(
-                            key: const ValueKey('register'),
-                            emailController: _emailController,
-                            passwordController: _passwordController,
-                            phoneController: _phoneController,
-                            regionController: _regionController,
-                            captchaController: _captchaController,
-                            selectedAgeRange: _selectedAgeRange,
-                            selectedGender: _selectedGender,
-                            selectedOccupation: _selectedOccupation,
-                            selectedEducation: _selectedEducation,
-                            onAgeRangeChanged: (value) =>
-                                setState(() => _selectedAgeRange = value),
-                            onGenderChanged: (value) =>
-                                setState(() => _selectedGender = value),
-                            onOccupationChanged: (value) =>
-                                setState(() => _selectedOccupation = value),
-                            onEducationChanged: (value) =>
-                                setState(() => _selectedEducation = value),
-                            loading: state.isBusy,
-                            isDetectingLocation: _isDetectingLocation,
-                            onSubmit: _register,
-                          ),
-                        _AuthMode.verify => _VerifyForm(
-                            key: const ValueKey('verify'),
-                            emailController: _emailController,
-                            otpController: _otpController,
-                            loading: state.isBusy,
-                            onVerify: _verifyOtp,
-                            onResend: _sendOtp,
-                          ),
-                        _AuthMode.reset => _ResetForm(
-                            key: const ValueKey('reset'),
-                            emailController: _emailController,
-                            tokenController: _resetTokenController,
-                            newPasswordController: _newPasswordController,
-                            loading: state.isBusy,
-                            onRequest: _forgotPassword,
-                            onReset: _resetPassword,
-                          ),
-                      },
-                    ),
-                  ),
-                ],
-              ),
+              ],
             ),
           ),
         );
@@ -231,53 +219,122 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
     );
   }
 
+  Widget _buildCurrentScreen(AuthState state) {
+    switch (_currentScreen) {
+      case AuthScreen.login:
+        return LoginScreen(
+          key: const ValueKey('login'),
+          emailController: _emailController,
+          passwordController: _passwordController,
+          captchaController: _captchaController,
+          loading: state.isBusy,
+          onLogin: _login,
+          onNavigateToRegister: () => _navigateToScreen(AuthScreen.register),
+          onNavigateToForgotPassword: () =>
+              _navigateToScreen(AuthScreen.forgotPassword),
+          onBack: widget.onBack,
+        );
+      case AuthScreen.register:
+        return RegisterScreen(
+          key: const ValueKey('register'),
+          emailController: _emailController,
+          passwordController: _passwordController,
+          phoneController: _phoneController,
+          regionController: _regionController,
+          captchaController: _captchaController,
+          selectedAgeRange: _selectedAgeRange,
+          selectedGender: _selectedGender,
+          selectedOccupation: _selectedOccupation,
+          selectedEducation: _selectedEducation,
+          onAgeRangeChanged: (value) =>
+              setState(() => _selectedAgeRange = value),
+          onGenderChanged: (value) => setState(() => _selectedGender = value),
+          onOccupationChanged: (value) =>
+              setState(() => _selectedOccupation = value),
+          onEducationChanged: (value) =>
+              setState(() => _selectedEducation = value),
+          loading: state.isBusy,
+          isDetectingLocation: _isDetectingLocation,
+          onRegister: _register,
+          onNavigateToLogin: () => _navigateToScreen(AuthScreen.login),
+          onBack: widget.onBack,
+        );
+      case AuthScreen.forgotPassword:
+        return ForgotPasswordScreen(
+          key: const ValueKey('forgotPassword'),
+          emailController: _emailController,
+          loading: state.isBusy,
+          onContinue: _forgotPassword,
+          onBack: () => _navigateToScreen(AuthScreen.login),
+        );
+      case AuthScreen.verifyOtp:
+        return VerifyOtpScreen(
+          key: const ValueKey('verifyOtp'),
+          emailController: _emailController,
+          otpController: _otpController,
+          loading: state.isBusy,
+          onVerify: _verifyOtp,
+          onResend: _sendOtp,
+          onBack: () => _navigateToScreen(AuthScreen.register),
+        );
+      case AuthScreen.createNewPassword:
+        return CreateNewPasswordScreen(
+          key: const ValueKey('createNewPassword'),
+          tokenController: _resetTokenController,
+          newPasswordController: _newPasswordController,
+          confirmPasswordController: _confirmPasswordController,
+          loading: state.isBusy,
+          onContinue: _resetPassword,
+          onBack: () => _navigateToScreen(AuthScreen.forgotPassword),
+        );
+    }
+  }
+
   void _login() {
-    if (!_ensure(_emailController, 'Email is required') ||
-        !_ensure(_passwordController, 'Password is required')) {
+    final l10n = AppLocalizations.of(context);
+    if (!_ensure(_emailController, l10n.t('login.email_required')) ||
+        !_ensure(_passwordController, l10n.t('login.password_required'))) {
       return;
     }
     context.read<AuthCubit>().login(
           email: _emailController.text,
           password: _passwordController.text,
-          captchaToken: _captchaController.text,
         );
   }
 
   void _register() {
-    if (!_ensure(_emailController, 'Email is required') ||
-        !_ensure(_passwordController, 'Password is required') ||
-        !_ensure(_phoneController, 'Phone is required')) {
+    final l10n = AppLocalizations.of(context);
+    if (!_ensure(_emailController, l10n.t('register.email_required')) ||
+        !_ensure(_passwordController, l10n.t('register.password_required')) ||
+        !_ensure(_phoneController, l10n.t('register.phone_required'))) {
       return;
     }
 
-    // Strict region validation - must be detected via GPS
     if (_regionController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-              'Location is required. Please enable GPS so your region can be detected automatically.'),
+        SnackBar(
+          content: Text(l10n.t('register.location_required')),
           backgroundColor: Colors.red,
-          duration: Duration(seconds: 4),
+          duration: const Duration(seconds: 4),
         ),
       );
       return;
     }
 
-    // Validate demographic fields
     if (_selectedAgeRange == null) {
-      _showError('Please select your age range');
+      _showError(l10n.t('register.age_required'));
       return;
     }
     if (_selectedGender == null) {
-      _showError('Please select your gender');
+      _showError(l10n.t('register.gender_required'));
       return;
     }
     if (_selectedOccupation == null) {
-      _showError('Please select your occupation');
+      _showError(l10n.t('register.occupation_required'));
       return;
     }
     if (_selectedEducation == null) {
-      _showError('Please select your education level');
+      _showError(l10n.t('register.education_required'));
       return;
     }
 
@@ -286,7 +343,6 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
           password: _passwordController.text,
           phone: _phoneController.text,
           region: _regionController.text,
-          captchaToken: _captchaController.text,
           demographics: UserDemographics(
             ageRange: _selectedAgeRange!,
             gender: _selectedGender!,
@@ -297,8 +353,9 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
   }
 
   void _verifyOtp() {
-    if (!_ensure(_emailController, 'Email is required') ||
-        !_ensure(_otpController, 'OTP code is required')) {
+    final l10n = AppLocalizations.of(context);
+    if (!_ensure(_emailController, l10n.t('verify.email_required')) ||
+        !_ensure(_otpController, l10n.t('verify.otp_required'))) {
       return;
     }
     context.read<AuthCubit>().verifyOtp(
@@ -308,20 +365,31 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
   }
 
   void _sendOtp() {
-    if (!_ensure(_emailController, 'Email is required')) return;
+    final l10n = AppLocalizations.of(context);
+    if (!_ensure(_emailController, l10n.t('verify.email_required'))) return;
     context.read<AuthCubit>().sendOtp(_emailController.text);
   }
 
   void _forgotPassword() {
-    if (!_ensure(_emailController, 'Email is required')) return;
+    final l10n = AppLocalizations.of(context);
+    if (!_ensure(_emailController, l10n.t('reset.email_required'))) return;
     context.read<AuthCubit>().forgotPassword(_emailController.text);
+    // Navigate to create new password screen after requesting reset
+    _navigateToScreen(AuthScreen.createNewPassword);
   }
 
   void _resetPassword() {
-    if (!_ensure(_resetTokenController, 'Reset token is required') ||
-        !_ensure(_newPasswordController, 'New password is required')) {
+    final l10n = AppLocalizations.of(context);
+    if (!_ensure(_resetTokenController, l10n.t('reset.token_required')) ||
+        !_ensure(_newPasswordController, l10n.t('reset.password_required'))) {
       return;
     }
+
+    if (_newPasswordController.text != _confirmPasswordController.text) {
+      _showError('Passwords do not match');
+      return;
+    }
+
     context.read<AuthCubit>().resetPassword(
           token: _resetTokenController.text,
           newPassword: _newPasswordController.text,
@@ -330,9 +398,9 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
 
   bool _ensure(TextEditingController controller, String message) {
     if (controller.text.trim().isNotEmpty) return true;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
     return false;
   }
 
@@ -346,103 +414,133 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
   }
 }
 
-class _AuthHeader extends StatelessWidget {
-  const _AuthHeader();
+class _AuthBackdrop extends StatelessWidget {
+  const _AuthBackdrop();
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
+    return Stack(
       children: [
-        Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primary.withValues(alpha: 0.25),
-                blurRadius: 24,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(24),
-            child: Image.asset('assets/logo.png', fit: BoxFit.cover),
+        Positioned(
+          top: -120,
+          right: -140,
+          child: Container(
+            width: 320,
+            height: 320,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: AppTheme.primary.withValues(alpha: 0.08),
+            ),
           ),
         ),
-        const SizedBox(height: 24),
-        Text(
-          'Civic Voice',
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                fontWeight: FontWeight.w900,
-                color: AppTheme.text,
-                letterSpacing: -0.5,
-              ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Review active public policies, vote once, and track your feedback.',
-          textAlign: TextAlign.center,
-          style:
-              TextStyle(color: AppTheme.mutedText, fontSize: 16, height: 1.4),
+        Positioned(
+          bottom: -150,
+          left: -120,
+          child: Container(
+            width: 360,
+            height: 360,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: const Color(0xFF2F80ED).withValues(alpha: 0.06),
+            ),
+          ),
         ),
       ],
     );
   }
 }
 
-class _ModeSelector extends StatelessWidget {
-  const _ModeSelector({required this.mode, required this.onChanged});
+// Auth Screen Container Widget
+class _AuthScreenContainer extends StatelessWidget {
+  const _AuthScreenContainer({
+    required this.child,
+    this.onBack,
+  });
 
-  final _AuthMode mode;
-  final ValueChanged<_AuthMode> onChanged;
+  final Widget child;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: Wrap(
-        alignment: WrapAlignment.spaceBetween,
-        runSpacing: 10,
-        children: [
-          _chip('Login', _AuthMode.login),
-          _chip('Register', _AuthMode.register),
-          _chip('Reset Password', _AuthMode.reset),
-        ],
-      ),
-    );
-  }
-
-  Widget _chip(String label, _AuthMode value) {
-    final selected = mode == value;
-    return ChoiceChip(
-      label: Text(label),
-      selected: selected,
-      onSelected: (_) => onChanged(value),
-      selectedColor: AppTheme.primary.withValues(alpha: 0.14),
-      labelStyle: TextStyle(
-        color: selected ? AppTheme.primary : AppTheme.mutedText,
-        fontWeight: FontWeight.w800,
-      ),
-      side: BorderSide(
-        color: selected ? AppTheme.primary : const Color(0xFFE5EDF3),
-      ),
-      showCheckmark: false,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(20, 72, 20, 28),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight - 100),
+            child: Center(
+              child: Container(
+                width: double.infinity,
+                constraints: const BoxConstraints(maxWidth: double.infinity),
+                padding: const EdgeInsets.fromLTRB(22, 26, 22, 26),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(28),
+                  border: Border.all(color: Colors.white, width: 1),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.07),
+                      blurRadius: 26,
+                      offset: const Offset(0, 14),
+                    ),
+                    BoxShadow(
+                      color: AppTheme.primary.withValues(alpha: 0.05),
+                      blurRadius: 42,
+                      offset: const Offset(0, 22),
+                    ),
+                  ],
+                ),
+                child: child,
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
-class _LoginForm extends StatelessWidget {
-  const _LoginForm({
+// Auth Logo Widget
+class _AuthLogo extends StatelessWidget {
+  const _AuthLogo();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 80,
+        height: 80,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: AppTheme.primary.withValues(alpha: 0.25),
+              blurRadius: 20,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Image.asset('assets/logo.png', fit: BoxFit.cover),
+        ),
+      ),
+    );
+  }
+}
+
+// Login Screen Widget
+class LoginScreen extends StatelessWidget {
+  const LoginScreen({
     required this.emailController,
     required this.passwordController,
     required this.captchaController,
     required this.loading,
-    required this.onSubmit,
+    required this.onLogin,
+    required this.onNavigateToRegister,
+    required this.onNavigateToForgotPassword,
+    this.onBack,
     super.key,
   });
 
@@ -450,48 +548,119 @@ class _LoginForm extends StatelessWidget {
   final TextEditingController passwordController;
   final TextEditingController captchaController;
   final bool loading;
-  final VoidCallback onSubmit;
+  final VoidCallback onLogin;
+  final VoidCallback onNavigateToRegister;
+  final VoidCallback onNavigateToForgotPassword;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      key: key,
-      children: [
-        AppTextField(
-          controller: emailController,
-          label: 'Email',
-          icon: Icons.mail_outline_rounded,
-          keyboardType: TextInputType.emailAddress,
-          textInputAction: TextInputAction.next,
-        ),
-        const SizedBox(height: 12),
-        AppTextField(
-          controller: passwordController,
-          label: 'Password',
-          icon: Icons.lock_outline_rounded,
-          obscureText: true,
-        ),
-        const SizedBox(height: 12),
-        AppTextField(
-          controller: captchaController,
-          label: 'CAPTCHA token',
-          hint: 'Required only when enabled by the server',
-          icon: Icons.security_rounded,
-        ),
-        const SizedBox(height: 18),
-        AppButton(
-          label: 'Login',
-          icon: Icons.login_rounded,
-          loading: loading,
-          onPressed: onSubmit,
-        ),
-      ],
+    final l10n = AppLocalizations.of(context);
+
+    return _AuthScreenContainer(
+      onBack: onBack,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 20),
+          const _AuthLogo(),
+          const SizedBox(height: 24),
+          Text(
+            l10n.t('auth.app_name'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 28,
+              fontWeight: FontWeight.w900,
+              color: AppTheme.text,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            l10n.t('auth.tagline'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.mutedText,
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 32),
+          Text(
+            l10n.t('auth.login'),
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.text,
+              letterSpacing: 0,
+            ),
+          ),
+          const SizedBox(height: 24),
+          AppTextField(
+            controller: emailController,
+            label: l10n.t('login.email'),
+            icon: Icons.mail_outline_rounded,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: passwordController,
+            label: l10n.t('login.password'),
+            icon: Icons.lock_outline_rounded,
+            obscureText: true,
+            textInputAction: TextInputAction.done,
+          ),
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: onNavigateToForgotPassword,
+              child: Text(
+                l10n.t('auth.forgot_password'),
+                style: const TextStyle(
+                  color: AppTheme.primary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          AppButton(
+            label: l10n.t('login.button'),
+            icon: Icons.login_rounded,
+            loading: loading,
+            onPressed: onLogin,
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Text(
+                l10n.t('auth.no_account'),
+                style: const TextStyle(color: AppTheme.mutedText),
+              ),
+              TextButton(
+                onPressed: onNavigateToRegister,
+                child: Text(
+                  l10n.t('auth.register'),
+                  style: const TextStyle(
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _RegisterForm extends StatelessWidget {
-  const _RegisterForm({
+// Register Screen Widget
+class RegisterScreen extends StatelessWidget {
+  const RegisterScreen({
     required this.emailController,
     required this.passwordController,
     required this.phoneController,
@@ -507,7 +676,9 @@ class _RegisterForm extends StatelessWidget {
     required this.onEducationChanged,
     required this.loading,
     required this.isDetectingLocation,
-    required this.onSubmit,
+    required this.onRegister,
+    required this.onNavigateToLogin,
+    this.onBack,
     super.key,
   });
 
@@ -526,197 +697,318 @@ class _RegisterForm extends StatelessWidget {
   final ValueChanged<String?> onEducationChanged;
   final bool loading;
   final bool isDetectingLocation;
-  final VoidCallback onSubmit;
+  final VoidCallback onRegister;
+  final VoidCallback onNavigateToLogin;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      key: key,
-      children: [
-        AppTextField(
-          controller: emailController,
-          label: 'Email',
-          icon: Icons.mail_outline_rounded,
-          keyboardType: TextInputType.emailAddress,
-        ),
-        const SizedBox(height: 12),
-        AppTextField(
-          controller: passwordController,
-          label: 'Password',
-          icon: Icons.lock_outline_rounded,
-          obscureText: true,
-        ),
-        const SizedBox(height: 12),
-        AppTextField(
-          controller: phoneController,
-          label: 'Phone',
-          hint: '+251912345678',
-          icon: Icons.phone_iphone_rounded,
-          keyboardType: TextInputType.phone,
-        ),
-        const SizedBox(height: 12),
-        AppTextField(
-          controller: captchaController,
-          label: 'CAPTCHA token',
-          hint: 'Required only when enabled by the server',
-          icon: Icons.security_rounded,
-        ),
-        const SizedBox(height: 12),
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: AppTheme.primary.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(
-              color: AppTheme.primary.withValues(alpha: 0.2),
+    final l10n = AppLocalizations.of(context);
+
+    return _AuthScreenContainer(
+      onBack: onBack,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 20),
+          const _AuthLogo(),
+          const SizedBox(height: 24),
+          Text(
+            l10n.t('auth.register'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.text,
+              letterSpacing: 0,
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.location_on,
-                    color: AppTheme.primary,
-                    size: 20,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Location Verification',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
+          const SizedBox(height: 24),
+          AppTextField(
+            controller: emailController,
+            label: l10n.t('register.email'),
+            icon: Icons.mail_outline_rounded,
+            keyboardType: TextInputType.emailAddress,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: passwordController,
+            label: l10n.t('register.password'),
+            icon: Icons.lock_outline_rounded,
+            obscureText: true,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: phoneController,
+            label: l10n.t('register.phone'),
+            hint: l10n.t('register.phone_hint'),
+            icon: Icons.phone_iphone_rounded,
+            keyboardType: TextInputType.phone,
+            textInputAction: TextInputAction.done,
+          ),
+          const SizedBox(height: 16),
+          // Location Section
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppTheme.primary.withValues(alpha: 0.05),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: AppTheme.primary.withValues(alpha: 0.2),
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(
+                      Icons.location_on,
                       color: AppTheme.primary,
+                      size: 20,
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                isDetectingLocation
-                    ? 'Detecting your region from GPS...'
-                    : 'For security, we verify your region using GPS automatically.',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: AppTheme.mutedText,
-                ),
-              ),
-              const SizedBox(height: 12),
-              Stack(
-                alignment: Alignment.centerRight,
-                children: [
-                  AppTextField(
-                    controller: regionController,
-                    label: 'Detected Region',
-                    icon: Icons.map_outlined,
-                    readOnly: true,
-                  ),
-                  if (isDetectingLocation)
-                    const Padding(
-                      padding: EdgeInsets.only(right: 14),
-                      child: SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppTheme.primary,
-                        ),
+                    const SizedBox(width: 8),
+                    Text(
+                      l10n.t('register.location_title'),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: AppTheme.primary,
                       ),
                     ),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        // Demographic Information Section
-        Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.blue.shade50,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.blue.shade200),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(Icons.person_outline,
-                      color: Colors.blue.shade700, size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Demographic Information',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade700,
-                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  isDetectingLocation
+                      ? l10n.t('register.location_detecting')
+                      : l10n.t('register.location_info'),
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppTheme.mutedText,
                   ),
-                ],
-              ),
-              const SizedBox(height: 8),
+                ),
+                const SizedBox(height: 12),
+                Stack(
+                  alignment: Alignment.centerRight,
+                  children: [
+                    AppTextField(
+                      controller: regionController,
+                      label: l10n.t('register.region'),
+                      icon: Icons.map_outlined,
+                      readOnly: true,
+                    ),
+                    if (isDetectingLocation)
+                      const Padding(
+                        padding: EdgeInsets.only(right: 14),
+                        child: SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppTheme.primary,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Demographics Section
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade50,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.blue.shade200),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(Icons.person_outline,
+                        color: Colors.blue.shade700, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      l10n.t('register.demographics_title'),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  l10n.t('register.demographics_info'),
+                  style:
+                      const TextStyle(fontSize: 12, color: AppTheme.mutedText),
+                ),
+                const SizedBox(height: 12),
+                _DemographicDropdown(
+                  label: l10n.t('register.age_range'),
+                  icon: Icons.cake_outlined,
+                  value: selectedAgeRange,
+                  items: AgeRange.all,
+                  getLabel: AgeRange.getLabel,
+                  onChanged: onAgeRangeChanged,
+                ),
+                const SizedBox(height: 12),
+                _DemographicDropdown(
+                  label: l10n.t('register.gender'),
+                  icon: Icons.wc_outlined,
+                  value: selectedGender,
+                  items: Gender.all,
+                  getLabel: Gender.getLabel,
+                  onChanged: onGenderChanged,
+                ),
+                const SizedBox(height: 12),
+                _DemographicDropdown(
+                  label: l10n.t('register.occupation'),
+                  icon: Icons.work_outline,
+                  value: selectedOccupation,
+                  items: Occupation.all,
+                  getLabel: Occupation.getLabel,
+                  onChanged: onOccupationChanged,
+                ),
+                const SizedBox(height: 12),
+                _DemographicDropdown(
+                  label: l10n.t('register.education'),
+                  icon: Icons.school_outlined,
+                  value: selectedEducation,
+                  items: Education.all,
+                  getLabel: Education.getLabel,
+                  onChanged: onEducationChanged,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 24),
+          AppButton(
+            label: l10n.t('register.button'),
+            icon: Icons.person_add_alt_1_rounded,
+            loading: loading,
+            onPressed: onRegister,
+          ),
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
               Text(
-                'This helps us understand community needs better.',
-                style: TextStyle(fontSize: 12, color: AppTheme.mutedText),
+                l10n.t('auth.have_account'),
+                style: const TextStyle(color: AppTheme.mutedText),
               ),
-              const SizedBox(height: 12),
-              _DemographicDropdown(
-                label: 'Age Range',
-                icon: Icons.cake_outlined,
-                value: selectedAgeRange,
-                items: AgeRange.all,
-                getLabel: AgeRange.getLabel,
-                onChanged: onAgeRangeChanged,
-              ),
-              const SizedBox(height: 12),
-              _DemographicDropdown(
-                label: 'Gender',
-                icon: Icons.wc_outlined,
-                value: selectedGender,
-                items: Gender.all,
-                getLabel: Gender.getLabel,
-                onChanged: onGenderChanged,
-              ),
-              const SizedBox(height: 12),
-              _DemographicDropdown(
-                label: 'Occupation',
-                icon: Icons.work_outline,
-                value: selectedOccupation,
-                items: Occupation.all,
-                getLabel: Occupation.getLabel,
-                onChanged: onOccupationChanged,
-              ),
-              const SizedBox(height: 12),
-              _DemographicDropdown(
-                label: 'Education Level',
-                icon: Icons.school_outlined,
-                value: selectedEducation,
-                items: Education.all,
-                getLabel: Education.getLabel,
-                onChanged: onEducationChanged,
+              TextButton(
+                onPressed: onNavigateToLogin,
+                child: Text(
+                  l10n.t('auth.login'),
+                  style: const TextStyle(
+                    color: AppTheme.primary,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ],
           ),
-        ),
-        const SizedBox(height: 18),
-        AppButton(
-          label: 'Create account',
-          icon: Icons.person_add_alt_1_rounded,
-          loading: loading,
-          onPressed: onSubmit,
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _VerifyForm extends StatelessWidget {
-  const _VerifyForm({
+// Forgot Password Screen Widget
+class ForgotPasswordScreen extends StatelessWidget {
+  const ForgotPasswordScreen({
+    required this.emailController,
+    required this.loading,
+    required this.onContinue,
+    required this.onBack,
+    super.key,
+  });
+
+  final TextEditingController emailController;
+  final bool loading;
+  final VoidCallback onContinue;
+  final VoidCallback onBack;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
+
+    return _AuthScreenContainer(
+      onBack: onBack,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 20),
+          Center(
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.lock_reset_rounded,
+                size: 40,
+                color: AppTheme.primary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            l10n.t('auth.forgot_password'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.text,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            l10n.t('reset.description'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.mutedText,
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 32),
+          AppTextField(
+            controller: emailController,
+            label: l10n.t('reset.email'),
+            icon: Icons.mail_outline_rounded,
+            keyboardType: TextInputType.emailAddress,
+          ),
+          const SizedBox(height: 24),
+          AppButton(
+            label: l10n.t('reset.request_button'),
+            icon: Icons.send_rounded,
+            loading: loading,
+            onPressed: onContinue,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// Verify OTP Screen Widget
+class VerifyOtpScreen extends StatelessWidget {
+  const VerifyOtpScreen({
     required this.emailController,
     required this.otpController,
     required this.loading,
     required this.onVerify,
     required this.onResend,
+    required this.onBack,
     super.key,
   });
 
@@ -725,105 +1017,189 @@ class _VerifyForm extends StatelessWidget {
   final bool loading;
   final VoidCallback onVerify;
   final VoidCallback onResend;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      key: key,
-      children: [
-        AppTextField(
-          controller: emailController,
-          label: 'Email',
-          icon: Icons.mail_outline_rounded,
-          keyboardType: TextInputType.emailAddress,
-        ),
-        const SizedBox(height: 12),
-        AppTextField(
-          controller: otpController,
-          label: '6-digit OTP',
-          icon: Icons.pin_outlined,
-          keyboardType: TextInputType.number,
-          maxLength: 6,
-        ),
-        const SizedBox(height: 12),
-        AppButton(
-          label: 'Verify and continue',
-          icon: Icons.verified_user_outlined,
-          loading: loading,
-          onPressed: onVerify,
-        ),
-        const SizedBox(height: 8),
-        TextButton.icon(
-          onPressed: loading ? null : onResend,
-          icon: const Icon(Icons.refresh_rounded),
-          label: const Text('Send OTP again'),
-        ),
-      ],
+    final l10n = AppLocalizations.of(context);
+
+    return _AuthScreenContainer(
+      onBack: onBack,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 20),
+          Center(
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.verified_user_outlined,
+                size: 40,
+                color: AppTheme.primary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            l10n.t('verify.title'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.text,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            l10n.t('verify.description'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.mutedText,
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 32),
+          AppTextField(
+            controller: emailController,
+            label: l10n.t('verify.email'),
+            icon: Icons.mail_outline_rounded,
+            keyboardType: TextInputType.emailAddress,
+            readOnly: true,
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: otpController,
+            label: l10n.t('verify.otp'),
+            icon: Icons.pin_outlined,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+          ),
+          const SizedBox(height: 24),
+          AppButton(
+            label: l10n.t('verify.button'),
+            icon: Icons.check_circle_outline_rounded,
+            loading: loading,
+            onPressed: onVerify,
+          ),
+          const SizedBox(height: 16),
+          Center(
+            child: TextButton.icon(
+              onPressed: loading ? null : onResend,
+              icon: const Icon(Icons.refresh_rounded),
+              label: Text(l10n.t('verify.resend')),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _ResetForm extends StatelessWidget {
-  const _ResetForm({
-    required this.emailController,
+// Create New Password Screen Widget
+class CreateNewPasswordScreen extends StatelessWidget {
+  const CreateNewPasswordScreen({
     required this.tokenController,
     required this.newPasswordController,
+    required this.confirmPasswordController,
     required this.loading,
-    required this.onRequest,
-    required this.onReset,
+    required this.onContinue,
+    required this.onBack,
     super.key,
   });
 
-  final TextEditingController emailController;
   final TextEditingController tokenController;
   final TextEditingController newPasswordController;
+  final TextEditingController confirmPasswordController;
   final bool loading;
-  final VoidCallback onRequest;
-  final VoidCallback onReset;
+  final VoidCallback onContinue;
+  final VoidCallback onBack;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      key: key,
-      children: [
-        AppTextField(
-          controller: emailController,
-          label: 'Email',
-          icon: Icons.mail_outline_rounded,
-          keyboardType: TextInputType.emailAddress,
-        ),
-        const SizedBox(height: 12),
-        OutlinedButton.icon(
-          onPressed: loading ? null : onRequest,
-          icon: const Icon(Icons.mark_email_read_outlined),
-          label: const Text('Request reset email'),
-        ),
-        const SizedBox(height: 16),
-        AppTextField(
-          controller: tokenController,
-          label: 'Reset token',
-          icon: Icons.key_rounded,
-        ),
-        const SizedBox(height: 12),
-        AppTextField(
-          controller: newPasswordController,
-          label: 'New password',
-          icon: Icons.lock_reset_rounded,
-          obscureText: true,
-        ),
-        const SizedBox(height: 18),
-        AppButton(
-          label: 'Reset password',
-          icon: Icons.save_rounded,
-          loading: loading,
-          onPressed: onReset,
-        ),
-      ],
+    final l10n = AppLocalizations.of(context);
+
+    return _AuthScreenContainer(
+      onBack: onBack,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 20),
+          Center(
+            child: Container(
+              width: 80,
+              height: 80,
+              decoration: BoxDecoration(
+                color: AppTheme.primary.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.lock_open_rounded,
+                size: 40,
+                color: AppTheme.primary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 24),
+          Text(
+            l10n.t('reset.create_password'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              color: AppTheme.text,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            l10n.t('reset.create_description'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: AppTheme.mutedText,
+              fontSize: 15,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 32),
+          AppTextField(
+            controller: tokenController,
+            label: l10n.t('reset.token'),
+            icon: Icons.key_rounded,
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: newPasswordController,
+            label: l10n.t('reset.new_password'),
+            icon: Icons.lock_reset_rounded,
+            obscureText: true,
+            textInputAction: TextInputAction.next,
+          ),
+          const SizedBox(height: 16),
+          AppTextField(
+            controller: confirmPasswordController,
+            label: l10n.t('reset.confirm_password'),
+            icon: Icons.lock_outline_rounded,
+            obscureText: true,
+          ),
+          const SizedBox(height: 24),
+          AppButton(
+            label: l10n.t('reset.button'),
+            icon: Icons.save_rounded,
+            loading: loading,
+            onPressed: onContinue,
+          ),
+        ],
+      ),
     );
   }
 }
 
-// New: Demographic dropdown widget
+// Demographic Dropdown Widget
 class _DemographicDropdown extends StatelessWidget {
   const _DemographicDropdown({
     required this.label,

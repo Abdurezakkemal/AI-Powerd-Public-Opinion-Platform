@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 
 import '../core/di/service_locator.dart';
+import '../core/localization/app_localizations.dart';
+import '../core/localization/fallback_localization_delegates.dart';
+import '../core/settings/app_settings_controller.dart';
+import '../core/settings/app_settings_scope.dart';
 import '../core/theme/app_theme.dart';
 import '../features/auth/presentation/cubit/auth_cubit.dart';
 import '../features/auth/presentation/pages/auth_page.dart';
@@ -18,49 +23,70 @@ class CivicApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return BlocProvider(
-      create: (_) => serviceLocator<AuthCubit>()..restoreSession(),
-      child: MaterialApp(
-        title: 'Civic Voice',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.light(),
-        home: BlocBuilder<AuthCubit, AuthState>(
-          builder: (context, state) {
-            if (state.status == AuthStatus.checking) {
-              return const _SplashScreen();
-            }
+    final settings = serviceLocator<AppSettingsController>();
 
-            if (state.status == AuthStatus.authenticated) {
-              return MultiBlocProvider(
-                providers: [
-                  BlocProvider(
-                    create: (_) =>
-                        serviceLocator<ProfileCubit>()..loadProfile(),
-                  ),
-                  BlocProvider(
-                    create: (_) =>
-                        serviceLocator<PolicyCubit>()..loadPolicies(),
-                  ),
-                  BlocProvider(
-                    create: (_) =>
-                        serviceLocator<HistoryCubit>()..loadHistory(),
-                  ),
-                  BlocProvider(
-                    create: (_) {
-                      print(
-                          '[CivicApp] Creating NotificationsCubit and loading notifications');
-                      return serviceLocator<NotificationsCubit>()
-                        ..loadNotifications();
-                    },
-                  ),
-                  BlocProvider(create: (_) => serviceLocator<VoteCubit>()),
-                ],
-                child: const CitizenHomeShell(),
-              );
-            }
+    return AppSettingsScope(
+      controller: settings,
+      child: AnimatedBuilder(
+        animation: settings,
+        builder: (context, _) => BlocProvider(
+          create: (_) => serviceLocator<AuthCubit>()..restoreSession(),
+          child: MaterialApp(
+            title: 'Civic Voice',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.light(),
+            darkTheme: AppTheme.dark(),
+            themeMode: settings.themeMode,
+            locale: settings.locale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: const [
+              AppLocalizations.delegate,
+              FallbackMaterialLocalizationsDelegate(),
+              FallbackWidgetsLocalizationsDelegate(),
+              FallbackCupertinoLocalizationsDelegate(),
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            home: BlocBuilder<AuthCubit, AuthState>(
+              builder: (context, state) {
+                if (state.status == AuthStatus.checking) {
+                  return const _SplashScreen();
+                }
 
-            return const _UnauthenticatedShell();
-          },
+                if (state.status == AuthStatus.authenticated) {
+                  return MultiBlocProvider(
+                    providers: [
+                      BlocProvider(
+                        create: (_) =>
+                            serviceLocator<ProfileCubit>()..loadProfile(),
+                      ),
+                      BlocProvider(
+                        create: (_) =>
+                            serviceLocator<PolicyCubit>()..loadPolicies(),
+                      ),
+                      BlocProvider(
+                        create: (_) =>
+                            serviceLocator<HistoryCubit>()..loadHistory(),
+                      ),
+                      BlocProvider(
+                        create: (_) {
+                          print(
+                              '[CivicApp] Creating NotificationsCubit and loading notifications');
+                          return serviceLocator<NotificationsCubit>()
+                            ..loadNotifications();
+                        },
+                      ),
+                      BlocProvider(create: (_) => serviceLocator<VoteCubit>()),
+                    ],
+                    child: const CitizenHomeShell(),
+                  );
+                }
+
+                return const _UnauthenticatedShell();
+              },
+            ),
+          ),
         ),
       ),
     );

@@ -15,6 +15,8 @@ import '../../features/citizen/presentation/cubit/vote_cubit.dart';
 import '../config/app_config.dart';
 import '../network/api_client.dart';
 import '../services/notification_socket_service.dart';
+import '../services/translation_service.dart';
+import '../settings/app_settings_controller.dart';
 import '../session/session_store.dart';
 
 final serviceLocator = GetIt.instance;
@@ -31,6 +33,9 @@ Future<void> configureDependencies({bool reset = false}) async {
   serviceLocator
     ..registerLazySingleton<SharedPreferences>(() => preferences)
     ..registerLazySingleton<http.Client>(http.Client.new)
+    ..registerLazySingleton<AppSettingsController>(
+      () => AppSettingsController(serviceLocator()),
+    )
     ..registerLazySingleton<SessionStore>(() => SessionStore(serviceLocator()))
     ..registerLazySingleton<ApiClient>(
       () => ApiClient(
@@ -38,6 +43,9 @@ Future<void> configureDependencies({bool reset = false}) async {
         sessionStore: serviceLocator(),
         baseUrls: AppConfig.apiBaseUrls,
       ),
+    )
+    ..registerLazySingleton<TranslationService>(
+      () => TranslationService(serviceLocator()),
     )
     // NEW: Register WebSocket service for real-time notifications
     ..registerLazySingleton<NotificationSocketService>(

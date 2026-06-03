@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/state/request_status.dart';
+import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/date_formatters.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_view.dart';
+import '../../../../core/widgets/translatable_text.dart';
 import '../../../../core/di/service_locator.dart';
 import '../../../auth/domain/repositories/auth_repository.dart';
 import '../../domain/repositories/citizen_repository.dart';
@@ -21,16 +23,7 @@ class HistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('My votes'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: () => context.read<HistoryCubit>().loadHistory(),
-            icon: const Icon(Icons.refresh_rounded),
-          ),
-        ],
-      ),
+      backgroundColor: AppTheme.background,
       body: BlocBuilder<HistoryCubit, HistoryState>(
         builder: (context, state) {
           if (state.status == RequestStatus.loading && state.history.isEmpty) {
@@ -46,22 +39,84 @@ class HistoryPage extends StatelessWidget {
           }
 
           if (state.history.isEmpty) {
-            return const EmptyState(
+            return EmptyState(
               icon: Icons.history_outlined,
-              title: 'No votes yet',
-              message: 'Your policy votes will be listed here.',
+              title: AppLocalizations.of(context).t('history.empty'),
+              message: AppLocalizations.of(context).t('history.empty_message'),
             );
           }
 
           return RefreshIndicator(
             onRefresh: () => context.read<HistoryCubit>().loadHistory(),
-            child: ListView.builder(
-              padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-              itemCount: state.history.length,
-              itemBuilder: (context, index) {
-                final item = state.history[index];
-                return _HistoryCard(item: item);
-              },
+            color: AppTheme.primary,
+            backgroundColor: Colors.white,
+            child: CustomScrollView(
+              slivers: [
+                // Custom Elevated Header
+                SliverToBoxAdapter(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.06),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: SafeArea(
+                      bottom: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              AppLocalizations.of(context).t('history'),
+                              style: const TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w900,
+                                color: AppTheme.text,
+                                letterSpacing: 0,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Container(
+                              width: 44,
+                              height: 44,
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
+                              ),
+                              child: IconButton(
+                                tooltip: 'Refresh',
+                                onPressed: () =>
+                                    context.read<HistoryCubit>().loadHistory(),
+                                icon: const Icon(
+                                  Icons.refresh_rounded,
+                                  color: AppTheme.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Content
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
+                  sliver: SliverList.builder(
+                    itemCount: state.history.length,
+                    itemBuilder: (context, index) {
+                      final item = state.history[index];
+                      return _HistoryCard(item: item);
+                    },
+                  ),
+                ),
+              ],
             ),
           );
         },
@@ -247,9 +302,12 @@ class _CommentBubble extends StatelessWidget {
         color: const Color(0xFFF7F9FB),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        text,
-        style: const TextStyle(color: AppTheme.text, height: 1.35),
+      child: TranslatableText(
+        text: text,
+        style: TextStyle(
+          color: Theme.of(context).textTheme.bodyMedium?.color,
+          height: 1.35,
+        ),
       ),
     );
   }

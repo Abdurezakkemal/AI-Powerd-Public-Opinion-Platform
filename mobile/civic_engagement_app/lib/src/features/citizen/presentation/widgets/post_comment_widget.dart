@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../cubit/comment_cubit.dart';
@@ -43,7 +44,7 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
     print('  - policyId: ${widget.policyId}');
     print('  - text length: ${_textController.text.length}');
     print('  - parentCommentId: ${widget.parentCommentId}');
-    
+
     context.read<CommentCubit>().postComment(
           policyId: widget.policyId,
           text: _textController.text,
@@ -56,9 +57,10 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
     return BlocConsumer<CommentCubit, CommentState>(
       listener: (context, state) {
         print('[PostCommentWidget] State changed: ${state.runtimeType}');
-        
+
         if (state is CommentPosted) {
-          print('[PostCommentWidget] Comment posted successfully: ${state.message}');
+          print(
+              '[PostCommentWidget] Comment posted successfully: ${state.message}');
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text(state.message),
@@ -79,6 +81,7 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
         }
       },
       builder: (context, state) {
+        final l10n = AppLocalizations.of(context);
         final isPosting = state is CommentPosting;
 
         return Container(
@@ -112,11 +115,11 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
                     const SizedBox(width: 8),
                     Text(
                       widget.parentCommentId != null
-                          ? 'Reply to Comment'
-                          : 'Join the Discussion',
+                          ? l10n.t('comment.reply')
+                          : l10n.t('comment.post'),
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w800,
-                            letterSpacing: -0.3,
+                            letterSpacing: 0,
                           ),
                     ),
                   ],
@@ -127,7 +130,7 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
                   maxLines: 4,
                   maxLength: 2000,
                   decoration: InputDecoration(
-                    hintText: 'Share your thoughts, concerns, or suggestions...',
+                    hintText: l10n.t('comment.placeholder'),
                     filled: true,
                     fillColor: AppTheme.primary.withValues(alpha: 0.03),
                     border: OutlineInputBorder(

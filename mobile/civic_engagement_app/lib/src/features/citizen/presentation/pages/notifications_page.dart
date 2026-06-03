@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/state/request_status.dart';
+import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/date_formatters.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/empty_state.dart';
 import '../../../../core/widgets/error_view.dart';
+import '../../../../core/widgets/translatable_text.dart';
 import '../../domain/entities/citizen_notification.dart';
 import '../cubit/notifications_cubit.dart';
 import '../widgets/appeal_comment_dialog.dart';
@@ -17,7 +19,7 @@ class NotificationsPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     print('[NotificationsPage] Building page');
-    
+
     return BlocListener<NotificationsCubit, NotificationsState>(
       listenWhen: (previous, current) {
         print('[NotificationsPage] State changed:');
@@ -29,7 +31,8 @@ class NotificationsPage extends StatelessWidget {
             current.message != null;
       },
       listener: (context, state) {
-        print('[NotificationsPage] Action status changed: ${state.actionStatus}');
+        print(
+            '[NotificationsPage] Action status changed: ${state.actionStatus}');
         if (state.message != null) {
           print('[NotificationsPage] Showing message: ${state.message}');
         }
@@ -38,22 +41,7 @@ class NotificationsPage extends StatelessWidget {
         ).showSnackBar(SnackBar(content: Text(state.message!)));
       },
       child: Scaffold(
-        appBar: AppBar(
-          title: const Text('Alerts'),
-          actions: [
-            IconButton(
-              tooltip: 'Mark all read',
-              onPressed: () => context.read<NotificationsCubit>().markAllRead(),
-              icon: const Icon(Icons.done_all_rounded),
-            ),
-            IconButton(
-              tooltip: 'Refresh',
-              onPressed: () =>
-                  context.read<NotificationsCubit>().loadNotifications(),
-              icon: const Icon(Icons.refresh_rounded),
-            ),
-          ],
-        ),
+        backgroundColor: AppTheme.background,
         body: BlocBuilder<NotificationsCubit, NotificationsState>(
           builder: (context, state) {
             print('[NotificationsPage] Building body');
@@ -61,7 +49,7 @@ class NotificationsPage extends StatelessWidget {
             print('  - Notifications count: ${state.notifications.length}');
             print('  - Total: ${state.total}');
             print('  - UnreadOnly: ${state.unreadOnly}');
-            
+
             if (state.status == RequestStatus.loading &&
                 state.notifications.isEmpty) {
               print('[NotificationsPage] Showing loading indicator');
@@ -85,9 +73,93 @@ class NotificationsPage extends StatelessWidget {
                   context.read<NotificationsCubit>().loadNotifications(
                         unreadOnly: state.unreadOnly,
                       ),
+              color: AppTheme.primary,
+              backgroundColor: Colors.white,
               child: CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
+                  // Custom Elevated Header
+                  SliverToBoxAdapter(
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.06),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: SafeArea(
+                        bottom: false,
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  AppLocalizations.of(context)
+                                      .t('notifications'),
+                                  style: const TextStyle(
+                                    fontSize: 28,
+                                    fontWeight: FontWeight.w900,
+                                    color: AppTheme.text,
+                                    letterSpacing: 0,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Row(
+                                children: [
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primary
+                                          .withValues(alpha: 0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: IconButton(
+                                      tooltip: 'Mark all read',
+                                      onPressed: () => context
+                                          .read<NotificationsCubit>()
+                                          .markAllRead(),
+                                      icon: const Icon(
+                                        Icons.done_all_rounded,
+                                        color: AppTheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    width: 44,
+                                    height: 44,
+                                    decoration: BoxDecoration(
+                                      color: AppTheme.primary
+                                          .withValues(alpha: 0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: IconButton(
+                                      tooltip: 'Refresh',
+                                      onPressed: () => context
+                                          .read<NotificationsCubit>()
+                                          .loadNotifications(),
+                                      icon: const Icon(
+                                        Icons.refresh_rounded,
+                                        color: AppTheme.primary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                   SliverToBoxAdapter(child: _NotificationFilters(state: state)),
                   if (state.notifications.isEmpty)
                     const SliverFillRemaining(
@@ -244,8 +316,9 @@ class _NotificationCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(
-                        item.title,
+                      child: TranslatableText(
+                        text: item.title,
+                        showControls: false,
                         style: Theme.of(context).textTheme.titleSmall?.copyWith(
                               fontWeight: FontWeight.w900,
                             ),
@@ -263,10 +336,10 @@ class _NotificationCard extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 6),
-                Text(
-                  item.message,
-                  style: const TextStyle(
-                    color: AppTheme.mutedText,
+                TranslatableText(
+                  text: item.message,
+                  style: TextStyle(
+                    color: Theme.of(context).textTheme.bodySmall?.color,
                     height: 1.35,
                   ),
                 ),
