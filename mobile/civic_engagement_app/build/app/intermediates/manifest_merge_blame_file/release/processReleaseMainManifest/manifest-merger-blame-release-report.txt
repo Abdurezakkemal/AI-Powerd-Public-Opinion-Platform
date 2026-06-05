@@ -1,0 +1,238 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="com.example.civic_engagement_app"
+4    android:versionCode="1"
+5    android:versionName="1.0.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="21"
+9        android:targetSdkVersion="35" />
+10
+11    <uses-permission android:name="android.permission.INTERNET" />
+11-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:2:5-67
+11-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:2:22-64
+12    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+12-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:3:5-79
+12-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:3:22-76
+13    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
+13-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:4:5-81
+13-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:4:22-78
+14    <!--
+15         Required to query activities that can process text, see:
+16         https://developer.android.com/training/package-visibility and
+17         https://developer.android.com/reference/android/content/Intent#ACTION_PROCESS_TEXT.
+18
+19         In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin.
+20    -->
+21    <queries>
+21-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:44:5-49:15
+22        <intent>
+22-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:45:9-48:18
+23            <action android:name="android.intent.action.PROCESS_TEXT" />
+23-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:46:13-72
+23-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:46:21-70
+24
+25            <data android:mimeType="text/plain" />
+25-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:47:13-50
+25-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:47:19-48
+26        </intent>
+27        <intent>
+27-->[:file_picker] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\file_picker\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:8:9-12:18
+28            <action android:name="android.intent.action.GET_CONTENT" />
+28-->[:file_picker] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\file_picker\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:9:13-72
+28-->[:file_picker] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\file_picker\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:9:21-69
+29
+30            <data android:mimeType="*/*" />
+30-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:47:13-50
+30-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:47:19-48
+31        </intent>
+32    </queries>
+33
+34    <permission
+34-->[androidx.core:core:1.13.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\dfc2fbca530748e569b0737b09fa016f\transformed\core-1.13.1\AndroidManifest.xml:22:5-24:47
+35        android:name="com.example.civic_engagement_app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+35-->[androidx.core:core:1.13.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\dfc2fbca530748e569b0737b09fa016f\transformed\core-1.13.1\AndroidManifest.xml:23:9-81
+36        android:protectionLevel="signature" />
+36-->[androidx.core:core:1.13.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\dfc2fbca530748e569b0737b09fa016f\transformed\core-1.13.1\AndroidManifest.xml:24:9-44
+37
+38    <uses-permission android:name="com.example.civic_engagement_app.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+38-->[androidx.core:core:1.13.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\dfc2fbca530748e569b0737b09fa016f\transformed\core-1.13.1\AndroidManifest.xml:26:5-97
+38-->[androidx.core:core:1.13.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\dfc2fbca530748e569b0737b09fa016f\transformed\core-1.13.1\AndroidManifest.xml:26:22-94
+39
+40    <application
+41        android:name="android.app.Application"
+41-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:8:9-42
+42        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+42-->[androidx.core:core:1.13.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\dfc2fbca530748e569b0737b09fa016f\transformed\core-1.13.1\AndroidManifest.xml:28:18-86
+43        android:extractNativeLibs="true"
+44        android:icon="@mipmap/ic_launcher"
+44-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:9:9-43
+45        android:label="civic_engagement_app"
+45-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:7:9-45
+46        android:usesCleartextTraffic="true" >
+46-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:10:9-44
+47        <activity
+47-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:11:9-32:20
+48            android:name="com.example.civic_engagement_app.MainActivity"
+48-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:12:13-41
+49            android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+49-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:17:13-163
+50            android:exported="true"
+50-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:13:13-36
+51            android:hardwareAccelerated="true"
+51-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:18:13-47
+52            android:launchMode="singleTop"
+52-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:14:13-43
+53            android:taskAffinity=""
+53-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:15:13-36
+54            android:theme="@style/LaunchTheme"
+54-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:16:13-47
+55            android:windowSoftInputMode="adjustResize" >
+55-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:19:13-55
+56
+57            <!--
+58                 Specifies an Android theme to apply to this Activity as soon as
+59                 the Android process has started. This theme is visible to the user
+60                 while the Flutter UI initializes. After that, this theme continues
+61                 to determine the Window background behind the Flutter UI.
+62            -->
+63            <meta-data
+63-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:24:13-27:17
+64                android:name="io.flutter.embedding.android.NormalTheme"
+64-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:25:15-70
+65                android:resource="@style/NormalTheme" />
+65-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:26:15-52
+66
+67            <intent-filter>
+67-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:28:13-31:29
+68                <action android:name="android.intent.action.MAIN" />
+68-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:29:17-68
+68-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:29:25-66
+69
+70                <category android:name="android.intent.category.LAUNCHER" />
+70-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:30:17-76
+70-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:30:27-74
+71            </intent-filter>
+72        </activity>
+73        <!--
+74             Don't delete the meta-data below.
+75             This is used by the Flutter tool to generate GeneratedPluginRegistrant.java
+76        -->
+77        <meta-data
+77-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:35:9-37:33
+78            android:name="flutterEmbedding"
+78-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:36:13-44
+79            android:value="2" />
+79-->C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\android\app\src\main\AndroidManifest.xml:37:13-30
+80
+81        <service
+81-->[:geolocator_android] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\geolocator_android\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:8:9-12:56
+82            android:name="com.baseflow.geolocator.GeolocatorLocationService"
+82-->[:geolocator_android] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\geolocator_android\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:9:13-77
+83            android:enabled="true"
+83-->[:geolocator_android] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\geolocator_android\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:10:13-35
+84            android:exported="false"
+84-->[:geolocator_android] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\geolocator_android\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:11:13-37
+85            android:foregroundServiceType="location" />
+85-->[:geolocator_android] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\geolocator_android\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:12:13-53
+86
+87        <activity
+87-->[:url_launcher_android] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\url_launcher_android\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:8:9-11:74
+88            android:name="io.flutter.plugins.urllauncher.WebViewActivity"
+88-->[:url_launcher_android] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\url_launcher_android\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:9:13-74
+89            android:exported="false"
+89-->[:url_launcher_android] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\url_launcher_android\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:10:13-37
+90            android:theme="@android:style/Theme.NoTitleBar.Fullscreen" />
+90-->[:url_launcher_android] C:\Users\Mame Computer\Desktop\Evangadi\finalProject\finalproject\mobile\civic_engagement_app\build\url_launcher_android\intermediates\merged_manifest\release\processReleaseManifest\AndroidManifest.xml:11:13-71
+91
+92        <uses-library
+92-->[androidx.window:window:1.2.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\aed2861b2b6894f7067df3f3f96b791f\transformed\jetified-window-1.2.0\AndroidManifest.xml:23:9-25:40
+93            android:name="androidx.window.extensions"
+93-->[androidx.window:window:1.2.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\aed2861b2b6894f7067df3f3f96b791f\transformed\jetified-window-1.2.0\AndroidManifest.xml:24:13-54
+94            android:required="false" />
+94-->[androidx.window:window:1.2.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\aed2861b2b6894f7067df3f3f96b791f\transformed\jetified-window-1.2.0\AndroidManifest.xml:25:13-37
+95        <uses-library
+95-->[androidx.window:window:1.2.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\aed2861b2b6894f7067df3f3f96b791f\transformed\jetified-window-1.2.0\AndroidManifest.xml:26:9-28:40
+96            android:name="androidx.window.sidecar"
+96-->[androidx.window:window:1.2.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\aed2861b2b6894f7067df3f3f96b791f\transformed\jetified-window-1.2.0\AndroidManifest.xml:27:13-51
+97            android:required="false" />
+97-->[androidx.window:window:1.2.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\aed2861b2b6894f7067df3f3f96b791f\transformed\jetified-window-1.2.0\AndroidManifest.xml:28:13-37
+98
+99        <activity
+99-->[com.google.android.gms:play-services-base:18.3.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\b93785a04fcd49acabbaa600426866db\transformed\jetified-play-services-base-18.3.0\AndroidManifest.xml:20:9-22:45
+100            android:name="com.google.android.gms.common.api.GoogleApiActivity"
+100-->[com.google.android.gms:play-services-base:18.3.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\b93785a04fcd49acabbaa600426866db\transformed\jetified-play-services-base-18.3.0\AndroidManifest.xml:20:19-85
+101            android:exported="false"
+101-->[com.google.android.gms:play-services-base:18.3.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\b93785a04fcd49acabbaa600426866db\transformed\jetified-play-services-base-18.3.0\AndroidManifest.xml:22:19-43
+102            android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+102-->[com.google.android.gms:play-services-base:18.3.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\b93785a04fcd49acabbaa600426866db\transformed\jetified-play-services-base-18.3.0\AndroidManifest.xml:21:19-78
+103
+104        <meta-data
+104-->[com.google.android.gms:play-services-basement:18.3.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\48bb13e58e49cdf1e6377472107b28a8\transformed\jetified-play-services-basement-18.3.0\AndroidManifest.xml:21:9-23:69
+105            android:name="com.google.android.gms.version"
+105-->[com.google.android.gms:play-services-basement:18.3.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\48bb13e58e49cdf1e6377472107b28a8\transformed\jetified-play-services-basement-18.3.0\AndroidManifest.xml:22:13-58
+106            android:value="@integer/google_play_services_version" />
+106-->[com.google.android.gms:play-services-basement:18.3.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\48bb13e58e49cdf1e6377472107b28a8\transformed\jetified-play-services-basement-18.3.0\AndroidManifest.xml:23:13-66
+107
+108        <provider
+108-->[androidx.lifecycle:lifecycle-process:2.7.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\bb10008c4b33ee9597583412a41828ed\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:24:9-32:20
+109            android:name="androidx.startup.InitializationProvider"
+109-->[androidx.lifecycle:lifecycle-process:2.7.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\bb10008c4b33ee9597583412a41828ed\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:25:13-67
+110            android:authorities="com.example.civic_engagement_app.androidx-startup"
+110-->[androidx.lifecycle:lifecycle-process:2.7.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\bb10008c4b33ee9597583412a41828ed\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:26:13-68
+111            android:exported="false" >
+111-->[androidx.lifecycle:lifecycle-process:2.7.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\bb10008c4b33ee9597583412a41828ed\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:27:13-37
+112            <meta-data
+112-->[androidx.lifecycle:lifecycle-process:2.7.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\bb10008c4b33ee9597583412a41828ed\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:29:13-31:52
+113                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+113-->[androidx.lifecycle:lifecycle-process:2.7.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\bb10008c4b33ee9597583412a41828ed\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:30:17-78
+114                android:value="androidx.startup" />
+114-->[androidx.lifecycle:lifecycle-process:2.7.0] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\bb10008c4b33ee9597583412a41828ed\transformed\jetified-lifecycle-process-2.7.0\AndroidManifest.xml:31:17-49
+115            <meta-data
+115-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:29:13-31:52
+116                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+116-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:30:17-85
+117                android:value="androidx.startup" />
+117-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:31:17-49
+118        </provider>
+119
+120        <receiver
+120-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:34:9-52:20
+121            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+121-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:35:13-76
+122            android:directBootAware="false"
+122-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:36:13-44
+123            android:enabled="true"
+123-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:37:13-35
+124            android:exported="true"
+124-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:38:13-36
+125            android:permission="android.permission.DUMP" >
+125-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:39:13-57
+126            <intent-filter>
+126-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:40:13-42:29
+127                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+127-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:41:17-91
+127-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:41:25-88
+128            </intent-filter>
+129            <intent-filter>
+129-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:43:13-45:29
+130                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+130-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:44:17-85
+130-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:44:25-82
+131            </intent-filter>
+132            <intent-filter>
+132-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:46:13-48:29
+133                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+133-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:47:17-88
+133-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:47:25-85
+134            </intent-filter>
+135            <intent-filter>
+135-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:49:13-51:29
+136                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+136-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:50:17-95
+136-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\Mame Computer\.gradle\caches\8.10.2\transforms\5aacd87baa6feaa7bece87b01e7698f0\transformed\jetified-profileinstaller-1.3.1\AndroidManifest.xml:50:25-92
+137            </intent-filter>
+138        </receiver>
+139    </application>
+140
+141</manifest>

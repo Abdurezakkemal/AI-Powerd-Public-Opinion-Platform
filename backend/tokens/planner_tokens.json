@@ -1,0 +1,12 @@
+[
+  {
+    "email": "planner1@test.com",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZmRiZGM1MzgyZjI3N2QwYzRjYTliZiIsInJvbGUiOiJwbGFubmVyIiwicmVnaW9uIjoiIiwidmVyaWZpZWQiOnRydWUsImlhdCI6MTc3ODIzNjg4NSwiZXhwIjoxNzc4ODQxNjg1fQ.Wq_oi6nmtbnlVfe3oyjpS6COP7uPqzmxpU5xwBHxVg0",
+    "role": "planner"
+  },
+  {
+    "email": "planner2@test.com",
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6IjY5ZmRiZGM1MzgyZjI3N2QwYzRjYTljMSIsInJvbGUiOiJwbGFubmVyIiwicmVnaW9uIjoiIiwidmVyaWZpZWQiOnRydWUsImlhdCI6MTc3ODIzNjg4NiwiZXhwIjoxNzc4ODQxNjg2fQ.CYMhunrvECbSwpMyFgsNDbBHgc-sxSgLaqUmSy-NFgE",
+    "role": "planner"
+  }
+]

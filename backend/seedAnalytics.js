@@ -138,7 +138,6 @@ async function seed() {
       const user = new User({
         email,
         passwordHash,
-        phoneHash: null,
         region: "",
         role: "planner",
         verified: true,

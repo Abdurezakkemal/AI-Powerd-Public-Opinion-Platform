@@ -28,13 +28,22 @@ const feedbackSchema = new mongoose.Schema({
 });
 
 // Prevent duplicate votes
+// For APP users
 feedbackSchema.index(
   { policyId: 1, userId: 1 },
-  { unique: true, sparse: true },
+  {
+    unique: true,
+    partialFilterExpression: { userId: { $exists: true } },
+  }
 );
+
+// For SMS users
 feedbackSchema.index(
   { policyId: 1, phoneHash: 1 },
-  { unique: true, sparse: true },
+  {
+    unique: true,
+    partialFilterExpression: { phoneHash: { $exists: true } },
+  }
 );
 
 module.exports = mongoose.model("Feedback", feedbackSchema);

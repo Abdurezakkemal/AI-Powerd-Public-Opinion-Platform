@@ -59,6 +59,8 @@ const authMiddleware = (roles = []) => {
       req.user = {
         id: user._id,
         role: user.role,
+        region: user.region,
+        verified: user.verified,
       };
 
       next();
