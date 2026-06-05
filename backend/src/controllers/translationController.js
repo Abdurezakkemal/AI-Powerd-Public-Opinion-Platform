@@ -11,6 +11,7 @@ const TRANSLATE_SPACE_URL = process.env.TRANSLATE_SPACE_URL;
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY;
 const AI_SERVICE_URL =
   process.env.AI_SERVICE_URL || "https://ai-sevice.onrender.com";
+const TRANSLATION_TIMEOUT_MS = 240000;
 
 const getTranslateEndpoint = () => {
   if (!TRANSLATE_SPACE_URL) return null;
@@ -128,7 +129,7 @@ exports.translate = async (req, res) => {
           "X-Internal-API-Key": INTERNAL_API_KEY,
           "Content-Type": "application/json"
         },
-        timeout: 60000,
+        timeout: TRANSLATION_TIMEOUT_MS,
       },
     );
 

@@ -4,6 +4,7 @@ import '../../../../core/layout/responsive_layout.dart';
 import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/settings/app_settings_scope.dart';
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/public_dashboard_link.dart';
 
 class LandingPage extends StatefulWidget {
   const LandingPage({
@@ -19,7 +20,8 @@ class LandingPage extends StatefulWidget {
   State<LandingPage> createState() => _LandingPageState();
 }
 
-class _LandingPageState extends State<LandingPage> with TickerProviderStateMixin {
+class _LandingPageState extends State<LandingPage>
+    with TickerProviderStateMixin {
   final _pageController = PageController();
   double _currentPage = 0.0;
   late AnimationController _fadeController;
@@ -349,6 +351,8 @@ class _LandingSlide extends StatelessWidget {
                         ),
                       ),
                     ],
+                    SizedBox(height: ResponsiveLayout.spacing(context, 8)),
+                    const PublicDashboardLink(),
                   ],
                 ),
               ),

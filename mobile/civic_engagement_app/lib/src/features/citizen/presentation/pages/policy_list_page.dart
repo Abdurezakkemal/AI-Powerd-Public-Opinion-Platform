@@ -55,7 +55,7 @@ class PolicyListPage extends StatelessWidget {
                       pagePadding,
                       8,
                       pagePadding,
-                      12,
+                      8,
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -93,9 +93,9 @@ class PolicyListPage extends StatelessWidget {
                 ),
               ),
             ),
-            const SliverToBoxAdapter(child: SizedBox(height: 10)),
-            const SliverToBoxAdapter(child: _PolicyHeader()),
             const SliverToBoxAdapter(child: SizedBox(height: 6)),
+            const SliverToBoxAdapter(child: _PolicyHeader()),
+            const SliverToBoxAdapter(child: SizedBox(height: 4)),
             const SliverToBoxAdapter(child: _FilterChips()),
             BlocBuilder<PolicyCubit, PolicyState>(
               builder: (context, state) {
@@ -130,7 +130,7 @@ class PolicyListPage extends StatelessWidget {
                 return SliverPadding(
                   padding: EdgeInsets.fromLTRB(
                     pagePadding,
-                    2,
+                    0,
                     pagePadding,
                     110,
                   ),
@@ -384,10 +384,10 @@ class _FilterChips extends StatelessWidget {
                               : AppTheme.primary.withValues(alpha: 0.3),
                         ),
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 12,
-                          vertical: 10,
+                          horizontal: 10,
+                          vertical: 6,
                         ),
-                        materialTapTargetSize: MaterialTapTargetSize.padded,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(16),
                         ),
@@ -475,7 +475,7 @@ class _FilterChips extends StatelessWidget {
       selected: active,
       showCheckmark: false,
       labelPadding: const EdgeInsets.symmetric(horizontal: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       onSelected: (_) =>
           context.read<PolicyCubit>().loadPolicies(status: value),
       selectedColor: selectedBackground,
@@ -486,7 +486,7 @@ class _FilterChips extends StatelessWidget {
           color: active ? selectedBackground : AppTheme.borderFor(context),
         ),
       ),
-      materialTapTargetSize: MaterialTapTargetSize.padded,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
       labelStyle: TextStyle(
         color: active ? selectedForeground : AppTheme.mutedTextFor(context),
         fontWeight: FontWeight.w700,
@@ -499,74 +499,92 @@ class _FilterChips extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: AppTheme.surfaceFor(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      builder: (sheetContext) {
+        final sheetHeight = MediaQuery.sizeOf(sheetContext).height * 0.72;
+        return SafeArea(
+          child: SizedBox(
+            height: sheetHeight,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text(
-                    l10n.t('policies.topics'),
-                    style: TextStyle(
-                      fontSize: 20,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 0,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        l10n.t('policies.topics'),
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0,
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () => Navigator.pop(sheetContext),
+                      ),
+                    ],
                   ),
-                  IconButton(
-                    icon: const Icon(Icons.close_rounded),
-                    onPressed: () => Navigator.pop(sheetContext),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      child: Wrap(
+                        spacing: 10,
+                        runSpacing: 10,
+                        children: availableTopics.map((topic) {
+                          final isSelected = selectedTopics.contains(topic);
+                          return FilterChip(
+                            label: Text(topic),
+                            selected: isSelected,
+                            onSelected: (selected) {
+                              if (selected) {
+                                context.read<PolicyCubit>().addTopicFilter(
+                                      topic,
+                                    );
+                              } else {
+                                context.read<PolicyCubit>().removeTopicFilter(
+                                      topic,
+                                    );
+                              }
+                              Navigator.pop(sheetContext);
+                            },
+                            selectedColor:
+                                AppTheme.primary.withValues(alpha: 0.15),
+                            checkmarkColor: AppTheme.primary,
+                            backgroundColor: Theme.of(context)
+                                .colorScheme
+                                .surfaceContainerHighest,
+                            side: BorderSide(
+                              color: isSelected
+                                  ? AppTheme.primary
+                                  : Colors.transparent,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            labelStyle: TextStyle(
+                              color: isSelected
+                                  ? AppTheme.primary
+                                  : AppTheme.textFor(context),
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 10,
-                runSpacing: 10,
-                children: availableTopics.map((topic) {
-                  final isSelected = selectedTopics.contains(topic);
-                  return FilterChip(
-                    label: Text(topic),
-                    selected: isSelected,
-                    onSelected: (selected) {
-                      if (selected) {
-                        context.read<PolicyCubit>().addTopicFilter(topic);
-                      } else {
-                        context.read<PolicyCubit>().removeTopicFilter(topic);
-                      }
-                      Navigator.pop(sheetContext);
-                    },
-                    selectedColor: AppTheme.primary.withValues(alpha: 0.15),
-                    checkmarkColor: AppTheme.primary,
-                    backgroundColor:
-                        Theme.of(context).colorScheme.surfaceContainerHighest,
-                    side: BorderSide(
-                      color: isSelected ? AppTheme.primary : Colors.transparent,
-                    ),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    labelStyle: TextStyle(
-                      color: isSelected
-                          ? AppTheme.primary
-                          : AppTheme.textFor(context),
-                      fontWeight: FontWeight.w600,
-                    ),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 16),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

@@ -77,7 +77,7 @@ class HistoryPage extends StatelessWidget {
                           pagePadding,
                           8,
                           pagePadding,
-                          12,
+                          8,
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -120,7 +120,7 @@ class HistoryPage extends StatelessWidget {
                 SliverPadding(
                   padding: EdgeInsets.fromLTRB(
                     pagePadding,
-                    16,
+                    8,
                     pagePadding,
                     100,
                   ),

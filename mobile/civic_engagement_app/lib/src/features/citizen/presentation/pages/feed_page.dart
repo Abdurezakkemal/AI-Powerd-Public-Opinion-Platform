@@ -100,7 +100,7 @@ class _FeedPageState extends State<FeedPage> {
                             pagePadding,
                             8,
                             pagePadding,
-                            12,
+                            8,
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -145,7 +145,7 @@ class _FeedPageState extends State<FeedPage> {
                   SliverPadding(
                     padding: EdgeInsets.fromLTRB(
                       pagePadding,
-                      16,
+                      8,
                       pagePadding,
                       100,
                     ),

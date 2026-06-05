@@ -30,6 +30,8 @@ import '../models/feed_policy_model.dart';
 class CitizenRepositoryImpl implements CitizenRepository {
   CitizenRepositoryImpl(this._apiClient, this._sessionStore);
 
+  static const _translationTimeout = Duration(minutes: 3);
+
   final ApiClient _apiClient;
   final SessionStore _sessionStore;
 
@@ -364,6 +366,7 @@ class CitizenRepositoryImpl implements CitizenRepository {
     try {
       final response = await _apiClient.post(
         '/translate',
+        timeout: _translationTimeout,
         body: {
           'text': text.trim(),
           if (sourceLang != null && sourceLang.trim().isNotEmpty)

@@ -6,6 +6,8 @@ import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_text_field.dart';
+import '../../../../core/widgets/password_requirements.dart';
+import '../../../../core/widgets/public_dashboard_link.dart';
 import '../../../../core/services/location_service.dart';
 import '../../domain/entities/user_demographics.dart';
 import '../cubit/auth_cubit.dart';
@@ -311,6 +313,12 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
       return;
     }
 
+    if (!PasswordRules.isStrong(_passwordController.text)) {
+      _showError(
+          'Please create a stronger password that meets all requirements.');
+      return;
+    }
+
     if (_regionController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -386,6 +394,12 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
       return;
     }
 
+    if (!PasswordRules.isStrong(_newPasswordController.text)) {
+      _showError(
+          'Please create a stronger password that meets all requirements.');
+      return;
+    }
+
     if (_newPasswordController.text != _confirmPasswordController.text) {
       _showError('Passwords do not match');
       return;
@@ -452,7 +466,7 @@ class _AuthBackdrop extends StatelessWidget {
   }
 }
 
-// Auth Screen Container Widget
+// Auth Screen Container Widget - Full screen without card
 class _AuthScreenContainer extends StatelessWidget {
   const _AuthScreenContainer({
     required this.child,
@@ -465,9 +479,8 @@ class _AuthScreenContainer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final horizontalPadding = ResponsiveLayout.pagePadding(context);
-    final topPadding = ResponsiveLayout.isTablet(context) ? 88.0 : 72.0;
+    final topPadding = ResponsiveLayout.isTablet(context) ? 72.0 : 56.0;
     final bottomPadding = ResponsiveLayout.isCompact(context) ? 20.0 : 28.0;
-    final cardPadding = ResponsiveLayout.cardPadding(context) + 2;
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -479,14 +492,10 @@ class _AuthScreenContainer extends StatelessWidget {
             bottomPadding,
           ),
           child: ConstrainedBox(
-            constraints: BoxConstraints(minHeight: constraints.maxHeight - 100),
-            child: Container(
-              width: double.infinity,
-              padding: EdgeInsets.all(cardPadding),
-              decoration:
-                  AppTheme.elevatedCardDecoration(context, borderRadius: 28),
-              child: child,
+            constraints: BoxConstraints(
+              minHeight: constraints.maxHeight - (topPadding + bottomPadding),
             ),
+            child: child,
           ),
         );
       },
@@ -653,6 +662,8 @@ class LoginScreen extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          const PublicDashboardLink(),
         ],
       ),
     );
@@ -744,6 +755,8 @@ class RegisterScreen extends StatelessWidget {
             obscureText: true,
             textInputAction: TextInputAction.next,
           ),
+          const SizedBox(height: 10),
+          PasswordRequirements(controller: passwordController),
           const SizedBox(height: 16),
           AppTextField(
             controller: phoneController,
@@ -794,28 +807,46 @@ class RegisterScreen extends StatelessWidget {
                     color: mutedColor,
                   ),
                 ),
-                const SizedBox(height: 12),
-                Stack(
-                  alignment: Alignment.centerRight,
+                const SizedBox(height: 16),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    AppTextField(
-                      controller: regionController,
-                      label: l10n.t('register.region'),
-                      icon: Icons.map_outlined,
-                      readOnly: true,
-                    ),
-                    if (isDetectingLocation)
-                      const Padding(
-                        padding: EdgeInsets.only(right: 14),
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: AppTheme.primary,
-                          ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 4, bottom: 8),
+                      child: Text(
+                        l10n.t('register.region'),
+                        style: TextStyle(
+                          fontSize:
+                              ResponsiveLayout.secondaryBodyFontSize(context) -
+                                  1,
+                          fontWeight: FontWeight.w600,
+                          color: AppTheme.primary,
                         ),
                       ),
+                    ),
+                    Stack(
+                      alignment: Alignment.centerRight,
+                      children: [
+                        AppTextField(
+                          controller: regionController,
+                          label: '',
+                          icon: Icons.map_outlined,
+                          readOnly: true,
+                        ),
+                        if (isDetectingLocation)
+                          const Padding(
+                            padding: EdgeInsets.only(right: 14),
+                            child: SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppTheme.primary,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
                   ],
                 ),
               ],
@@ -920,6 +951,8 @@ class RegisterScreen extends StatelessWidget {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          const PublicDashboardLink(),
         ],
       ),
     );
@@ -1194,6 +1227,8 @@ class CreateNewPasswordScreen extends StatelessWidget {
             obscureText: true,
             textInputAction: TextInputAction.next,
           ),
+          const SizedBox(height: 10),
+          PasswordRequirements(controller: newPasswordController),
           const SizedBox(height: 16),
           AppTextField(
             controller: confirmPasswordController,

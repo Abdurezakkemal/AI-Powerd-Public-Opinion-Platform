@@ -24,7 +24,9 @@ class AuthRepositoryImpl implements AuthRepository {
     required UserDemographics demographics,
     String? captchaToken,
   }) async {
-    final trimmedCaptcha = captchaToken?.trim();
+    // Use provided token or dummy token for development
+    final effectiveCaptcha = captchaToken?.trim() ?? 'dummy-captcha-token-dev';
+    
     final response = await _apiClient.post(
       '/auth/register',
       authenticated: false,
@@ -37,8 +39,7 @@ class AuthRepositoryImpl implements AuthRepository {
         'gender': demographics.gender,
         'occupation': demographics.occupation,
         'education': demographics.education,
-        if (trimmedCaptcha != null && trimmedCaptcha.isNotEmpty)
-          'captchaToken': trimmedCaptcha,
+        'captchaToken': effectiveCaptcha,
       },
     );
     final data = response.data as Map<String, dynamic>? ?? {};
@@ -77,15 +78,16 @@ class AuthRepositoryImpl implements AuthRepository {
     required String password,
     String? captchaToken,
   }) async {
-    final trimmedCaptcha = captchaToken?.trim();
+    // Use provided token or dummy token for development
+    final effectiveCaptcha = captchaToken?.trim() ?? 'dummy-captcha-token-dev';
+    
     final response = await _apiClient.post(
       '/auth/login',
       authenticated: false,
       body: {
         'email': email.trim(),
         'password': password,
-        if (trimmedCaptcha != null && trimmedCaptcha.isNotEmpty)
-          'captchaToken': trimmedCaptcha,
+        'captchaToken': effectiveCaptcha,
       },
     );
     return _saveSession(response.data as Map<String, dynamic>? ?? {});

@@ -66,9 +66,11 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
         final policy = selected ?? widget.initialPolicy;
         final failed =
             state.detailStatus == RequestStatus.failure && selected == null;
+        final showComments = _showCitizenComments(policy);
 
         return DefaultTabController(
-          length: 2,
+          key: ValueKey('${policy.id}-$showComments'),
+          length: showComments ? 2 : 1,
           child: Scaffold(
             backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             body: failed
@@ -197,31 +199,33 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                                               ],
                                             ),
                                           ),
-                                          Tab(
-                                            height: 48,
-                                            child: Row(
-                                              mainAxisAlignment:
-                                                  MainAxisAlignment.center,
-                                              children: [
-                                                Container(
-                                                  padding:
-                                                      const EdgeInsets.all(5),
-                                                  decoration: BoxDecoration(
-                                                    color: AppTheme.primary
-                                                        .withValues(alpha: 0.1),
-                                                    shape: BoxShape.circle,
+                                          if (showComments)
+                                            Tab(
+                                              height: 48,
+                                              child: Row(
+                                                mainAxisAlignment:
+                                                    MainAxisAlignment.center,
+                                                children: [
+                                                  Container(
+                                                    padding:
+                                                        const EdgeInsets.all(5),
+                                                    decoration: BoxDecoration(
+                                                      color: AppTheme.primary
+                                                          .withValues(
+                                                              alpha: 0.1),
+                                                      shape: BoxShape.circle,
+                                                    ),
+                                                    child: const Icon(
+                                                        Icons.forum_outlined,
+                                                        size: 18),
                                                   ),
-                                                  child: const Icon(
-                                                      Icons.forum_outlined,
-                                                      size: 18),
-                                                ),
-                                                const SizedBox(width: 8),
-                                                Text(
-                                                    AppLocalizations.of(context)
-                                                        .t('discussion')),
-                                              ],
+                                                  const SizedBox(width: 8),
+                                                  Text(AppLocalizations.of(
+                                                          context)
+                                                      .t('discussion')),
+                                                ],
+                                              ),
                                             ),
-                                          ),
                                         ],
                                       ),
                                     ),
@@ -261,7 +265,7 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                             ],
                           ),
                         ),
-                        _CommentsTab(policy: policy),
+                        if (showComments) _CommentsTab(policy: policy),
                       ],
                     ),
                   ),
@@ -270,6 +274,80 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
       },
     );
   }
+}
+
+bool _showCitizenResults(Policy policy) {
+  return policy.citizenAnalyticsVisibility?.showResults ?? true;
+}
+
+bool _showCitizenBreakdown(Policy policy) {
+  final visibility = policy.citizenAnalyticsVisibility;
+  return (visibility?.showResults ?? true) &&
+      (visibility?.showBreakdown ?? false);
+}
+
+bool _showCitizenComments(Policy policy) {
+  return policy.citizenAnalyticsVisibility?.showComments ?? false;
+}
+
+List<Widget> _citizenBreakdownChips(Policy policy) {
+  if (!_showCitizenBreakdown(policy)) return const [];
+
+  if (policy.isBinary) {
+    return [
+      if (policy.yesCount != null)
+        _InfoChip(
+          icon: Icons.thumb_up_outlined,
+          label: _formatCountWithPercentage(
+            'Yes',
+            policy.yesCount!,
+            policy.yesPercentage,
+          ),
+        ),
+      if (policy.noCount != null)
+        _InfoChip(
+          icon: Icons.thumb_down_outlined,
+          label: _formatCountWithPercentage(
+            'No',
+            policy.noCount!,
+            policy.noPercentage,
+          ),
+        ),
+    ];
+  }
+
+  if (policy.isApproval) {
+    return [
+      if (policy.approveCount != null)
+        _InfoChip(
+          icon: Icons.check_circle_outline_rounded,
+          label: 'Approve ${policy.approveCount}',
+        ),
+      if (policy.rejectCount != null)
+        _InfoChip(
+          icon: Icons.cancel_outlined,
+          label: 'Reject ${policy.rejectCount}',
+        ),
+      if (policy.abstainCount != null)
+        _InfoChip(
+          icon: Icons.remove_circle_outline_rounded,
+          label: 'Abstain ${policy.abstainCount}',
+        ),
+    ];
+  }
+
+  return const [];
+}
+
+String _formatCountWithPercentage(
+  String label,
+  int count,
+  String? percentage,
+) {
+  if (percentage == null || percentage.isEmpty) {
+    return '$label $count';
+  }
+  return '$label $count ($percentage)';
 }
 
 class _DetailHeader extends StatefulWidget {
@@ -480,7 +558,14 @@ class _DetailHeaderState extends State<_DetailHeader> {
                 icon: Icons.tag_rounded,
                 label: widget.policy.policyCode,
               ),
-              if (widget.policy.averageRating != null)
+              if (_showCitizenResults(widget.policy) &&
+                  widget.policy.totalVotes > 0)
+                _InfoChip(
+                  icon: Icons.how_to_vote_outlined,
+                  label: '${widget.policy.totalVotes} votes',
+                ),
+              if (_showCitizenResults(widget.policy) &&
+                  widget.policy.averageRating != null)
                 _InfoChip(
                   icon: Icons.star_rounded,
                   label:
@@ -493,6 +578,7 @@ class _DetailHeaderState extends State<_DetailHeader> {
                       ? Colors.amber.shade200
                       : Colors.amber.shade900,
                 ),
+              ..._citizenBreakdownChips(widget.policy),
               if (widget.policy.topics != null &&
                   widget.policy.topics!.isNotEmpty)
                 ...widget.policy.topics!.take(2).map(
@@ -778,7 +864,14 @@ class _PolicyInfoCardState extends State<_PolicyInfoCard> {
                   icon: Icons.tag_rounded,
                   label: widget.policy.policyCode,
                 ),
-                if (widget.policy.averageRating != null)
+                if (_showCitizenResults(widget.policy) &&
+                    widget.policy.totalVotes > 0)
+                  _InfoChip(
+                    icon: Icons.how_to_vote_outlined,
+                    label: '${widget.policy.totalVotes} votes',
+                  ),
+                if (_showCitizenResults(widget.policy) &&
+                    widget.policy.averageRating != null)
                   _InfoChip(
                     icon: Icons.star_rounded,
                     label:
@@ -791,6 +884,7 @@ class _PolicyInfoCardState extends State<_PolicyInfoCard> {
                         ? Colors.amber.shade200
                         : Colors.amber.shade900,
                   ),
+                ..._citizenBreakdownChips(widget.policy),
                 if (widget.policy.topics != null &&
                     widget.policy.topics!.isNotEmpty)
                   ...widget.policy.topics!.take(2).map(

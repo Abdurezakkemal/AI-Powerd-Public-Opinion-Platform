@@ -3,6 +3,8 @@ import '../network/api_client.dart';
 class TranslationService {
   TranslationService(this._apiClient);
 
+  static const _translationTimeout = Duration(minutes: 3);
+
   final ApiClient _apiClient;
   final Map<String, String> _cache = {};
 
@@ -22,11 +24,13 @@ class TranslationService {
     }
 
     print('[TranslationService] Translating from $sourceLang to $targetLang');
-    print('[TranslationService] Text: ${trimmed.substring(0, trimmed.length > 50 ? 50 : trimmed.length)}...');
+    print(
+        '[TranslationService] Text: ${trimmed.substring(0, trimmed.length > 50 ? 50 : trimmed.length)}...');
 
     try {
       final response = await _apiClient.post(
         '/translate',
+        timeout: _translationTimeout,
         body: {
           'text': trimmed,
           'sourceLang': sourceLang,
@@ -39,7 +43,8 @@ class TranslationService {
       final translated = _translatedText(response.data);
       if (translated == null || translated.trim().isEmpty) {
         print('[TranslationService] ERROR: Empty translation response');
-        throw const FormatException('Translation response did not include text.');
+        throw const FormatException(
+            'Translation response did not include text.');
       }
 
       _cache[cacheKey] = translated;

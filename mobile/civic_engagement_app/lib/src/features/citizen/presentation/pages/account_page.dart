@@ -7,6 +7,7 @@ import '../../../../core/layout/responsive_layout.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/error_view.dart';
+import '../../../../core/widgets/password_requirements.dart';
 import '../../../../core/services/location_service.dart';
 import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/settings/app_settings_controller.dart';
@@ -143,7 +144,7 @@ class _AccountPageState extends State<AccountPage> {
                     pagePadding,
                     8,
                     pagePadding,
-                    12,
+                    8,
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -186,7 +187,7 @@ class _AccountPageState extends State<AccountPage> {
           SliverPadding(
             padding: EdgeInsets.fromLTRB(
               pagePadding,
-              20,
+              10,
               pagePadding,
               100,
             ),
@@ -201,7 +202,7 @@ class _AccountPageState extends State<AccountPage> {
                         _buildElevatedCard(
                           child: _buildProfileSummaryCard(context, profile),
                         ),
-                        const SizedBox(height: 16),
+                        const SizedBox(height: 10),
                       ],
                     ),
                   ),
@@ -223,7 +224,7 @@ class _AccountPageState extends State<AccountPage> {
                               icon: Icons.tune_rounded,
                               title: l10n.t('account.preferences'),
                             ),
-                            const SizedBox(height: 20),
+                            const SizedBox(height: 14),
 
                             // Language Section
                             Row(
@@ -304,9 +305,9 @@ class _AccountPageState extends State<AccountPage> {
                                     },
                             ),
 
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 16),
                             const Divider(height: 1),
-                            const SizedBox(height: 24),
+                            const SizedBox(height: 16),
 
                             // Theme Section
                             Row(
@@ -378,7 +379,7 @@ class _AccountPageState extends State<AccountPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
 
                 // Become Planner Card
                 Center(
@@ -431,7 +432,7 @@ class _AccountPageState extends State<AccountPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
 
                 // Region Card
                 Center(
@@ -585,7 +586,7 @@ class _AccountPageState extends State<AccountPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
 
                 // Password Card
                 Center(
@@ -617,6 +618,10 @@ class _AccountPageState extends State<AccountPage> {
                               icon: Icons.lock_reset_rounded,
                               obscureText: true,
                             ),
+                            const SizedBox(height: 10),
+                            PasswordRequirements(
+                              controller: _newPasswordController,
+                            ),
                             const SizedBox(height: 14),
                             Align(
                               alignment: Alignment.centerLeft,
@@ -644,7 +649,7 @@ class _AccountPageState extends State<AccountPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
 
                 // Email Card
                 Center(
@@ -717,7 +722,7 @@ class _AccountPageState extends State<AccountPage> {
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
 
                 // Account Actions Card
                 Center(
@@ -885,7 +890,7 @@ class _AccountPageState extends State<AccountPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 avatar,
-                const SizedBox(height: 16),
+                const SizedBox(height: 10),
                 details,
               ],
             );
@@ -952,6 +957,13 @@ class _AccountPageState extends State<AccountPage> {
     if (_currentPasswordController.text.trim().isEmpty ||
         _newPasswordController.text.trim().isEmpty) {
       _showMessage('Current and new password are required.', isError: true);
+      return;
+    }
+    if (!PasswordRules.isStrong(_newPasswordController.text)) {
+      _showMessage(
+        'Please create a stronger password that meets all requirements.',
+        isError: true,
+      );
       return;
     }
     context.read<ProfileCubit>().changePassword(

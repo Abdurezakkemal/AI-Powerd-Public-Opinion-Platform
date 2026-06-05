@@ -102,7 +102,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                             pagePadding,
                             8,
                             pagePadding,
-                            12,
+                            8,
                           ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -191,7 +191,7 @@ class _NotificationsPageState extends State<NotificationsPage> {
                     SliverPadding(
                       padding: EdgeInsets.fromLTRB(
                         pagePadding,
-                        8,
+                        2,
                         pagePadding,
                         24,
                       ),
@@ -270,7 +270,7 @@ class _NotificationFilters extends StatelessWidget {
         constraints: BoxConstraints(maxWidth: maxWidth),
         child: SingleChildScrollView(
           scrollDirection: Axis.horizontal,
-          padding: EdgeInsets.fromLTRB(pagePadding, 2, pagePadding, 8),
+          padding: EdgeInsets.fromLTRB(pagePadding, 0, pagePadding, 4),
           child: Row(
             children: [
               _chip(
@@ -314,6 +314,8 @@ class _NotificationFilters extends StatelessWidget {
       side: BorderSide(
         color: selected ? AppTheme.primary : AppTheme.borderFor(context),
       ),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 }
