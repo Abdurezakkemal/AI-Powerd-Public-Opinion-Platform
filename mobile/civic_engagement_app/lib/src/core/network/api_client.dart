@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 
 import '../error/api_exception.dart';
 import '../session/session_store.dart';
@@ -36,6 +38,20 @@ class ApiClient {
     bool authenticated = true,
   }) {
     return _send('POST', path, body: body, authenticated: authenticated);
+  }
+
+  Future<ApiResult> postMultipart(
+    String path, {
+    Map<String, String>? fields,
+    List<ApiMultipartFile>? files,
+    bool authenticated = true,
+  }) {
+    return _sendMultipart(
+      path,
+      fields: fields,
+      files: files,
+      authenticated: authenticated,
+    );
   }
 
   Future<ApiResult> put(
@@ -91,6 +107,37 @@ class ApiClient {
         );
   }
 
+  Future<ApiResult> _sendMultipart(
+    String path, {
+    Map<String, String>? fields,
+    List<ApiMultipartFile>? files,
+    bool authenticated = true,
+  }) async {
+    ApiException? lastConnectionError;
+
+    for (final baseUrl in _baseUrls) {
+      try {
+        return await _sendMultipartOnce(
+          path,
+          baseUrl: baseUrl,
+          fields: fields,
+          files: files,
+          authenticated: authenticated,
+        );
+      } on ApiException catch (error) {
+        if (error.statusCode != null) {
+          rethrow;
+        }
+        lastConnectionError = error;
+      }
+    }
+
+    throw lastConnectionError ??
+        ApiException(
+          message: 'Could not connect to the server. Check your connection.',
+        );
+  }
+
   Future<ApiResult> _sendOnce(
     String method,
     String path, {
@@ -120,6 +167,62 @@ class ApiClient {
         headers,
         encodedBody,
       ).timeout(_timeout);
+      return _handleResponse(response);
+    } on TimeoutException {
+      throw ApiException(message: 'The server took too long to respond.');
+    } on ApiException {
+      rethrow;
+    } on FormatException catch (e) {
+      print('FormatException: $e');
+      throw ApiException(
+        message: 'The server returned an invalid response. ${e.message}',
+      );
+    } on Exception catch (e) {
+      print('Exception: $e');
+      throw ApiException(
+        message: 'Could not connect to the server. Check your connection.',
+      );
+    }
+  }
+
+  Future<ApiResult> _sendMultipartOnce(
+    String path, {
+    required String baseUrl,
+    Map<String, String>? fields,
+    List<ApiMultipartFile>? files,
+    bool authenticated = true,
+  }) async {
+    final uri = _uri(baseUrl, path, null);
+    final request = http.MultipartRequest('POST', uri)
+      ..headers['Accept'] = 'application/json';
+
+    if (authenticated) {
+      final token = _sessionStore.token;
+      if (token != null) {
+        request.headers['Authorization'] = 'Bearer $token';
+      }
+    }
+
+    if (fields != null) {
+      request.fields.addAll(fields);
+    }
+
+    if (files != null) {
+      for (final file in files) {
+        request.files.add(
+          http.MultipartFile.fromBytes(
+            file.field,
+            file.bytes,
+            filename: file.filename,
+            contentType: file.contentType,
+          ),
+        );
+      }
+    }
+
+    try {
+      final streamedResponse = await request.send().timeout(_timeout);
+      final response = await http.Response.fromStream(streamedResponse);
       return _handleResponse(response);
     } on TimeoutException {
       throw ApiException(message: 'The server took too long to respond.');
@@ -274,4 +377,18 @@ class ApiClient {
       queryParameters: queryParameters.isEmpty ? null : queryParameters,
     );
   }
+}
+
+class ApiMultipartFile {
+  const ApiMultipartFile({
+    required this.field,
+    required this.bytes,
+    required this.filename,
+    this.contentType,
+  });
+
+  final String field;
+  final Uint8List bytes;
+  final String filename;
+  final MediaType? contentType;
 }

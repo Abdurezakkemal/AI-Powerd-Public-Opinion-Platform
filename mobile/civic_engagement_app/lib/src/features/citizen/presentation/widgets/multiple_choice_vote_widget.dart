@@ -38,7 +38,7 @@ class MultipleChoiceVoteWidget extends StatelessWidget {
           'Select up to $maxSelections option${maxSelections > 1 ? 's' : ''}',
           style: TextStyle(
             fontSize: 13,
-            color: Colors.grey.shade600,
+            color: AppTheme.mutedTextFor(context),
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -82,15 +82,11 @@ class _OptionTile extends StatelessWidget {
         decoration: BoxDecoration(
           color: selected
               ? AppTheme.primary.withValues(alpha: 0.1)
-              : disabled
-                  ? Colors.grey.shade50
-                  : Colors.grey.shade100,
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
           border: Border.all(
             color: selected
                 ? AppTheme.primary
-                : disabled
-                    ? Colors.grey.shade200
-                    : Colors.grey.shade300,
+                : AppTheme.borderFor(context),
             width: selected ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(12),
@@ -123,7 +119,9 @@ class _OptionTile extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: disabled ? Colors.grey.shade400 : Colors.grey.shade800,
+                  color: disabled
+                      ? AppTheme.mutedTextFor(context).withValues(alpha: 0.65)
+                      : AppTheme.textFor(context),
                 ),
               ),
             ),
@@ -131,15 +129,16 @@ class _OptionTile extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade200,
+                  color: Theme.of(context).colorScheme.surface,
                   borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: AppTheme.borderFor(context)),
                 ),
                 child: Text(
                   option.shortCode,
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: Colors.grey.shade700,
+                    color: AppTheme.mutedTextFor(context),
                   ),
                 ),
               ),

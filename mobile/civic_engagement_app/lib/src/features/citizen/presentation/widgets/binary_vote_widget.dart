@@ -57,15 +57,18 @@ class _OptionButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final effectiveColor = color ?? AppTheme.primary;
+    final mutedColor = AppTheme.mutedTextFor(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 16),
         decoration: BoxDecoration(
-          color: selected ? effectiveColor.withValues(alpha: 0.1) : Colors.grey.shade100,
+          color: selected
+              ? effectiveColor.withValues(alpha: 0.1)
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
           border: Border.all(
-            color: selected ? effectiveColor : Colors.grey.shade300,
+            color: selected ? effectiveColor : AppTheme.borderFor(context),
             width: selected ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(12),
@@ -75,7 +78,7 @@ class _OptionButton extends StatelessWidget {
             Icon(
               icon,
               size: 40,
-              color: selected ? effectiveColor : Colors.grey.shade600,
+              color: selected ? effectiveColor : mutedColor,
             ),
             const SizedBox(height: 8),
             Text(
@@ -83,7 +86,7 @@ class _OptionButton extends StatelessWidget {
               style: TextStyle(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
-                color: selected ? effectiveColor : Colors.grey.shade700,
+                color: selected ? effectiveColor : AppTheme.textFor(context),
               ),
             ),
           ],

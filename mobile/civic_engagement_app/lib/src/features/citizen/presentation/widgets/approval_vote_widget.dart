@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_theme.dart';
+
 class ApprovalVoteWidget extends StatelessWidget {
   const ApprovalVoteWidget({
     required this.value,
@@ -64,15 +66,18 @@ class _OptionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final mutedColor = AppTheme.mutedTextFor(context);
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
       child: Container(
         padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
-          color: selected ? color.withValues(alpha: 0.1) : Colors.grey.shade100,
+          color: selected
+              ? color.withValues(alpha: 0.1)
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
           border: Border.all(
-            color: selected ? color : Colors.grey.shade300,
+            color: selected ? color : AppTheme.borderFor(context),
             width: selected ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(12),
@@ -82,7 +87,7 @@ class _OptionTile extends StatelessWidget {
             Icon(
               icon,
               size: 32,
-              color: selected ? color : Colors.grey.shade600,
+              color: selected ? color : mutedColor,
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -94,7 +99,7 @@ class _OptionTile extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      color: selected ? color : Colors.grey.shade800,
+                      color: selected ? color : AppTheme.textFor(context),
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -102,7 +107,7 @@ class _OptionTile extends StatelessWidget {
                     description,
                     style: TextStyle(
                       fontSize: 13,
-                      color: Colors.grey.shade600,
+                      color: mutedColor,
                     ),
                   ),
                 ],

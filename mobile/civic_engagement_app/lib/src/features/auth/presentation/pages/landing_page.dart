@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
-import 'dart:ui';
 
+import '../../../../core/layout/responsive_layout.dart';
 import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/settings/app_settings_scope.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/app_button.dart';
 
 class LandingPage extends StatefulWidget {
   const LandingPage({
@@ -20,19 +19,42 @@ class LandingPage extends StatefulWidget {
   State<LandingPage> createState() => _LandingPageState();
 }
 
-class _LandingPageState extends State<LandingPage> {
+class _LandingPageState extends State<LandingPage> with TickerProviderStateMixin {
   final _pageController = PageController();
-  int _pageIndex = 0;
+  double _currentPage = 0.0;
+  late AnimationController _fadeController;
+  late AnimationController _scaleController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController.addListener(() {
+      setState(() {
+        _currentPage = _pageController.page ?? 0.0;
+      });
+    });
+
+    _fadeController = AnimationController(
+      duration: const Duration(milliseconds: 400),
+      vsync: this,
+    )..forward();
+
+    _scaleController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+  }
 
   @override
   void dispose() {
     _pageController.dispose();
+    _fadeController.dispose();
+    _scaleController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
     final pages = [
       _LandingSlideData(
@@ -56,14 +78,13 @@ class _LandingPageState extends State<LandingPage> {
     ];
 
     return Scaffold(
-      backgroundColor: Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: Stack(
         children: [
           // Page content
           PageView.builder(
             controller: _pageController,
             itemCount: pages.length,
-            onPageChanged: (index) => setState(() => _pageIndex = index),
             itemBuilder: (context, index) => _LandingSlide(
               data: pages[index],
               pageIndex: index,
@@ -89,7 +110,10 @@ class _LandingPageState extends State<LandingPage> {
             left: 0,
             child: SafeArea(
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: EdgeInsets.symmetric(
+                  horizontal: ResponsiveLayout.pagePadding(context),
+                  vertical: 12,
+                ),
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.end,
                   children: [
@@ -139,7 +163,13 @@ class _LandingSlide extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final l10n = AppLocalizations.of(context);
-    final screenHeight = MediaQuery.of(context).size.height;
+    final bottomColor = theme.scaffoldBackgroundColor;
+    final horizontalPadding = ResponsiveLayout.isTablet(context) ? 40.0 : 32.0;
+    final buttonHorizontalPadding =
+        ResponsiveLayout.isTablet(context) ? 40.0 : 28.0;
+    final titleSize = ResponsiveLayout.heroTitleSize(context);
+    final subtitleSize = ResponsiveLayout.bodyFontSize(context) + 1;
+    final bottomSpacing = ResponsiveLayout.isCompact(context) ? 24.0 : 32.0;
 
     return Stack(
       children: [
@@ -151,7 +181,8 @@ class _LandingSlide extends StatelessWidget {
               Positioned.fill(
                 child: Image.asset(
                   data.imagePath,
-                  fit: BoxFit.cover,
+                  fit: BoxFit.contain,
+                  alignment: Alignment.topCenter,
                   errorBuilder: (context, error, stackTrace) {
                     // Fallback: gradient background
                     return Container(
@@ -186,9 +217,9 @@ class _LandingSlide extends StatelessWidget {
                       colors: [
                         Colors.transparent,
                         Colors.transparent,
-                        Colors.white.withValues(alpha: 0.85),
-                        Colors.white,
-                        Colors.white,
+                        bottomColor.withValues(alpha: 0.85),
+                        bottomColor,
+                        bottomColor,
                       ],
                       stops: const [0.0, 0.3, 0.55, 0.75, 1.0],
                     ),
@@ -206,46 +237,54 @@ class _LandingSlide extends StatelessWidget {
               const Spacer(),
               // Text content
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Column(
-                  children: [
-                    Text(
-                      data.title,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.displaySmall?.copyWith(
-                        fontWeight: FontWeight.w900,
-                        color: AppTheme.text,
-                        height: 1.15,
-                        letterSpacing: -0.5,
-                        fontSize: 32,
+                padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: ResponsiveLayout.isTablet(context)
+                        ? 620
+                        : double.infinity,
+                  ),
+                  child: Column(
+                    children: [
+                      Text(
+                        data.title,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.displaySmall?.copyWith(
+                          fontWeight: FontWeight.w900,
+                          color: AppTheme.textFor(context),
+                          height: 1.15,
+                          letterSpacing: -0.5,
+                          fontSize: titleSize,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 18),
-                    Text(
-                      data.subtitle,
-                      textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyLarge?.copyWith(
-                        color: AppTheme.mutedText,
-                        fontWeight: FontWeight.w500,
-                        height: 1.6,
-                        letterSpacing: 0,
-                        fontSize: 16,
+                      SizedBox(height: ResponsiveLayout.spacing(context, 18)),
+                      Text(
+                        data.subtitle,
+                        textAlign: TextAlign.center,
+                        style: theme.textTheme.bodyLarge?.copyWith(
+                          color: AppTheme.mutedTextFor(context),
+                          fontWeight: FontWeight.w500,
+                          height: 1.6,
+                          letterSpacing: 0,
+                          fontSize: subtitleSize,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
 
-              const SizedBox(height: 36),
+              SizedBox(height: ResponsiveLayout.spacing(context, 36)),
 
               // Page indicators
               _PageDots(count: totalPages, index: pageIndex),
 
-              const SizedBox(height: 36),
+              SizedBox(height: ResponsiveLayout.spacing(context, 36)),
 
               // Buttons
               Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 28),
+                padding:
+                    EdgeInsets.symmetric(horizontal: buttonHorizontalPadding),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
@@ -255,13 +294,16 @@ class _LandingSlide extends StatelessWidget {
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppTheme.primary,
                         foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        padding: EdgeInsets.symmetric(
+                          vertical:
+                              ResponsiveLayout.isCompact(context) ? 16 : 18,
+                        ),
                         elevation: 0,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(30),
                         ),
-                        textStyle: const TextStyle(
-                          fontSize: 17,
+                        textStyle: TextStyle(
+                          fontSize: ResponsiveLayout.bodyFontSize(context) + 2,
                           fontWeight: FontWeight.w700,
                           letterSpacing: 0.2,
                         ),
@@ -275,14 +317,18 @@ class _LandingSlide extends StatelessWidget {
 
                     // Login button (show on last page)
                     if (pageIndex == totalPages - 1) ...[
-                      const SizedBox(height: 14),
+                      SizedBox(height: ResponsiveLayout.spacing(context, 14)),
                       TextButton(
                         onPressed: onLogin,
                         style: TextButton.styleFrom(
-                          foregroundColor: AppTheme.text,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          textStyle: const TextStyle(
-                            fontSize: 16,
+                          foregroundColor: AppTheme.textFor(context),
+                          padding: EdgeInsets.symmetric(
+                            vertical:
+                                ResponsiveLayout.isCompact(context) ? 12 : 16,
+                          ),
+                          textStyle: TextStyle(
+                            fontSize:
+                                ResponsiveLayout.bodyFontSize(context) + 1,
                             fontWeight: FontWeight.w600,
                             letterSpacing: 0,
                           ),
@@ -307,7 +353,7 @@ class _LandingSlide extends StatelessWidget {
                 ),
               ),
 
-              const SizedBox(height: 32),
+              SizedBox(height: bottomSpacing),
             ],
           ),
         ),
@@ -336,8 +382,8 @@ class _PageDots extends StatelessWidget {
           height: 10,
           decoration: BoxDecoration(
             color: active
-                ? AppTheme.text
-                : AppTheme.text.withValues(alpha: 0.25),
+                ? AppTheme.textFor(context)
+                : AppTheme.textFor(context).withValues(alpha: 0.25),
             shape: BoxShape.circle,
           ),
         );
@@ -351,13 +397,14 @@ class _LanguageSelector extends StatelessWidget {
   Widget build(BuildContext context) {
     final settings = AppSettingsScope.of(context);
     final l10n = AppLocalizations.of(context);
+    final surfaceColor = AppTheme.surfaceFor(context);
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.92),
+        color: surfaceColor.withValues(alpha: 0.92),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(
-          color: AppTheme.border.withValues(alpha: 0.3),
+          color: AppTheme.borderFor(context).withValues(alpha: 0.6),
           width: 1,
         ),
         boxShadow: [
@@ -382,10 +429,10 @@ class _LanguageSelector extends StatelessWidget {
               const SizedBox(width: 6),
               Text(
                 _getLanguageCode(settings.languageCode),
-                style: const TextStyle(
+                style: TextStyle(
                   fontWeight: FontWeight.w800,
-                  color: AppTheme.text,
-                  fontSize: 14,
+                  color: AppTheme.textFor(context),
+                  fontSize: ResponsiveLayout.secondaryBodyFontSize(context) + 1,
                   letterSpacing: 0.3,
                 ),
               ),
@@ -410,14 +457,19 @@ class _LanguageSelector extends StatelessWidget {
                         ? Icons.check_circle_rounded
                         : Icons.language_rounded,
                     size: 20,
-                    color: isSelected ? AppTheme.primary : AppTheme.mutedText,
+                    color: isSelected
+                        ? AppTheme.primary
+                        : AppTheme.mutedTextFor(context),
                   ),
                   const SizedBox(width: 12),
                   Text(
                     AppLocalizations.languageName(langCode),
                     style: TextStyle(
-                      fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                      color: isSelected ? AppTheme.primary : AppTheme.text,
+                      fontWeight:
+                          isSelected ? FontWeight.w700 : FontWeight.w600,
+                      color: isSelected
+                          ? AppTheme.primary
+                          : AppTheme.textFor(context),
                     ),
                   ),
                 ],

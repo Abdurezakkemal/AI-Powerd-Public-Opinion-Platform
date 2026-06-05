@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import '../entities/comment.dart';
 import '../entities/notification_page.dart';
 import '../entities/planner_request.dart';
@@ -128,10 +130,25 @@ abstract class CitizenRepository {
     String? email,
     String? phone,
     String? region,
-    String? proofFileBase64,
+    String? ageRange,
+    String? gender,
+    String? occupation,
+    String? education,
+    String? preferredLanguage,
+    List<String>? languagesSpoken,
+    Uint8List? proofFileBytes,
     String? proofFileName,
     String? proofFileMimeType,
   });
+
+  // Get current user's planner request
+  Future<PlannerRequest?> getMyPlannerRequest();
+
+  // Get planner request history
+  Future<List<PlannerRequest>> getMyPlannerRequestHistory();
+
+  // Cancel pending planner request
+  Future<String> cancelMyPlannerRequest();
 
   // Personalized Feed (Section 13)
   Future<List<FeedPolicy>> getPersonalizedFeed();

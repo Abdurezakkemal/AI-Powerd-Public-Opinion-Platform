@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/layout/responsive_layout.dart';
 import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/empty_state.dart';
@@ -32,8 +33,12 @@ class _FeedPageState extends State<FeedPage> {
 
   @override
   Widget build(BuildContext context) {
+    final pagePadding = ResponsiveLayout.pagePadding(context);
+    final maxWidth = ResponsiveLayout.contentMaxWidth(context);
+    final headerButtonSize = ResponsiveLayout.circularButtonSize(context);
+
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: BlocConsumer<FeedCubit, FeedState>(
         listener: (context, state) {
           if (state is FeedInteractionError) {
@@ -69,7 +74,7 @@ class _FeedPageState extends State<FeedPage> {
 
             return RefreshIndicator(
               color: AppTheme.primary,
-              backgroundColor: Colors.white,
+              backgroundColor: AppTheme.surfaceFor(context),
               onRefresh: () async {
                 context.read<FeedCubit>().refresh();
               },
@@ -79,7 +84,7 @@ class _FeedPageState extends State<FeedPage> {
                   SliverToBoxAdapter(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: AppTheme.surfaceFor(context),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.06),
@@ -91,24 +96,30 @@ class _FeedPageState extends State<FeedPage> {
                       child: SafeArea(
                         bottom: false,
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                          padding: EdgeInsets.fromLTRB(
+                            pagePadding,
+                            8,
+                            pagePadding,
+                            12,
+                          ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
                               Text(
                                 AppLocalizations.of(context)
                                     .t('personalized_feed'),
-                                style: const TextStyle(
-                                  fontSize: 28,
+                                style: TextStyle(
+                                  fontSize:
+                                      ResponsiveLayout.headerTitleSize(context),
                                   fontWeight: FontWeight.w900,
-                                  color: AppTheme.text,
+                                  color: AppTheme.textFor(context),
                                   letterSpacing: 0,
                                 ),
                               ),
                               const SizedBox(width: 12),
                               Container(
-                                width: 44,
-                                height: 44,
+                                width: headerButtonSize,
+                                height: headerButtonSize,
                                 decoration: BoxDecoration(
                                   color:
                                       AppTheme.primary.withValues(alpha: 0.1),
@@ -132,71 +143,86 @@ class _FeedPageState extends State<FeedPage> {
                   ),
                   // Content
                   SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
-                    sliver: SliverList.builder(
-                      itemCount: state.policies.length,
-                      itemBuilder: (context, index) {
-                        final feedPolicy = state.policies[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: FeedPolicyCard(
-                            policy: feedPolicy,
-                            onTap: () {
-                              // Record view interaction (fire and forget)
-                              context.read<FeedCubit>().recordInteraction(
-                                    policyId: feedPolicy.id,
-                                    type: InteractionType.view,
-                                  );
+                    padding: EdgeInsets.fromLTRB(
+                      pagePadding,
+                      16,
+                      pagePadding,
+                      100,
+                    ),
+                    sliver: SliverToBoxAdapter(
+                      child: Center(
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(maxWidth: maxWidth),
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            itemCount: state.policies.length,
+                            itemBuilder: (context, index) {
+                              final feedPolicy = state.policies[index];
+                              return Padding(
+                                padding: const EdgeInsets.only(bottom: 16),
+                                child: FeedPolicyCard(
+                                  policy: feedPolicy,
+                                  onTap: () {
+                                    // Record view interaction (fire and forget)
+                                    context.read<FeedCubit>().recordInteraction(
+                                          policyId: feedPolicy.id,
+                                          type: InteractionType.view,
+                                        );
 
-                              // Convert FeedPolicy to minimal Policy for initial display
-                              final initialPolicy = Policy(
-                                id: feedPolicy.id,
-                                title: feedPolicy.title,
-                                description: feedPolicy.description,
-                                policyCode: feedPolicy.policyCode,
-                                targetRegions: feedPolicy.targetRegions,
-                                startDate: feedPolicy.startDate,
-                                endDate: feedPolicy.endDate,
-                                status:
-                                    'active', // Feed only shows active policies
-                                pollType: feedPolicy.pollType,
-                                totalVotes: 0,
-                              );
+                                    // Convert FeedPolicy to minimal Policy for initial display
+                                    final initialPolicy = Policy(
+                                      id: feedPolicy.id,
+                                      title: feedPolicy.title,
+                                      description: feedPolicy.description,
+                                      policyCode: feedPolicy.policyCode,
+                                      targetRegions: feedPolicy.targetRegions,
+                                      startDate: feedPolicy.startDate,
+                                      endDate: feedPolicy.endDate,
+                                      status:
+                                          'active', // Feed only shows active policies
+                                      pollType: feedPolicy.pollType,
+                                      totalVotes: 0,
+                                    );
 
-                              // Navigate to policy detail
-                              Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => MultiBlocProvider(
-                                    providers: [
-                                      BlocProvider(
-                                        create: (_) =>
-                                            PolicyCubit(serviceLocator()),
+                                    // Navigate to policy detail
+                                    Navigator.of(context).push(
+                                      MaterialPageRoute<void>(
+                                        builder: (_) => MultiBlocProvider(
+                                          providers: [
+                                            BlocProvider(
+                                              create: (_) =>
+                                                  PolicyCubit(serviceLocator()),
+                                            ),
+                                            BlocProvider(
+                                              create: (_) =>
+                                                  VoteCubit(serviceLocator()),
+                                            ),
+                                            BlocProvider(
+                                              create: (_) => HistoryCubit(
+                                                serviceLocator(),
+                                              )..loadHistory(),
+                                            ),
+                                            BlocProvider(
+                                              create: (_) => CommentCubit(
+                                                serviceLocator(),
+                                              ),
+                                            ),
+                                          ],
+                                          child: PolicyDetailPage(
+                                            policyId: feedPolicy.id,
+                                            initialPolicy: initialPolicy,
+                                          ),
+                                        ),
                                       ),
-                                      BlocProvider(
-                                        create: (_) =>
-                                            VoteCubit(serviceLocator()),
-                                      ),
-                                      BlocProvider(
-                                        create: (_) =>
-                                            HistoryCubit(serviceLocator())
-                                              ..loadHistory(),
-                                      ),
-                                      BlocProvider(
-                                        create: (_) =>
-                                            CommentCubit(serviceLocator()),
-                                      ),
-                                    ],
-                                    child: PolicyDetailPage(
-                                      policyId: feedPolicy.id,
-                                      initialPolicy: initialPolicy,
-                                    ),
-                                  ),
+                                    );
+                                  },
                                 ),
                               );
                             },
                           ),
-                        );
-                      },
+                        ),
+                      ),
                     ),
                   ),
                 ],

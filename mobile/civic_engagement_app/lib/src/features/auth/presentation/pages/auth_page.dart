@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/layout/responsive_layout.dart';
 import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/app_button.dart';
@@ -153,7 +154,7 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
       },
       builder: (context, state) {
         return Scaffold(
-          backgroundColor: AppTheme.background,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           body: SafeArea(
             child: Stack(
               children: [
@@ -189,11 +190,11 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
                 // Floating back button
                 if (widget.onBack != null)
                   Positioned(
-                    top: 16,
-                    left: 16,
+                    top: ResponsiveLayout.pagePadding(context) * 0.5,
+                    left: ResponsiveLayout.pagePadding(context) * 0.5,
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: AppTheme.surfaceFor(context),
                         shape: BoxShape.circle,
                         boxShadow: [
                           BoxShadow(
@@ -206,8 +207,8 @@ class _AuthPageState extends State<AuthPage> with WidgetsBindingObserver {
                       child: IconButton(
                         icon: const Icon(Icons.arrow_back_ios_new_rounded),
                         onPressed: widget.onBack,
-                        color: AppTheme.text,
-                        iconSize: 20,
+                        color: AppTheme.textFor(context),
+                        iconSize: ResponsiveLayout.isCompact(context) ? 18 : 20,
                       ),
                     ),
                   ),
@@ -419,14 +420,15 @@ class _AuthBackdrop extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final circleSize = ResponsiveLayout.isTablet(context) ? 420.0 : 320.0;
     return Stack(
       children: [
         Positioned(
-          top: -120,
-          right: -140,
+          top: ResponsiveLayout.isTablet(context) ? -140 : -120,
+          right: ResponsiveLayout.isTablet(context) ? -170 : -140,
           child: Container(
-            width: 320,
-            height: 320,
+            width: circleSize,
+            height: circleSize,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: AppTheme.primary.withValues(alpha: 0.08),
@@ -434,11 +436,11 @@ class _AuthBackdrop extends StatelessWidget {
           ),
         ),
         Positioned(
-          bottom: -150,
-          left: -120,
+          bottom: ResponsiveLayout.isTablet(context) ? -190 : -150,
+          left: ResponsiveLayout.isTablet(context) ? -150 : -120,
           child: Container(
-            width: 360,
-            height: 360,
+            width: circleSize + 40,
+            height: circleSize + 40,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: const Color(0xFF2F80ED).withValues(alpha: 0.06),
@@ -462,36 +464,28 @@ class _AuthScreenContainer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final horizontalPadding = ResponsiveLayout.pagePadding(context);
+    final topPadding = ResponsiveLayout.isTablet(context) ? 88.0 : 72.0;
+    final bottomPadding = ResponsiveLayout.isCompact(context) ? 20.0 : 28.0;
+    final cardPadding = ResponsiveLayout.cardPadding(context) + 2;
+
     return LayoutBuilder(
       builder: (context, constraints) {
         return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 72, 20, 28),
+          padding: EdgeInsets.fromLTRB(
+            horizontalPadding,
+            topPadding,
+            horizontalPadding,
+            bottomPadding,
+          ),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: constraints.maxHeight - 100),
-            child: Center(
-              child: Container(
-                width: double.infinity,
-                constraints: const BoxConstraints(maxWidth: double.infinity),
-                padding: const EdgeInsets.fromLTRB(22, 26, 22, 26),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(28),
-                  border: Border.all(color: Colors.white, width: 1),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.07),
-                      blurRadius: 26,
-                      offset: const Offset(0, 14),
-                    ),
-                    BoxShadow(
-                      color: AppTheme.primary.withValues(alpha: 0.05),
-                      blurRadius: 42,
-                      offset: const Offset(0, 22),
-                    ),
-                  ],
-                ),
-                child: child,
-              ),
+            child: Container(
+              width: double.infinity,
+              padding: EdgeInsets.all(cardPadding),
+              decoration:
+                  AppTheme.elevatedCardDecoration(context, borderRadius: 28),
+              child: child,
             ),
           ),
         );
@@ -506,13 +500,16 @@ class _AuthLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final size = ResponsiveLayout.isTablet(context) ? 88.0 : 80.0;
+    final radius = ResponsiveLayout.isTablet(context) ? 24.0 : 20.0;
+
     return Center(
       child: Container(
-        width: 80,
-        height: 80,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
+          color: AppTheme.surfaceFor(context),
+          borderRadius: BorderRadius.circular(radius),
           boxShadow: [
             BoxShadow(
               color: AppTheme.primary.withValues(alpha: 0.25),
@@ -522,7 +519,7 @@ class _AuthLogo extends StatelessWidget {
           ],
         ),
         child: ClipRRect(
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(radius),
           child: Image.asset('assets/logo.png', fit: BoxFit.cover),
         ),
       ),
@@ -556,6 +553,10 @@ class LoginScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final textColor = AppTheme.textFor(context);
+    final mutedColor = AppTheme.mutedTextFor(context);
+    final heroTitleSize = ResponsiveLayout.heroTitleSize(context) - 4;
+    final headingSize = ResponsiveLayout.headerTitleSize(context) - 4;
 
     return _AuthScreenContainer(
       onBack: onBack,
@@ -568,10 +569,10 @@ class LoginScreen extends StatelessWidget {
           Text(
             l10n.t('auth.app_name'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 28,
+            style: TextStyle(
+              fontSize: heroTitleSize,
               fontWeight: FontWeight.w900,
-              color: AppTheme.text,
+              color: textColor,
               letterSpacing: 0,
             ),
           ),
@@ -579,19 +580,19 @@ class LoginScreen extends StatelessWidget {
           Text(
             l10n.t('auth.tagline'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppTheme.mutedText,
-              fontSize: 15,
+            style: TextStyle(
+              color: mutedColor,
+              fontSize: ResponsiveLayout.bodyFontSize(context),
               height: 1.4,
             ),
           ),
           const SizedBox(height: 32),
           Text(
             l10n.t('auth.login'),
-            style: const TextStyle(
-              fontSize: 24,
+            style: TextStyle(
+              fontSize: headingSize,
               fontWeight: FontWeight.w800,
-              color: AppTheme.text,
+              color: textColor,
               letterSpacing: 0,
             ),
           ),
@@ -638,7 +639,7 @@ class LoginScreen extends StatelessWidget {
             children: [
               Text(
                 l10n.t('auth.no_account'),
-                style: const TextStyle(color: AppTheme.mutedText),
+                style: TextStyle(color: mutedColor),
               ),
               TextButton(
                 onPressed: onNavigateToRegister,
@@ -704,6 +705,10 @@ class RegisterScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final textColor = AppTheme.textFor(context);
+    final mutedColor = AppTheme.mutedTextFor(context);
+    final infoColor = Theme.of(context).colorScheme.primary;
+    final headingSize = ResponsiveLayout.headerTitleSize(context) - 4;
 
     return _AuthScreenContainer(
       onBack: onBack,
@@ -716,10 +721,10 @@ class RegisterScreen extends StatelessWidget {
           Text(
             l10n.t('auth.register'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 24,
+            style: TextStyle(
+              fontSize: headingSize,
               fontWeight: FontWeight.w800,
-              color: AppTheme.text,
+              color: textColor,
               letterSpacing: 0,
             ),
           ),
@@ -784,9 +789,9 @@ class RegisterScreen extends StatelessWidget {
                   isDetectingLocation
                       ? l10n.t('register.location_detecting')
                       : l10n.t('register.location_info'),
-                  style: const TextStyle(
-                    fontSize: 12,
-                    color: AppTheme.mutedText,
+                  style: TextStyle(
+                    fontSize: ResponsiveLayout.secondaryBodyFontSize(context),
+                    color: mutedColor,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -821,23 +826,22 @@ class RegisterScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: Colors.blue.shade50,
+              color: infoColor.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: Colors.blue.shade200),
+              border: Border.all(color: infoColor.withValues(alpha: 0.22)),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Row(
                   children: [
-                    Icon(Icons.person_outline,
-                        color: Colors.blue.shade700, size: 20),
+                    Icon(Icons.person_outline, color: infoColor, size: 20),
                     const SizedBox(width: 8),
                     Text(
                       l10n.t('register.demographics_title'),
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
-                        color: Colors.blue.shade700,
+                        color: infoColor,
                       ),
                     ),
                   ],
@@ -845,8 +849,10 @@ class RegisterScreen extends StatelessWidget {
                 const SizedBox(height: 8),
                 Text(
                   l10n.t('register.demographics_info'),
-                  style:
-                      const TextStyle(fontSize: 12, color: AppTheme.mutedText),
+                  style: TextStyle(
+                    fontSize: ResponsiveLayout.secondaryBodyFontSize(context),
+                    color: mutedColor,
+                  ),
                 ),
                 const SizedBox(height: 12),
                 _DemographicDropdown(
@@ -900,7 +906,7 @@ class RegisterScreen extends StatelessWidget {
             children: [
               Text(
                 l10n.t('auth.have_account'),
-                style: const TextStyle(color: AppTheme.mutedText),
+                style: TextStyle(color: mutedColor),
               ),
               TextButton(
                 onPressed: onNavigateToLogin,
@@ -938,6 +944,9 @@ class ForgotPasswordScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final textColor = AppTheme.textFor(context);
+    final mutedColor = AppTheme.mutedTextFor(context);
+    final headingSize = ResponsiveLayout.headerTitleSize(context) - 4;
 
     return _AuthScreenContainer(
       onBack: onBack,
@@ -964,19 +973,19 @@ class ForgotPasswordScreen extends StatelessWidget {
           Text(
             l10n.t('auth.forgot_password'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 24,
+            style: TextStyle(
+              fontSize: headingSize,
               fontWeight: FontWeight.w800,
-              color: AppTheme.text,
+              color: textColor,
             ),
           ),
           const SizedBox(height: 12),
           Text(
             l10n.t('reset.description'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppTheme.mutedText,
-              fontSize: 15,
+            style: TextStyle(
+              color: mutedColor,
+              fontSize: ResponsiveLayout.bodyFontSize(context),
               height: 1.4,
             ),
           ),
@@ -1022,6 +1031,9 @@ class VerifyOtpScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final textColor = AppTheme.textFor(context);
+    final mutedColor = AppTheme.mutedTextFor(context);
+    final headingSize = ResponsiveLayout.headerTitleSize(context) - 4;
 
     return _AuthScreenContainer(
       onBack: onBack,
@@ -1048,19 +1060,19 @@ class VerifyOtpScreen extends StatelessWidget {
           Text(
             l10n.t('verify.title'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 24,
+            style: TextStyle(
+              fontSize: headingSize,
               fontWeight: FontWeight.w800,
-              color: AppTheme.text,
+              color: textColor,
             ),
           ),
           const SizedBox(height: 12),
           Text(
             l10n.t('verify.description'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppTheme.mutedText,
-              fontSize: 15,
+            style: TextStyle(
+              color: mutedColor,
+              fontSize: ResponsiveLayout.bodyFontSize(context),
               height: 1.4,
             ),
           ),
@@ -1123,6 +1135,9 @@ class CreateNewPasswordScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final textColor = AppTheme.textFor(context);
+    final mutedColor = AppTheme.mutedTextFor(context);
+    final headingSize = ResponsiveLayout.headerTitleSize(context) - 4;
 
     return _AuthScreenContainer(
       onBack: onBack,
@@ -1149,19 +1164,19 @@ class CreateNewPasswordScreen extends StatelessWidget {
           Text(
             l10n.t('reset.create_password'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 24,
+            style: TextStyle(
+              fontSize: headingSize,
               fontWeight: FontWeight.w800,
-              color: AppTheme.text,
+              color: textColor,
             ),
           ),
           const SizedBox(height: 12),
           Text(
             l10n.t('reset.create_description'),
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              color: AppTheme.mutedText,
-              fontSize: 15,
+            style: TextStyle(
+              color: mutedColor,
+              fontSize: ResponsiveLayout.bodyFontSize(context),
               height: 1.4,
             ),
           ),
@@ -1219,11 +1234,12 @@ class _DemographicDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: AppTheme.surfaceFor(context),
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE5EDF3)),
+        border: Border.all(color: AppTheme.borderFor(context)),
       ),
       child: DropdownButtonFormField<String>(
         value: value,
@@ -1241,8 +1257,8 @@ class _DemographicDropdown extends StatelessWidget {
           );
         }).toList(),
         onChanged: onChanged,
-        dropdownColor: Colors.white,
-        style: const TextStyle(color: AppTheme.text, fontSize: 16),
+        dropdownColor: AppTheme.surfaceFor(context),
+        style: theme.textTheme.bodyLarge?.copyWith(fontSize: 16),
       ),
     );
   }

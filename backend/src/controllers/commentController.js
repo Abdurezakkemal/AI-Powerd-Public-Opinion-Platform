@@ -512,7 +512,12 @@ exports.getPolicyComments = async (req, res) => {
     const formatted = comments.map((c) => ({
       id: c._id,
       text: c.text,
-      user: c.userId ? { id: c.userId, email: c.userEmail } : null,
+      user: c.userId
+        ? {
+            id: c.userId,
+            email: c.userInfo?.email || null,
+          }
+        : null,
       policyId: c.policyId,
       parentCommentId: c.parentCommentId,
       visibility: c.visibility,

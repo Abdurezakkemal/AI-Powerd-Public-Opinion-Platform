@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/layout/responsive_layout.dart';
 import '../../../../core/state/request_status.dart';
 import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -21,12 +22,16 @@ class PolicyListPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final pagePadding = ResponsiveLayout.pagePadding(context);
+    final maxWidth = ResponsiveLayout.contentMaxWidth(context);
+    final headerButtonSize = ResponsiveLayout.circularButtonSize(context);
+
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: RefreshIndicator(
         onRefresh: () => context.read<PolicyCubit>().loadPolicies(),
         color: AppTheme.primary,
-        backgroundColor: Colors.white,
+        backgroundColor: AppTheme.surfaceFor(context),
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -34,7 +39,7 @@ class PolicyListPage extends StatelessWidget {
             SliverToBoxAdapter(
               child: Container(
                 decoration: BoxDecoration(
-                  color: Colors.white,
+                  color: AppTheme.surfaceFor(context),
                   boxShadow: [
                     BoxShadow(
                       color: Colors.black.withValues(alpha: 0.06),
@@ -46,23 +51,28 @@ class PolicyListPage extends StatelessWidget {
                 child: SafeArea(
                   bottom: false,
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                    padding: EdgeInsets.fromLTRB(
+                      pagePadding,
+                      8,
+                      pagePadding,
+                      12,
+                    ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
                           AppLocalizations.of(context).t('policies'),
-                          style: const TextStyle(
-                            fontSize: 28,
+                          style: TextStyle(
+                            fontSize: ResponsiveLayout.headerTitleSize(context),
                             fontWeight: FontWeight.w900,
-                            color: AppTheme.text,
+                            color: AppTheme.textFor(context),
                             letterSpacing: 0,
                           ),
                         ),
                         const SizedBox(width: 12),
                         Container(
-                          width: 44,
-                          height: 44,
+                          width: headerButtonSize,
+                          height: headerButtonSize,
                           decoration: BoxDecoration(
                             color: AppTheme.primary.withValues(alpha: 0.1),
                             shape: BoxShape.circle,
@@ -85,7 +95,7 @@ class PolicyListPage extends StatelessWidget {
             ),
             const SliverToBoxAdapter(child: SizedBox(height: 10)),
             const SliverToBoxAdapter(child: _PolicyHeader()),
-            const SliverToBoxAdapter(child: SizedBox(height: 12)),
+            const SliverToBoxAdapter(child: SizedBox(height: 6)),
             const SliverToBoxAdapter(child: _FilterChips()),
             BlocBuilder<PolicyCubit, PolicyState>(
               builder: (context, state) {
@@ -118,30 +128,48 @@ class PolicyListPage extends StatelessWidget {
                 }
 
                 return SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 110),
-                  sliver: SliverList.builder(
-                    itemCount: state.policies.length + (state.hasMore ? 1 : 0),
-                    itemBuilder: (context, index) {
-                      if (index >= state.policies.length) {
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 12),
-                          child: OutlinedButton.icon(
-                            onPressed: () =>
-                                context.read<PolicyCubit>().loadPolicies(
-                                      refresh: false,
-                                    ),
-                            icon: const Icon(Icons.expand_more_rounded),
-                            label: Text(AppLocalizations.of(context)
-                                .t('policies.load_more')),
-                          ),
-                        );
-                      }
-                      final policy = state.policies[index];
-                      return _PolicyCard(
-                        policy: policy,
-                        onTap: () => _openPolicy(context, policy),
-                      );
-                    },
+                  padding: EdgeInsets.fromLTRB(
+                    pagePadding,
+                    2,
+                    pagePadding,
+                    110,
+                  ),
+                  sliver: SliverToBoxAdapter(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxWidth),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount:
+                              state.policies.length + (state.hasMore ? 1 : 0),
+                          itemBuilder: (context, index) {
+                            if (index >= state.policies.length) {
+                              return Padding(
+                                padding: const EdgeInsets.only(top: 12),
+                                child: OutlinedButton.icon(
+                                  onPressed: () =>
+                                      context.read<PolicyCubit>().loadPolicies(
+                                            refresh: false,
+                                          ),
+                                  icon: const Icon(Icons.expand_more_rounded),
+                                  label: Text(
+                                    AppLocalizations.of(
+                                      context,
+                                    ).t('policies.load_more'),
+                                  ),
+                                ),
+                              );
+                            }
+                            final policy = state.policies[index];
+                            return _PolicyCard(
+                              policy: policy,
+                              onTap: () => _openPolicy(context, policy),
+                            );
+                          },
+                        ),
+                      ),
+                    ),
                   ),
                 );
               },
@@ -178,7 +206,9 @@ class _PolicyHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: EdgeInsets.symmetric(
+        horizontal: ResponsiveLayout.pagePadding(context),
+      ),
       child: BlocBuilder<ProfileCubit, ProfileState>(
         builder: (context, state) {
           final region =
@@ -206,8 +236,8 @@ class _PolicyHeader extends StatelessWidget {
             child: Row(
               children: [
                 Container(
-                  width: 54,
-                  height: 54,
+                  width: ResponsiveLayout.isTablet(context) ? 60 : 54,
+                  height: ResponsiveLayout.isTablet(context) ? 60 : 54,
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(18),
@@ -231,7 +261,8 @@ class _PolicyHeader extends StatelessWidget {
                           color: Colors.white.withValues(alpha: 0.8),
                           fontWeight: FontWeight.w500,
                           letterSpacing: 0,
-                          fontSize: 13,
+                          fontSize:
+                              ResponsiveLayout.secondaryBodyFontSize(context),
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -241,7 +272,8 @@ class _PolicyHeader extends StatelessWidget {
                               color: Colors.white,
                               fontWeight: FontWeight.w800,
                               letterSpacing: 0,
-                              fontSize: 22,
+                              fontSize:
+                                  ResponsiveLayout.headerTitleSize(context) - 6,
                             ),
                       ),
                     ],
@@ -260,124 +292,167 @@ class _FilterChips extends StatelessWidget {
   const _FilterChips();
 
   static const List<String> availableTopics = [
-    'Agriculture',
-    'Water',
-    'Infrastructure',
     'Health',
     'Education',
-    'Transportation',
+    'Water Supply',
+    'Electricity',
+    'Housing',
+    'Transport',
+    'Roads',
+    'Digital Infrastructure',
+    'Agriculture',
     'Environment',
+    'Climate Change',
     'Economy',
-    'Security',
-    'Technology',
+    'Employment',
+    'Small Business',
+    'Industry',
+    'Trade',
+    'Tourism',
+    'Social Protection',
+    'Food Security',
+    'Poverty Reduction',
+    'Governance',
+    'Justice',
+    'Public Safety',
+    'Urban Planning',
+    'Rural Development',
+    'Youth',
+    'Women Affairs',
   ];
 
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
+    final pagePadding = ResponsiveLayout.pagePadding(context);
+    final maxWidth = ResponsiveLayout.contentMaxWidth(context);
     return BlocBuilder<PolicyCubit, PolicyState>(
       builder: (context, state) {
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(horizontal: 20),
-              child: Row(
-                children: [
-                  _statusChip(
-                      context, l10n.t('policies.all'), 'all', state.filter),
-                  const SizedBox(width: 16),
-                  _statusChip(context, l10n.t('policies.active'), 'active',
-                      state.filter),
-                  const SizedBox(width: 16),
-                  _statusChip(context, l10n.t('policies.closed'), 'paused',
-                      state.filter),
-                  const SizedBox(width: 20),
-                  Container(
-                    width: 1,
-                    height: 30,
-                    color: AppTheme.border,
+        return Center(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.symmetric(horizontal: pagePadding),
+                  child: Row(
+                    children: [
+                      _statusChip(
+                        context,
+                        l10n.t('policies.all'),
+                        'all',
+                        state.filter,
+                      ),
+                      const SizedBox(width: 10),
+                      _statusChip(
+                        context,
+                        l10n.t('policies.active'),
+                        'active',
+                        state.filter,
+                      ),
+                      const SizedBox(width: 10),
+                      _statusChip(
+                        context,
+                        l10n.t('policies.closed'),
+                        'paused',
+                        state.filter,
+                      ),
+                      const SizedBox(width: 12),
+                      Container(
+                        width: 1,
+                        height: 24,
+                        color: AppTheme.borderFor(context),
+                      ),
+                      const SizedBox(width: 10),
+                      ActionChip(
+                        onPressed: () =>
+                            _showTopicFilterSheet(context, state.topicFilters),
+                        avatar: const Icon(Icons.tune_rounded, size: 18),
+                        label: Text(
+                          state.topicFilters.isEmpty
+                              ? l10n.t('policies.topics')
+                              : '${state.topicFilters.length} ${l10n.t('policies.topics')}',
+                        ),
+                        backgroundColor: state.topicFilters.isEmpty
+                            ? AppTheme.surfaceFor(context)
+                            : AppTheme.primary.withValues(alpha: 0.1),
+                        side: BorderSide(
+                          color: state.topicFilters.isEmpty
+                              ? AppTheme.borderFor(context)
+                              : AppTheme.primary.withValues(alpha: 0.3),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 10,
+                        ),
+                        materialTapTargetSize: MaterialTapTargetSize.padded,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(16),
+                        ),
+                        labelStyle: TextStyle(
+                          color: state.topicFilters.isEmpty
+                              ? AppTheme.textFor(context)
+                              : AppTheme.primary,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 16),
-                  ActionChip(
-                    onPressed: () =>
-                        _showTopicFilterSheet(context, state.topicFilters),
-                    avatar: const Icon(Icons.tune_rounded, size: 18),
-                    label: Text(state.topicFilters.isEmpty
-                        ? l10n.t('policies.topics')
-                        : '${state.topicFilters.length} ${l10n.t('policies.topics')}'),
-                    backgroundColor: state.topicFilters.isEmpty
-                        ? Colors.white
-                        : AppTheme.primary.withValues(alpha: 0.1),
-                    side: BorderSide(
-                      color: state.topicFilters.isEmpty
-                          ? AppTheme.border
-                          : AppTheme.primary.withValues(alpha: 0.3),
-                    ),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 12, vertical: 10),
-                    materialTapTargetSize: MaterialTapTargetSize.padded,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16)),
-                    labelStyle: TextStyle(
-                      color: state.topicFilters.isEmpty
-                          ? AppTheme.text
-                          : AppTheme.primary,
-                      fontWeight: FontWeight.w700,
+                ),
+                if (state.topicFilters.isNotEmpty) ...[
+                  const SizedBox(height: 12),
+                  SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    padding: EdgeInsets.symmetric(horizontal: pagePadding),
+                    child: Row(
+                      children: [
+                        TextButton.icon(
+                          onPressed: () =>
+                              context.read<PolicyCubit>().clearTopicFilters(),
+                          icon: const Icon(Icons.clear_all_rounded, size: 16),
+                          label: Text(l10n.t('policies.clear')),
+                          style: TextButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            minimumSize: const Size(0, 32),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        ...state.topicFilters.map((topic) {
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 8),
+                            child: Chip(
+                              label: Text(topic),
+                              deleteIcon:
+                                  const Icon(Icons.close_rounded, size: 16),
+                              onDeleted: () => context
+                                  .read<PolicyCubit>()
+                                  .removeTopicFilter(topic),
+                              backgroundColor:
+                                  AppTheme.primary.withValues(alpha: 0.08),
+                              labelStyle: const TextStyle(
+                                color: AppTheme.primary,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 13,
+                              ),
+                              deleteIconColor: AppTheme.primary,
+                              side: BorderSide.none,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
                     ),
                   ),
                 ],
-              ),
+                const SizedBox(height: 2),
+              ],
             ),
-            if (state.topicFilters.isNotEmpty) ...[
-              const SizedBox(height: 12),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: Row(
-                  children: [
-                    TextButton.icon(
-                      onPressed: () =>
-                          context.read<PolicyCubit>().clearTopicFilters(),
-                      icon: const Icon(Icons.clear_all_rounded, size: 16),
-                      label: Text(l10n.t('policies.clear')),
-                      style: TextButton.styleFrom(
-                        foregroundColor: Colors.redAccent,
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        minimumSize: const Size(0, 32),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    ...state.topicFilters.map((topic) {
-                      return Padding(
-                        padding: const EdgeInsets.only(right: 8),
-                        child: Chip(
-                          label: Text(topic),
-                          deleteIcon: const Icon(Icons.close_rounded, size: 16),
-                          onDeleted: () => context
-                              .read<PolicyCubit>()
-                              .removeTopicFilter(topic),
-                          backgroundColor:
-                              AppTheme.primary.withValues(alpha: 0.08),
-                          labelStyle: const TextStyle(
-                            color: AppTheme.primary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13,
-                          ),
-                          deleteIconColor: AppTheme.primary,
-                          side: BorderSide.none,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                        ),
-                      );
-                    }),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: 8),
-          ],
+          ),
         );
       },
     );
@@ -390,6 +465,11 @@ class _FilterChips extends StatelessWidget {
     String selected,
   ) {
     final active = selected == value;
+    final selectedBackground = AppTheme.isDark(context)
+        ? Theme.of(context).colorScheme.primary
+        : AppTheme.textFor(context);
+    final selectedForeground =
+        AppTheme.isDark(context) ? const Color(0xFF06201B) : Colors.white;
     return ChoiceChip(
       label: Text(label),
       selected: active,
@@ -398,15 +478,17 @@ class _FilterChips extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       onSelected: (_) =>
           context.read<PolicyCubit>().loadPolicies(status: value),
-      selectedColor: AppTheme.text,
-      backgroundColor: Colors.white,
+      selectedColor: selectedBackground,
+      backgroundColor: AppTheme.surfaceFor(context),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: BorderSide(color: active ? AppTheme.text : AppTheme.border),
+        side: BorderSide(
+          color: active ? selectedBackground : AppTheme.borderFor(context),
+        ),
       ),
       materialTapTargetSize: MaterialTapTargetSize.padded,
       labelStyle: TextStyle(
-        color: active ? Colors.white : AppTheme.mutedText,
+        color: active ? selectedForeground : AppTheme.mutedTextFor(context),
         fontWeight: FontWeight.w700,
       ),
     );
@@ -417,7 +499,7 @@ class _FilterChips extends StatelessWidget {
     final l10n = AppLocalizations.of(context);
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.surfaceFor(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
       ),
@@ -464,14 +546,17 @@ class _FilterChips extends StatelessWidget {
                     },
                     selectedColor: AppTheme.primary.withValues(alpha: 0.15),
                     checkmarkColor: AppTheme.primary,
-                    backgroundColor: const Color(0xFFF0F4F8),
+                    backgroundColor:
+                        Theme.of(context).colorScheme.surfaceContainerHighest,
                     side: BorderSide(
                       color: isSelected ? AppTheme.primary : Colors.transparent,
                     ),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16)),
                     labelStyle: TextStyle(
-                      color: isSelected ? AppTheme.primary : AppTheme.text,
+                      color: isSelected
+                          ? AppTheme.primary
+                          : AppTheme.textFor(context),
                       fontWeight: FontWeight.w600,
                     ),
                   );
@@ -515,8 +600,8 @@ class _PolicyCard extends StatelessWidget {
                         : policy.targetRegions.take(2).join(', '),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: AppTheme.mutedText,
+                    style: TextStyle(
+                      color: AppTheme.mutedTextFor(context),
                       fontWeight: FontWeight.w700,
                       fontSize: 13,
                     ),
@@ -528,24 +613,17 @@ class _PolicyCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
               decoration: BoxDecoration(
-                color: AppTheme.primary.withValues(alpha: 0.03),
+                color: AppTheme.subtleFillFor(context),
                 borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: AppTheme.borderFor(context).withValues(alpha: 0.75),
+                ),
               ),
               child: Wrap(
                 spacing: 20,
                 runSpacing: 12,
                 children: [
                   _Metric(icon: Icons.tag_rounded, text: policy.policyCode),
-                  if (policy.averageRating != null)
-                    _Metric(
-                      icon: Icons.star_rounded,
-                      text: policy.averageRating!.toStringAsFixed(1),
-                      iconColor: Colors.amber.shade600,
-                    ),
-                  _Metric(
-                    icon: Icons.how_to_vote_rounded,
-                    text: '${policy.totalVotes} ${l10n.t('policy.votes')}',
-                  ),
                   _Metric(
                     icon: Icons.event_rounded,
                     text: DateFormatters.compact(policy.endDate),
@@ -561,23 +639,22 @@ class _PolicyCard extends StatelessWidget {
 }
 
 class _Metric extends StatelessWidget {
-  const _Metric({required this.icon, required this.text, this.iconColor});
+  const _Metric({required this.icon, required this.text});
 
   final IconData icon;
   final String text;
-  final Color? iconColor;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 18, color: iconColor ?? AppTheme.primary),
+        Icon(icon, size: 18, color: AppTheme.primary),
         const SizedBox(width: 6),
         Text(
           text,
-          style: const TextStyle(
-            color: AppTheme.text,
+          style: TextStyle(
+            color: AppTheme.textFor(context),
             fontWeight: FontWeight.w600,
             fontSize: 13,
           ),

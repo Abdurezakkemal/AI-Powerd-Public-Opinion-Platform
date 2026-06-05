@@ -3,8 +3,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/state/request_status.dart';
 import '../../../../core/di/service_locator.dart';
+import '../../../../core/layout/responsive_layout.dart';
 import '../../../../core/theme/app_theme.dart';
-import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_text_field.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../../core/services/location_service.dart';
@@ -12,6 +12,7 @@ import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/settings/app_settings_controller.dart';
 import '../../../../core/settings/app_settings_scope.dart';
 import '../../../auth/presentation/cubit/auth_cubit.dart';
+import '../../domain/entities/user_profile.dart';
 import '../cubit/profile_cubit.dart';
 import 'planner_request_page.dart';
 
@@ -28,11 +29,8 @@ class _AccountPageState extends State<AccountPage> {
   final _newPasswordController = TextEditingController();
   final _newEmailController = TextEditingController();
   final _emailCodeController = TextEditingController();
-  final _newPhoneController = TextEditingController();
-  final _phoneCodeController = TextEditingController();
   final _locationService = LocationService();
   bool _isDetectingLocation = false;
-  bool _logoutAfterPhoneVerify = false;
   bool _hasManuallySelectedLanguage = false;
   String _selectedLanguage = 'en';
 
@@ -43,8 +41,6 @@ class _AccountPageState extends State<AccountPage> {
     _newPasswordController.dispose();
     _newEmailController.dispose();
     _emailCodeController.dispose();
-    _newPhoneController.dispose();
-    _phoneCodeController.dispose();
     super.dispose();
   }
 
@@ -79,15 +75,9 @@ class _AccountPageState extends State<AccountPage> {
           _currentPasswordController.clear();
           _newPasswordController.clear();
           _emailCodeController.clear();
-          _phoneCodeController.clear();
-          if (_logoutAfterPhoneVerify) {
-            _logoutAfterPhoneVerify = false;
-            context.read<AuthCubit>().logout();
-          }
         }
         if (state.actionStatus == RequestStatus.failure &&
             state.message != null) {
-          _logoutAfterPhoneVerify = false;
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text(state.message!),
               backgroundColor: Colors.redAccent));
@@ -95,7 +85,7 @@ class _AccountPageState extends State<AccountPage> {
       },
       builder: (context, state) {
         return Scaffold(
-          backgroundColor: AppTheme.background,
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           body: _body(context, state),
         );
       },
@@ -123,10 +113,13 @@ class _AccountPageState extends State<AccountPage> {
 
     final busy = state.actionStatus == RequestStatus.loading;
     final l10n = AppLocalizations.of(context);
+    final pagePadding = ResponsiveLayout.pagePadding(context);
+    final maxWidth = ResponsiveLayout.contentMaxWidth(context);
+    final headerButtonSize = ResponsiveLayout.circularButtonSize(context);
 
     return RefreshIndicator(
       color: AppTheme.primary,
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.surfaceFor(context),
       onRefresh: () => context.read<ProfileCubit>().loadProfile(),
       child: CustomScrollView(
         slivers: [
@@ -134,7 +127,7 @@ class _AccountPageState extends State<AccountPage> {
           SliverToBoxAdapter(
             child: Container(
               decoration: BoxDecoration(
-                color: Colors.white,
+                color: AppTheme.surfaceFor(context),
                 boxShadow: [
                   BoxShadow(
                     color: Colors.black.withValues(alpha: 0.06),
@@ -146,23 +139,28 @@ class _AccountPageState extends State<AccountPage> {
               child: SafeArea(
                 bottom: false,
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                  padding: EdgeInsets.fromLTRB(
+                    pagePadding,
+                    8,
+                    pagePadding,
+                    12,
+                  ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
                         l10n.t('account'),
-                        style: const TextStyle(
-                          fontSize: 28,
+                        style: TextStyle(
+                          fontSize: ResponsiveLayout.headerTitleSize(context),
                           fontWeight: FontWeight.w900,
-                          color: AppTheme.text,
+                          color: AppTheme.textFor(context),
                           letterSpacing: 0,
                         ),
                       ),
                       const SizedBox(width: 12),
                       Container(
-                        width: 44,
-                        height: 44,
+                        width: headerButtonSize,
+                        height: headerButtonSize,
                         decoration: BoxDecoration(
                           color: AppTheme.primary.withValues(alpha: 0.1),
                           shape: BoxShape.circle,
@@ -186,553 +184,602 @@ class _AccountPageState extends State<AccountPage> {
 
           // Content
           SliverPadding(
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 100),
+            padding: EdgeInsets.fromLTRB(
+              pagePadding,
+              20,
+              pagePadding,
+              100,
+            ),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                // Profile Card - Larger height
-                _buildElevatedCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Row(
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: Column(
                       children: [
-                        Container(
-                          width: 72,
-                          height: 72,
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              colors: [
-                                AppTheme.primary.withValues(alpha: 0.2),
-                                AppTheme.primary.withValues(alpha: 0.1),
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Icon(
-                            Icons.person_rounded,
-                            color: AppTheme.primary,
-                            size: 36,
-                          ),
+                        // Profile Card - Larger height
+                        _buildElevatedCard(
+                          child: _buildProfileSummaryCard(context, profile),
                         ),
-                        const SizedBox(width: 20),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                profile.email,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppTheme.text,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  Icon(Icons.location_on_rounded,
-                                      size: 16,
-                                      color: AppTheme.mutedText
-                                          .withValues(alpha: 0.8)),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    profile.region,
-                                    style: const TextStyle(
-                                        color: AppTheme.mutedText,
-                                        fontWeight: FontWeight.w600,
-                                        fontSize: 14),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-                              Row(
-                                children: [
-                                  if (profile.verified) ...[
-                                    Icon(Icons.verified_rounded,
-                                        size: 16, color: Colors.blue.shade600),
-                                    const SizedBox(width: 4),
-                                    Text(l10n.t('account.verified'),
-                                        style: TextStyle(
-                                            color: Colors.blue.shade600,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14)),
-                                  ] else ...[
-                                    Icon(Icons.pending_actions_rounded,
-                                        size: 16,
-                                        color: Colors.orange.shade600),
-                                    const SizedBox(width: 4),
-                                    Text(l10n.t('account.unverified'),
-                                        style: TextStyle(
-                                            color: Colors.orange.shade600,
-                                            fontWeight: FontWeight.w700,
-                                            fontSize: 14)),
-                                  ],
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
+                        const SizedBox(height: 16),
                       ],
                     ),
                   ),
                 ),
-                const SizedBox(height: 16),
 
                 // Preferences Card (Language + Theme combined)
-                _buildElevatedCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _SectionTitle(
-                          icon: Icons.tune_rounded,
-                          title: l10n.t('account.preferences'),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: _buildElevatedCard(
+                      child: Padding(
+                        padding: EdgeInsets.all(
+                          ResponsiveLayout.cardPadding(context),
                         ),
-                        const SizedBox(height: 20),
-
-                        // Language Section
-                        Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.translate_rounded,
-                                color: AppTheme.mutedText, size: 20),
-                            const SizedBox(width: 12),
-                            Text(
-                              l10n.t('account.language'),
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.text,
-                              ),
+                            _SectionTitle(
+                              icon: Icons.tune_rounded,
+                              title: l10n.t('account.preferences'),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<String>(
-                          value: _selectedLanguage,
-                          decoration: InputDecoration(
-                            labelText: l10n.t('preferred_language'),
-                            prefixIcon: const Icon(Icons.language_rounded),
-                            contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 14),
-                          ),
-                          icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                          items: AppLocalizations.supportedLocales
-                              .map(
-                                (locale) => DropdownMenuItem(
-                                  value: locale.languageCode,
-                                  child: Text(
-                                    AppLocalizations.languageName(
-                                        locale.languageCode),
+                            const SizedBox(height: 20),
+
+                            // Language Section
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.translate_rounded,
+                                  color: AppTheme.mutedTextFor(context),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  l10n.t('account.language'),
+                                  style: TextStyle(
+                                    fontSize:
+                                        ResponsiveLayout.bodyFontSize(context),
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.textFor(context),
                                   ),
                                 ),
-                              )
-                              .toList(),
-                          onChanged: busy
-                              ? null
-                              : (value) {
-                                  if (value == null ||
-                                      value == _selectedLanguage) {
-                                    return;
-                                  }
-                                  setState(() {
-                                    _selectedLanguage = value;
-                                    _hasManuallySelectedLanguage = true;
-                                  });
-                                  serviceLocator<AppSettingsController>()
-                                      .setLocale(value);
-                                  context
-                                      .read<ProfileCubit>()
-                                      .updatePreferredLanguage(value);
-                                },
-                        ),
-
-                        const SizedBox(height: 24),
-                        const Divider(height: 1),
-                        const SizedBox(height: 24),
-
-                        // Theme Section
-                        Row(
-                          children: [
-                            Icon(Icons.dark_mode_outlined,
-                                color: AppTheme.mutedText, size: 20),
-                            const SizedBox(width: 12),
-                            Text(
-                              l10n.t('account.theme'),
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.text,
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            Padding(
+                              padding:
+                                  const EdgeInsets.only(left: 2, bottom: 8),
+                              child: Text(
+                                l10n.t('preferred_language'),
+                                style: TextStyle(
+                                  fontSize:
+                                      ResponsiveLayout.secondaryBodyFontSize(
+                                    context,
+                                  ),
+                                  color: AppTheme.mutedTextFor(context),
+                                  fontWeight: FontWeight.w600,
+                                ),
                               ),
+                            ),
+                            DropdownButtonFormField<String>(
+                              value: _selectedLanguage,
+                              decoration: InputDecoration(
+                                prefixIcon: const Icon(Icons.language_rounded),
+                                contentPadding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 14,
+                                ),
+                              ),
+                              icon: const Icon(
+                                Icons.keyboard_arrow_down_rounded,
+                              ),
+                              items: AppLocalizations.supportedLocales
+                                  .map(
+                                    (locale) => DropdownMenuItem(
+                                      value: locale.languageCode,
+                                      child: Text(
+                                        AppLocalizations.languageName(
+                                          locale.languageCode,
+                                        ),
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: busy
+                                  ? null
+                                  : (value) {
+                                      if (value == null ||
+                                          value == _selectedLanguage) {
+                                        return;
+                                      }
+                                      setState(() {
+                                        _selectedLanguage = value;
+                                        _hasManuallySelectedLanguage = true;
+                                      });
+                                      serviceLocator<AppSettingsController>()
+                                          .setLocale(value);
+                                      context
+                                          .read<ProfileCubit>()
+                                          .updatePreferredLanguage(value);
+                                    },
+                            ),
+
+                            const SizedBox(height: 24),
+                            const Divider(height: 1),
+                            const SizedBox(height: 24),
+
+                            // Theme Section
+                            Row(
+                              children: [
+                                Icon(
+                                  Icons.dark_mode_outlined,
+                                  color: AppTheme.mutedTextFor(context),
+                                  size: 20,
+                                ),
+                                const SizedBox(width: 12),
+                                Text(
+                                  l10n.t('account.theme'),
+                                  style: TextStyle(
+                                    fontSize:
+                                        ResponsiveLayout.bodyFontSize(context),
+                                    fontWeight: FontWeight.w600,
+                                    color: AppTheme.textFor(context),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            AnimatedBuilder(
+                              animation: AppSettingsScope.of(context),
+                              builder: (context, _) {
+                                final settings = AppSettingsScope.of(context);
+                                final selectedMode =
+                                    settings.themeMode == ThemeMode.dark
+                                        ? ThemeMode.dark
+                                        : ThemeMode.light;
+                                return LayoutBuilder(
+                                  builder: (context, constraints) {
+                                    final useVerticalLayout =
+                                        constraints.maxWidth < 320;
+                                    return Wrap(
+                                      spacing: 10,
+                                      runSpacing: 10,
+                                      direction: useVerticalLayout
+                                          ? Axis.vertical
+                                          : Axis.horizontal,
+                                      children: [
+                                        _ThemeChoiceButton(
+                                          icon: Icons.light_mode_outlined,
+                                          label: l10n.t('theme.light'),
+                                          selected:
+                                              selectedMode == ThemeMode.light,
+                                          onTap: () => settings.setThemeMode(
+                                            ThemeMode.light,
+                                          ),
+                                        ),
+                                        _ThemeChoiceButton(
+                                          icon: Icons.dark_mode_outlined,
+                                          label: l10n.t('theme.dark'),
+                                          selected:
+                                              selectedMode == ThemeMode.dark,
+                                          onTap: () => settings.setThemeMode(
+                                            ThemeMode.dark,
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  },
+                                );
+                              },
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        AnimatedBuilder(
-                          animation: AppSettingsScope.of(context),
-                          builder: (context, _) {
-                            final settings = AppSettingsScope.of(context);
-                            return SegmentedButton<ThemeMode>(
-                              segments: [
-                                ButtonSegment(
-                                  value: ThemeMode.system,
-                                  icon: const Icon(
-                                      Icons.settings_suggest_outlined,
-                                      size: 18),
-                                  label: Text(l10n.t('theme.system')),
-                                ),
-                                ButtonSegment(
-                                  value: ThemeMode.light,
-                                  icon: const Icon(Icons.light_mode_outlined,
-                                      size: 18),
-                                  label: Text(l10n.t('theme.light')),
-                                ),
-                                ButtonSegment(
-                                  value: ThemeMode.dark,
-                                  icon: const Icon(Icons.dark_mode_outlined,
-                                      size: 18),
-                                  label: Text(l10n.t('theme.dark')),
-                                ),
-                              ],
-                              selected: {settings.themeMode},
-                              onSelectionChanged: (selection) {
-                                settings.setThemeMode(selection.first);
-                              },
-                            );
-                          },
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 16),
 
                 // Become Planner Card
-                _buildElevatedCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _SectionTitle(
-                          icon: Icons.work_outline_rounded,
-                          title: l10n.t('account.become_planner'),
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: _buildElevatedCard(
+                      child: Padding(
+                        padding: EdgeInsets.all(
+                          ResponsiveLayout.cardPadding(context),
                         ),
-                        const SizedBox(height: 16),
-                        Text(
-                          l10n.t('account.planner_description'),
-                          style: const TextStyle(
-                            fontSize: 14,
-                            color: AppTheme.mutedText,
-                            height: 1.5,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () {
-                              Navigator.of(context).push(
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      const PlannerRequestPage(),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _SectionTitle(
+                              icon: Icons.work_outline_rounded,
+                              title: l10n.t('account.become_planner'),
+                            ),
+                            const SizedBox(height: 16),
+                            Text(
+                              l10n.t('account.planner_description'),
+                              style: TextStyle(
+                                fontSize:
+                                    ResponsiveLayout.secondaryBodyFontSize(
+                                  context,
                                 ),
-                              );
-                            },
-                            icon: const Icon(Icons.send_rounded, size: 18),
-                            label: Text(l10n.t('account.request_planner')),
-                            style: _outlinedButtonStyle(),
-                          ),
+                                color: AppTheme.mutedTextFor(context),
+                                height: 1.5,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          const PlannerRequestPage(),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.send_rounded, size: 16),
+                                label: const Text('Request Planner'),
+                                style: _compactOutlinedButtonStyle(context),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
                 const SizedBox(height: 16),
 
-                // Security & Account Card (Region, Password, Email, Settings)
-                _buildElevatedCard(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        _SectionTitle(
-                          icon: Icons.security_rounded,
-                          title: l10n.t('account.security'),
+                // Region Card
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: _buildElevatedCard(
+                      child: Padding(
+                        padding: EdgeInsets.all(
+                          ResponsiveLayout.cardPadding(context),
                         ),
-                        const SizedBox(height: 20),
-
-                        // Region Section
-                        Row(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.location_on_rounded,
-                                color: AppTheme.mutedText, size: 20),
-                            const SizedBox(width: 12),
-                            Text(
-                              l10n.t('account.region'),
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.text,
-                              ),
+                            _SectionTitle(
+                              icon: Icons.location_on_rounded,
+                              title: l10n.t('account.region'),
                             ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Container(
-                          padding: const EdgeInsets.all(16),
-                          decoration: BoxDecoration(
-                            color: AppTheme.primary.withValues(alpha: 0.03),
-                            borderRadius: BorderRadius.circular(16),
-                            border: Border.all(
-                              color: AppTheme.primary.withValues(alpha: 0.15),
-                            ),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.info_outline_rounded,
-                                    color: AppTheme.primary,
-                                    size: 18,
+                            const SizedBox(height: 12),
+                            Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
+                                color: AppTheme.primary.withValues(alpha: 0.03),
+                                borderRadius: BorderRadius.circular(16),
+                                border: Border.all(
+                                  color: AppTheme.primary.withValues(
+                                    alpha: 0.15,
                                   ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      l10n.t('account.gps_description'),
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: AppTheme.primary
-                                            .withValues(alpha: 0.8),
-                                        height: 1.4,
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline_rounded,
+                                        color: AppTheme.primary,
+                                        size: 18,
                                       ),
-                                    ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          l10n.t('account.gps_description'),
+                                          style: TextStyle(
+                                            fontSize: ResponsiveLayout
+                                                .secondaryBodyFontSize(
+                                              context,
+                                            ),
+                                            color: AppTheme.primary.withValues(
+                                              alpha: 0.8,
+                                            ),
+                                            height: 1.4,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
                                   ),
-                                ],
-                              ),
-                              const SizedBox(height: 12),
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: AppTextField(
-                                      controller: _regionController,
-                                      label: l10n.t('account.current_region'),
-                                      icon: Icons.map_rounded,
-                                      readOnly: true,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Container(
-                                    height: 56,
-                                    width: 56,
-                                    decoration: BoxDecoration(
-                                      color: AppTheme.primary,
-                                      borderRadius: BorderRadius.circular(16),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: AppTheme.primary
-                                              .withValues(alpha: 0.3),
-                                          blurRadius: 8,
-                                          offset: const Offset(0, 4),
-                                        )
-                                      ],
-                                    ),
-                                    child: IconButton(
-                                      onPressed: _isDetectingLocation
-                                          ? null
-                                          : _detectLocation,
-                                      icon: _isDetectingLocation
-                                          ? const SizedBox(
-                                              width: 24,
-                                              height: 24,
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2.5,
-                                                color: Colors.white,
+                                  const SizedBox(height: 12),
+                                  LayoutBuilder(
+                                    builder: (context, constraints) {
+                                      final stackVertically =
+                                          constraints.maxWidth < 430;
+                                      final detectButton = Container(
+                                        height: ResponsiveLayout
+                                                .compactControlHeight(context) +
+                                            4,
+                                        width: ResponsiveLayout
+                                                .compactControlHeight(context) +
+                                            4,
+                                        decoration: BoxDecoration(
+                                          color: AppTheme.primary,
+                                          borderRadius:
+                                              BorderRadius.circular(14),
+                                          boxShadow: [
+                                            BoxShadow(
+                                              color: AppTheme.primary
+                                                  .withValues(alpha: 0.3),
+                                              blurRadius: 8,
+                                              offset: const Offset(0, 4),
+                                            ),
+                                          ],
+                                        ),
+                                        child: IconButton(
+                                          onPressed: _isDetectingLocation
+                                              ? null
+                                              : _detectLocation,
+                                          icon: _isDetectingLocation
+                                              ? const SizedBox(
+                                                  width: 24,
+                                                  height: 24,
+                                                  child:
+                                                      CircularProgressIndicator(
+                                                    strokeWidth: 2.3,
+                                                    color: Colors.white,
+                                                  ),
+                                                )
+                                              : const Icon(
+                                                  Icons.my_location_rounded,
+                                                  color: Colors.white,
+                                                ),
+                                          tooltip: l10n.t(
+                                            'account.detect_location',
+                                          ),
+                                        ),
+                                      );
+
+                                      if (stackVertically) {
+                                        return Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            _RegionDisplayField(
+                                              label: l10n.t(
+                                                'account.current_region',
                                               ),
-                                            )
-                                          : const Icon(
-                                              Icons.my_location_rounded,
-                                              color: Colors.white),
-                                      tooltip:
-                                          l10n.t('account.detect_location'),
-                                    ),
+                                              value: _regionController.text,
+                                            ),
+                                            const SizedBox(height: 12),
+                                            Align(
+                                              alignment: Alignment.centerLeft,
+                                              child: detectButton,
+                                            ),
+                                          ],
+                                        );
+                                      }
+
+                                      return Row(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.end,
+                                        children: [
+                                          Expanded(
+                                            child: _RegionDisplayField(
+                                              label: l10n.t(
+                                                'account.current_region',
+                                              ),
+                                              value: _regionController.text,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 12),
+                                          detectButton,
+                                        ],
+                                      );
+                                    },
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
 
-                        const SizedBox(height: 24),
-                        const Divider(height: 1),
-                        const SizedBox(height: 24),
-
-                        // Password Section
-                        Row(
+                // Password Card
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: _buildElevatedCard(
+                      child: Padding(
+                        padding: EdgeInsets.all(
+                          ResponsiveLayout.cardPadding(context),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.lock_outline_rounded,
-                                color: AppTheme.mutedText, size: 20),
-                            const SizedBox(width: 12),
-                            Text(
-                              l10n.t('login.password'),
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.text,
+                            _SectionTitle(
+                              icon: Icons.lock_outline_rounded,
+                              title: l10n.t('login.password'),
+                            ),
+                            const SizedBox(height: 12),
+                            AppTextField(
+                              controller: _currentPasswordController,
+                              label: l10n.t('account.current_password'),
+                              icon: Icons.lock_outline_rounded,
+                              obscureText: true,
+                            ),
+                            const SizedBox(height: 12),
+                            AppTextField(
+                              controller: _newPasswordController,
+                              label: l10n.t('account.new_password'),
+                              icon: Icons.lock_reset_rounded,
+                              obscureText: true,
+                            ),
+                            const SizedBox(height: 14),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FilledButton.icon(
+                                onPressed: busy ? null : _changePassword,
+                                icon: busy
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.password_rounded,
+                                        size: 16,
+                                      ),
+                                label: Text(l10n.t('account.change_password')),
+                                style: _compactFilledButtonStyle(context),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        AppTextField(
-                          controller: _currentPasswordController,
-                          label: l10n.t('account.current_password'),
-                          icon: Icons.lock_outline_rounded,
-                          obscureText: true,
-                        ),
-                        const SizedBox(height: 12),
-                        AppTextField(
-                          controller: _newPasswordController,
-                          label: l10n.t('account.new_password'),
-                          icon: Icons.lock_reset_rounded,
-                          obscureText: true,
-                        ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: AppButton(
-                            label: l10n.t('account.change_password'),
-                            icon: Icons.password_rounded,
-                            loading: busy,
-                            onPressed: _changePassword,
-                          ),
-                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
 
-                        const SizedBox(height: 24),
-                        const Divider(height: 1),
-                        const SizedBox(height: 24),
-
-                        // Email Section
-                        Row(
+                // Email Card
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: _buildElevatedCard(
+                      child: Padding(
+                        padding: EdgeInsets.all(
+                          ResponsiveLayout.cardPadding(context),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.alternate_email_rounded,
-                                color: AppTheme.mutedText, size: 20),
-                            const SizedBox(width: 12),
-                            Text(
-                              l10n.t('account.email'),
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.text,
+                            _SectionTitle(
+                              icon: Icons.alternate_email_rounded,
+                              title: l10n.t('account.email'),
+                            ),
+                            const SizedBox(height: 12),
+                            AppTextField(
+                              controller: _newEmailController,
+                              label: l10n.t('account.new_email'),
+                              icon: Icons.mail_outline_rounded,
+                              keyboardType: TextInputType.emailAddress,
+                            ),
+                            const SizedBox(height: 12),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: OutlinedButton.icon(
+                                onPressed: busy ? null : _requestEmailChange,
+                                icon: const Icon(
+                                  Icons.mark_email_read_outlined,
+                                  size: 16,
+                                ),
+                                label: Text(l10n.t('account.send_code')),
+                                style: _compactOutlinedButtonStyle(context),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            AppTextField(
+                              controller: _emailCodeController,
+                              label: l10n.t('account.verification_code'),
+                              icon: Icons.pin_outlined,
+                              keyboardType: TextInputType.number,
+                              maxLength: 6,
+                            ),
+                            const SizedBox(height: 14),
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: FilledButton.icon(
+                                onPressed: busy ? null : _verifyEmailChange,
+                                icon: busy
+                                    ? const SizedBox(
+                                        width: 16,
+                                        height: 16,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(
+                                        Icons.verified_rounded,
+                                        size: 16,
+                                      ),
+                                label: Text(l10n.t('account.verify_email')),
+                                style: _compactFilledButtonStyle(context),
                               ),
                             ),
                           ],
                         ),
-                        const SizedBox(height: 12),
-                        AppTextField(
-                          controller: _newEmailController,
-                          label: l10n.t('account.new_email'),
-                          icon: Icons.mail_outline_rounded,
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: busy ? null : _requestEmailChange,
-                            icon: const Icon(Icons.mark_email_read_outlined,
-                                size: 18),
-                            label: Text(l10n.t('account.send_code')),
-                            style: _outlinedButtonStyle(),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        AppTextField(
-                          controller: _emailCodeController,
-                          label: l10n.t('account.verification_code'),
-                          icon: Icons.pin_outlined,
-                          keyboardType: TextInputType.number,
-                          maxLength: 6,
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: AppButton(
-                            label: l10n.t('account.verify_email'),
-                            icon: Icons.verified_rounded,
-                            loading: busy,
-                            onPressed: _verifyEmailChange,
-                          ),
-                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
 
-                        const SizedBox(height: 24),
-                        const Divider(height: 1),
-                        const SizedBox(height: 24),
-
-                        // Settings Section
-                        Row(
+                // Account Actions Card
+                Center(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: maxWidth),
+                    child: _buildElevatedCard(
+                      child: Padding(
+                        padding: EdgeInsets.all(
+                          ResponsiveLayout.cardPadding(context),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(Icons.settings_rounded,
-                                color: AppTheme.mutedText, size: 20),
-                            const SizedBox(width: 12),
-                            Text(
-                              l10n.t('account.settings'),
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w600,
-                                color: AppTheme.text,
-                              ),
+                            _SectionTitle(
+                              icon: Icons.settings_rounded,
+                              title: l10n.t('account.settings'),
+                            ),
+                            const SizedBox(height: 14),
+                            Wrap(
+                              spacing: 10,
+                              runSpacing: 10,
+                              children: [
+                                OutlinedButton.icon(
+                                  onPressed: () => _confirmLogout(context),
+                                  icon: const Icon(
+                                    Icons.logout_rounded,
+                                    size: 16,
+                                  ),
+                                  label: Text(l10n.t('account.logout')),
+                                  style: _compactOutlinedButtonStyle(context),
+                                ),
+                                OutlinedButton.icon(
+                                  onPressed: busy
+                                      ? null
+                                      : () => context
+                                          .read<ProfileCubit>()
+                                          .exportUserData(),
+                                  icon: const Icon(
+                                    Icons.file_download_outlined,
+                                    size: 16,
+                                  ),
+                                  label: Text(l10n.t('account.export_data')),
+                                  style: _compactOutlinedButtonStyle(context),
+                                ),
+                                TextButton.icon(
+                                  onPressed: busy
+                                      ? null
+                                      : () => _confirmDelete(context),
+                                  icon: const Icon(
+                                    Icons.delete_forever_rounded,
+                                    size: 16,
+                                  ),
+                                  label: Text(
+                                    l10n.t('account.delete_account'),
+                                  ),
+                                  style: _compactDangerButtonStyle(context),
+                                ),
+                              ],
                             ),
                           ],
                         ),
-                        const SizedBox(height: 16),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: () => _confirmLogout(context),
-                            icon: const Icon(Icons.logout_rounded, size: 18),
-                            label: Text(l10n.t('account.logout')),
-                            style: _outlinedButtonStyle(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: busy
-                                ? null
-                                : () => context
-                                    .read<ProfileCubit>()
-                                    .exportUserData(),
-                            icon: const Icon(Icons.file_download_outlined,
-                                size: 18),
-                            label: Text(l10n.t('account.export_data')),
-                            style: _outlinedButtonStyle(),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        SizedBox(
-                          width: double.infinity,
-                          child: TextButton.icon(
-                            onPressed:
-                                busy ? null : () => _confirmDelete(context),
-                            icon: const Icon(Icons.delete_forever_rounded,
-                                size: 18),
-                            label: Text(l10n.t('account.delete_account')),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.redAccent,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 24, vertical: 16),
-                              shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16)),
-                            ),
-                          ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
@@ -746,33 +793,158 @@ class _AccountPageState extends State<AccountPage> {
 
   Widget _buildElevatedCard({required Widget child}) {
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-          BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.03),
-            blurRadius: 40,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
+      decoration: AppTheme.elevatedCardDecoration(context),
       child: child,
     );
   }
 
-  ButtonStyle _outlinedButtonStyle() {
+  Widget _buildProfileSummaryCard(BuildContext context, UserProfile profile) {
+    final muted = AppTheme.mutedTextFor(context);
+    final bodySize = ResponsiveLayout.bodyFontSize(context);
+    final secondarySize = ResponsiveLayout.secondaryBodyFontSize(context);
+    final avatarSize = ResponsiveLayout.isTablet(context) ? 80.0 : 72.0;
+    final isVerified = profile.verified;
+
+    return Padding(
+      padding: EdgeInsets.all(ResponsiveLayout.cardPadding(context) + 4),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final stackVertically = constraints.maxWidth < 360;
+          final avatar = Container(
+            width: avatarSize,
+            height: avatarSize,
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppTheme.primary.withValues(alpha: 0.18),
+                  AppTheme.primary.withValues(alpha: 0.08),
+                ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Icon(
+              Icons.person_rounded,
+              color: AppTheme.primary,
+              size: 34,
+            ),
+          );
+
+          final details = Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                profile.email,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: bodySize + 4,
+                  fontWeight: FontWeight.w800,
+                  color: AppTheme.textFor(context),
+                  height: 1.2,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 10,
+                runSpacing: 8,
+                children: [
+                  _ProfileMetaChip(
+                    icon: Icons.location_on_rounded,
+                    label: profile.region,
+                    color: muted,
+                  ),
+                  _ProfileMetaChip(
+                    icon: isVerified
+                        ? Icons.verified_rounded
+                        : Icons.pending_actions_rounded,
+                    label: isVerified
+                        ? AppLocalizations.of(context).t('account.verified')
+                        : AppLocalizations.of(context).t('account.unverified'),
+                    color: isVerified
+                        ? Colors.blue.shade600
+                        : Colors.orange.shade600,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              Text(
+                'Citizen account',
+                style: TextStyle(
+                  color: muted,
+                  fontSize: secondarySize,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          );
+
+          if (stackVertically) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                avatar,
+                const SizedBox(height: 16),
+                details,
+              ],
+            );
+          }
+
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              avatar,
+              const SizedBox(width: 20),
+              Expanded(child: details),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  ButtonStyle _compactOutlinedButtonStyle(BuildContext context) {
     return OutlinedButton.styleFrom(
       foregroundColor: AppTheme.primary,
       side: BorderSide(color: AppTheme.primary.withValues(alpha: 0.3)),
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      textStyle: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+      minimumSize: Size(0, ResponsiveLayout.compactControlHeight(context)),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      textStyle: TextStyle(
+        fontWeight: FontWeight.w700,
+        fontSize: ResponsiveLayout.bodyFontSize(context) - 1,
+      ),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
+  ButtonStyle _compactFilledButtonStyle(BuildContext context) {
+    return FilledButton.styleFrom(
+      backgroundColor: AppTheme.primary,
+      foregroundColor: Colors.white,
+      minimumSize: Size(0, ResponsiveLayout.compactControlHeight(context)),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      textStyle: TextStyle(
+        fontWeight: FontWeight.w700,
+        fontSize: ResponsiveLayout.bodyFontSize(context) - 1,
+      ),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    );
+  }
+
+  ButtonStyle _compactDangerButtonStyle(BuildContext context) {
+    return TextButton.styleFrom(
+      foregroundColor: Colors.redAccent,
+      minimumSize: Size(0, ResponsiveLayout.compactControlHeight(context)),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      textStyle: TextStyle(
+        fontWeight: FontWeight.w700,
+        fontSize: ResponsiveLayout.bodyFontSize(context) - 1,
+      ),
+      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
     );
   }
 
@@ -804,27 +976,6 @@ class _AccountPageState extends State<AccountPage> {
     context.read<ProfileCubit>().verifyEmailChange(_emailCodeController.text);
   }
 
-  void _requestPhoneChange() {
-    if (_newPhoneController.text.trim().isEmpty) {
-      _showMessage('New phone is required.', isError: true);
-      return;
-    }
-    context.read<ProfileCubit>().requestPhoneChange(_newPhoneController.text);
-  }
-
-  void _verifyPhoneChange() {
-    if (_newPhoneController.text.trim().isEmpty ||
-        _phoneCodeController.text.trim().isEmpty) {
-      _showMessage('New phone and OTP are required.', isError: true);
-      return;
-    }
-    _logoutAfterPhoneVerify = true;
-    context.read<ProfileCubit>().verifyPhoneChange(
-          newPhone: _newPhoneController.text,
-          code: _phoneCodeController.text,
-        );
-  }
-
   Future<void> _confirmDelete(BuildContext context) async {
     final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
@@ -835,7 +986,7 @@ class _AccountPageState extends State<AccountPage> {
             style: const TextStyle(fontWeight: FontWeight.w800)),
         content: Text(
           l10n.t('account.delete_warning'),
-          style: const TextStyle(color: AppTheme.mutedText),
+          style: TextStyle(color: AppTheme.mutedTextFor(context)),
         ),
         actions: [
           TextButton(
@@ -869,7 +1020,7 @@ class _AccountPageState extends State<AccountPage> {
             style: const TextStyle(fontWeight: FontWeight.w800)),
         content: Text(
           l10n.t('account.logout_confirm'),
-          style: const TextStyle(color: AppTheme.mutedText),
+          style: TextStyle(color: AppTheme.mutedTextFor(context)),
         ),
         actions: [
           TextButton(
@@ -904,7 +1055,7 @@ class _AccountPageState extends State<AccountPage> {
         ),
         content: SelectableText(
           message,
-          style: const TextStyle(color: AppTheme.mutedText, height: 1.4),
+          style: TextStyle(color: AppTheme.mutedTextFor(context), height: 1.4),
         ),
         actions: [
           TextButton(
@@ -968,10 +1119,180 @@ class _SectionTitle extends StatelessWidget {
         const SizedBox(width: 8),
         Text(
           title,
-          style: Theme.of(context)
-              .textTheme
-              .titleMedium
-              ?.copyWith(fontWeight: FontWeight.w900, fontSize: 18),
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w900,
+                fontSize: ResponsiveLayout.sectionTitleSize(context),
+              ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProfileMetaChip extends StatelessWidget {
+  const _ProfileMetaChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 6),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w700,
+                fontSize: ResponsiveLayout.secondaryBodyFontSize(context),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ThemeChoiceButton extends StatelessWidget {
+  const _ThemeChoiceButton({
+    required this.icon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 180),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppTheme.primary.withValues(alpha: 0.12)
+                : Theme.of(context)
+                    .colorScheme
+                    .surfaceContainerHighest
+                    .withValues(alpha: AppTheme.isDark(context) ? 0.45 : 0.75),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected
+                  ? AppTheme.primary.withValues(alpha: 0.24)
+                  : AppTheme.borderFor(context),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                selected ? Icons.check_rounded : icon,
+                size: 18,
+                color: selected
+                    ? AppTheme.primary
+                    : AppTheme.mutedTextFor(context),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  color:
+                      selected ? AppTheme.primary : AppTheme.textFor(context),
+                  fontWeight: FontWeight.w700,
+                  fontSize: ResponsiveLayout.bodyFontSize(context) - 1,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RegionDisplayField extends StatelessWidget {
+  const _RegionDisplayField({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    final fieldColor = Theme.of(context).inputDecorationTheme.fillColor ??
+        AppTheme.subtleFillFor(context);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 8),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: ResponsiveLayout.secondaryBodyFontSize(context),
+              color: AppTheme.mutedTextFor(context),
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+          decoration: BoxDecoration(
+            color: fieldColor,
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.map_rounded,
+                size: 20,
+                color: AppTheme.mutedTextFor(context),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  value,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppTheme.textFor(context),
+                    fontSize: ResponsiveLayout.bodyFontSize(context),
+                    fontWeight: FontWeight.w600,
+                    height: 1.2,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ],
     );

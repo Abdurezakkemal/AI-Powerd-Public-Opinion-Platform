@@ -48,7 +48,7 @@ class RankedChoiceVoteWidget extends StatelessWidget {
           'Rank up to $maxRank option${maxRank > 1 ? 's' : ''} in order of preference',
           style: TextStyle(
             fontSize: 13,
-            color: Colors.grey.shade600,
+            color: AppTheme.mutedTextFor(context),
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -85,7 +85,7 @@ class RankedChoiceVoteWidget extends StatelessWidget {
           'Available options:',
           style: TextStyle(
             fontSize: 13,
-            color: Colors.grey.shade600,
+            color: AppTheme.mutedTextFor(context),
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -190,9 +190,13 @@ class _AvailableOption extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: disabled ? Colors.grey.shade50 : Colors.grey.shade100,
+          color: disabled
+              ? AppTheme.subtleFillFor(context).withValues(alpha: 0.45)
+              : AppTheme.subtleFillFor(context),
           border: Border.all(
-            color: disabled ? Colors.grey.shade200 : Colors.grey.shade300,
+            color: AppTheme.borderFor(context).withValues(
+              alpha: disabled ? 0.45 : 0.9,
+            ),
           ),
           borderRadius: BorderRadius.circular(12),
         ),
@@ -200,7 +204,9 @@ class _AvailableOption extends StatelessWidget {
           children: [
             Icon(
               Icons.add_circle_outline,
-              color: disabled ? Colors.grey.shade300 : AppTheme.primary,
+              color: disabled
+                  ? AppTheme.mutedTextFor(context).withValues(alpha: 0.45)
+                  : AppTheme.primary,
               size: 20,
             ),
             const SizedBox(width: 12),
@@ -210,7 +216,9 @@ class _AvailableOption extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: disabled ? Colors.grey.shade400 : Colors.grey.shade800,
+                  color: disabled
+                      ? AppTheme.mutedTextFor(context).withValues(alpha: 0.65)
+                      : AppTheme.textFor(context),
                 ),
               ),
             ),

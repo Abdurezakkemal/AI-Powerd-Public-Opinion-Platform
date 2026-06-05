@@ -46,8 +46,15 @@ class CommentPosting extends CommentLoaded {
   });
 }
 
-class CommentPosted extends CommentState {
-  const CommentPosted(this.message);
+class CommentPosted extends CommentLoaded {
+  const CommentPosted({
+    required this.message,
+    required super.comments,
+    required super.total,
+    required super.page,
+    required super.hasMore,
+    super.translatedComments,
+  });
 
   final String message;
 }
@@ -62,8 +69,15 @@ class CommentReporting extends CommentLoaded {
   });
 }
 
-class CommentReported extends CommentState {
-  const CommentReported(this.message);
+class CommentReported extends CommentLoaded {
+  const CommentReported({
+    required this.message,
+    required super.comments,
+    required super.total,
+    required super.page,
+    required super.hasMore,
+    super.translatedComments,
+  });
 
   final String message;
 }
@@ -78,8 +92,15 @@ class CommentEditing extends CommentLoaded {
   });
 }
 
-class CommentEdited extends CommentState {
-  const CommentEdited(this.message);
+class CommentEdited extends CommentLoaded {
+  const CommentEdited({
+    required this.message,
+    required super.comments,
+    required super.total,
+    required super.page,
+    required super.hasMore,
+    super.translatedComments,
+  });
 
   final String message;
 }

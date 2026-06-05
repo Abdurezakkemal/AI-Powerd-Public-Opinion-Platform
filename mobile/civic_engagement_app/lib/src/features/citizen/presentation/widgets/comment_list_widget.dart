@@ -19,10 +19,12 @@ import 'report_comment_dialog.dart';
 class CommentListWidget extends StatefulWidget {
   const CommentListWidget({
     required this.policyId,
+    required this.canComment,
     super.key,
   });
 
   final String policyId;
+  final bool canComment;
 
   @override
   State<CommentListWidget> createState() => _CommentListWidgetState();
@@ -35,10 +37,6 @@ class _CommentListWidgetState extends State<CommentListWidget> {
   void initState() {
     super.initState();
     _scrollController.addListener(_onScroll);
-    context.read<CommentCubit>().loadComments(
-          policyId: widget.policyId,
-          refresh: true,
-        );
   }
 
   @override
@@ -94,7 +92,7 @@ class _CommentListWidgetState extends State<CommentListWidget> {
                 ),
                 const SizedBox(height: 8),
                 Text(state.message,
-                    style: const TextStyle(color: AppTheme.mutedText)),
+                    style: TextStyle(color: AppTheme.mutedTextFor(context))),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
                   onPressed: () {
@@ -123,16 +121,23 @@ class _CommentListWidgetState extends State<CommentListWidget> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.forum_outlined, size: 64, color: AppTheme.border),
+                  Icon(
+                    Icons.forum_outlined,
+                    size: 64,
+                    color: AppTheme.borderFor(context),
+                  ),
                   const SizedBox(height: 16),
                   Text(
                     l10n.t('comment.empty'),
-                    style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                    ),
                   ),
                   const SizedBox(height: 6),
                   Text(
                     l10n.t('comment.empty_message'),
-                    style: const TextStyle(color: AppTheme.mutedText),
+                    style: TextStyle(color: AppTheme.mutedTextFor(context)),
                   ),
                 ],
               ),
@@ -141,7 +146,7 @@ class _CommentListWidgetState extends State<CommentListWidget> {
 
           return RefreshIndicator(
             color: AppTheme.primary,
-            backgroundColor: Colors.white,
+            backgroundColor: AppTheme.surfaceFor(context),
             onRefresh: () async {
               await context.read<CommentCubit>().loadComments(
                     policyId: widget.policyId,
@@ -166,15 +171,16 @@ class _CommentListWidgetState extends State<CommentListWidget> {
                 return _CommentCard(
                   comment: comment,
                   policyId: widget.policyId,
+                  canComment: widget.canComment,
                 );
               },
             ),
           );
         }
 
-        return const Center(
+        return Center(
           child: Text('No comments yet. Be the first to comment!',
-              style: TextStyle(color: AppTheme.mutedText)),
+              style: TextStyle(color: AppTheme.mutedTextFor(context))),
         );
       },
     );
@@ -185,10 +191,12 @@ class _CommentCard extends StatelessWidget {
   const _CommentCard({
     required this.comment,
     required this.policyId,
+    required this.canComment,
   });
 
   final Comment comment;
   final String policyId;
+  final bool canComment;
 
   void _showReportDialog(BuildContext context) async {
     final reported = await showDialog<bool>(
@@ -254,17 +262,8 @@ class _CommentCard extends StatelessWidget {
             top: 10,
             bottom: 10,
           ),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(28),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primary.withValues(alpha: 0.04),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
+          decoration:
+              AppTheme.elevatedCardDecoration(context, borderRadius: 28),
           child: Padding(
             padding: const EdgeInsets.all(20),
             child: Column(
@@ -276,7 +275,8 @@ class _CommentCard extends StatelessWidget {
                       Icon(
                         Icons.reply_rounded,
                         size: 16,
-                        color: AppTheme.mutedText.withValues(alpha: 0.7),
+                        color: AppTheme.mutedTextFor(context)
+                            .withValues(alpha: 0.7),
                       ),
                       const SizedBox(width: 6),
                       Text(
@@ -284,7 +284,8 @@ class _CommentCard extends StatelessWidget {
                         style: TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w700,
-                          color: AppTheme.mutedText.withValues(alpha: 0.7),
+                          color: AppTheme.mutedTextFor(context)
+                              .withValues(alpha: 0.7),
                           letterSpacing: 0.5,
                         ),
                       ),
@@ -326,7 +327,9 @@ class _CommentCard extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            comment.userEmail ?? AppLocalizations.of(context).t('comment.autonomous_citizen'),
+                            comment.userEmail ??
+                                AppLocalizations.of(context)
+                                    .t('comment.autonomous_citizen'),
                             style: Theme.of(context)
                                 .textTheme
                                 .titleSmall
@@ -338,9 +341,9 @@ class _CommentCard extends StatelessWidget {
                           ),
                           Text(
                             _formatDate(comment.createdAt),
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 12,
-                              color: AppTheme.mutedText,
+                              color: AppTheme.mutedTextFor(context),
                               fontWeight: FontWeight.w500,
                             ),
                           ),
@@ -349,8 +352,8 @@ class _CommentCard extends StatelessWidget {
                     ),
                     _StatusChip(comment: comment),
                     IconButton(
-                      icon: const Icon(Icons.more_horiz_rounded,
-                          size: 22, color: AppTheme.mutedText),
+                      icon: Icon(Icons.more_horiz_rounded,
+                          size: 22, color: AppTheme.mutedTextFor(context)),
                       onPressed: () => _showCommentMenu(context),
                       padding: EdgeInsets.zero,
                       constraints: const BoxConstraints(),
@@ -377,21 +380,25 @@ class _CommentCard extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: Colors.grey.shade100,
+                          color: Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
                           borderRadius: BorderRadius.circular(8),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Icon(Icons.edit_rounded,
-                                size: 12, color: Colors.grey.shade600),
+                                size: 12,
+                                color: AppTheme.mutedTextFor(context)),
                             const SizedBox(width: 4),
                             Text(
                                 comment.versionNumber > 1
                                     ? '${AppLocalizations.of(context).t('comment.edited_version')}${comment.versionNumber}'
-                                    : AppLocalizations.of(context).t('comment.edited'),
+                                    : AppLocalizations.of(context)
+                                        .t('comment.edited'),
                                 style: TextStyle(
-                                    color: Colors.grey.shade600,
+                                    color: AppTheme.mutedTextFor(context),
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600)),
                           ],
@@ -412,7 +419,9 @@ class _CommentCard extends StatelessWidget {
                             Icon(Icons.verified_rounded,
                                 size: 12, color: Colors.blue.shade700),
                             const SizedBox(width: 4),
-                            Text(AppLocalizations.of(context).t('comment.official_reply'),
+                            Text(
+                                AppLocalizations.of(context)
+                                    .t('comment.official_reply'),
                                 style: TextStyle(
                                     color: Colors.blue.shade700,
                                     fontSize: 11,
@@ -435,16 +444,19 @@ class _CommentCard extends StatelessWidget {
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
-                              color: AppTheme.background,
+                              color: Theme.of(context)
+                                  .colorScheme
+                                  .surfaceContainerHighest,
                               borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppTheme.border),
+                              border: Border.all(
+                                  color: AppTheme.borderFor(context)),
                             ),
                             child: Text(
                               '#$keyword',
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 12,
                                 fontWeight: FontWeight.w600,
-                                color: AppTheme.mutedText,
+                                color: AppTheme.mutedTextFor(context),
                               ),
                             ),
                           ),
@@ -459,11 +471,12 @@ class _CommentCard extends StatelessWidget {
                   Row(
                     children: [
                       TextButton.icon(
-                        onPressed: comment.isVisible
+                        onPressed: canComment && comment.isVisible
                             ? () => _showReplyDialog(context)
                             : null,
                         icon: const Icon(Icons.reply_rounded, size: 18),
-                        label: Text(AppLocalizations.of(context).t('comment.reply')),
+                        label: Text(
+                            AppLocalizations.of(context).t('comment.reply')),
                         style: TextButton.styleFrom(
                           foregroundColor: AppTheme.primary,
                           padding: const EdgeInsets.symmetric(
@@ -478,7 +491,10 @@ class _CommentCard extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(width: 8),
-                      _RepliesSection(comment: comment, policyId: policyId),
+                      _RepliesSection(
+                        comment: comment,
+                        policyId: policyId,
+                      ),
                     ],
                   ),
                 ],
@@ -486,7 +502,12 @@ class _CommentCard extends StatelessWidget {
             ),
           ),
         ),
-        if (!isReply) _RepliesList(comment: comment, policyId: policyId),
+        if (!isReply)
+          _RepliesList(
+            comment: comment,
+            policyId: policyId,
+            canComment: canComment,
+          ),
       ],
     );
   }
@@ -512,7 +533,7 @@ class _CommentCard extends StatelessWidget {
 
     showModalBottomSheet<void>(
       context: context,
-      backgroundColor: Colors.white,
+      backgroundColor: AppTheme.surfaceFor(context),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
@@ -530,15 +551,15 @@ class _CommentCard extends StatelessWidget {
                     height: 5,
                     margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
-                      color: AppTheme.border,
+                      color: AppTheme.borderFor(context),
                       borderRadius: BorderRadius.circular(99),
                     ),
                   ),
                 ),
                 if (isAuthor && comment.isVisible) ...[
                   ListTile(
-                    leading:
-                        const Icon(Icons.edit_rounded, color: AppTheme.text),
+                    leading: Icon(Icons.edit_rounded,
+                        color: AppTheme.textFor(context)),
                     title: Text(AppLocalizations.of(context).t('comment.edit'),
                         style: const TextStyle(fontWeight: FontWeight.w600)),
                     onTap: () {
@@ -547,11 +568,12 @@ class _CommentCard extends StatelessWidget {
                     },
                   ),
                 ],
-                if (!isAuthor)
+                if (!isAuthor && canComment)
                   ListTile(
                     leading:
                         const Icon(Icons.flag_rounded, color: Colors.orange),
-                    title: Text(AppLocalizations.of(context).t('comment.report'),
+                    title: Text(
+                        AppLocalizations.of(context).t('comment.report'),
                         style: const TextStyle(fontWeight: FontWeight.w600)),
                     onTap: () {
                       Navigator.pop(bottomSheetContext);
@@ -562,7 +584,8 @@ class _CommentCard extends StatelessWidget {
                   ListTile(
                     leading:
                         const Icon(Icons.gavel_rounded, color: Colors.blue),
-                    title: Text(AppLocalizations.of(context).t('comment.appeal'),
+                    title: Text(
+                        AppLocalizations.of(context).t('comment.appeal'),
                         style: const TextStyle(fontWeight: FontWeight.w600)),
                     onTap: () {
                       Navigator.pop(bottomSheetContext);
@@ -696,8 +719,8 @@ class _TranslationPanelState extends State<_TranslationPanel> {
             ),
             child: Text(
               _translatedText!,
-              style: const TextStyle(
-                color: AppTheme.text,
+              style: TextStyle(
+                color: AppTheme.textFor(context),
                 height: 1.45,
               ),
             ),
@@ -751,10 +774,14 @@ class _StatusChip extends StatelessWidget {
         case 'moderator':
         case 'hidden_by_moderator':
           color = Colors.red;
-          label = comment.isDeleted ? l10n.t('comment.deleted') : l10n.t('comment.hidden');
+          label = comment.isDeleted
+              ? l10n.t('comment.deleted')
+              : l10n.t('comment.hidden');
         default:
           color = Colors.red;
-          label = comment.isDeleted ? l10n.t('comment.deleted') : l10n.t('comment.hidden');
+          label = comment.isDeleted
+              ? l10n.t('comment.deleted')
+              : l10n.t('comment.hidden');
       }
     } else if (comment.reportState == 'reported') {
       color = Colors.orange;
@@ -876,10 +903,10 @@ class _RepliesSection extends StatelessWidget {
         }
 
         if (replies.isEmpty) {
-          return const Text(
+          return Text(
             'No replies yet',
             style: TextStyle(
-              color: AppTheme.mutedText,
+              color: AppTheme.mutedTextFor(context),
               fontSize: 13,
               fontStyle: FontStyle.italic,
               fontWeight: FontWeight.w500,
@@ -912,10 +939,12 @@ class _RepliesList extends StatelessWidget {
   const _RepliesList({
     required this.comment,
     required this.policyId,
+    required this.canComment,
   });
 
   final Comment comment;
   final String policyId;
+  final bool canComment;
 
   @override
   Widget build(BuildContext context) {
@@ -934,6 +963,7 @@ class _RepliesList extends StatelessWidget {
               .map((reply) => _CommentCard(
                     comment: reply,
                     policyId: policyId,
+                    canComment: canComment,
                   ))
               .toList(),
         );

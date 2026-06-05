@@ -42,6 +42,7 @@ class CommentCubit extends Cubit<CommentState> {
   CommentCubit(this._repository) : super(const CommentInitial());
 
   final CitizenRepository _repository;
+  String? _currentPolicyId;
   List<CommentWithReplies> _allComments = [];
   int _currentPage = 1;
   int _total = 0;
@@ -51,8 +52,10 @@ class CommentCubit extends Cubit<CommentState> {
     required String policyId,
     bool refresh = false,
   }) async {
-    print('[CommentCubit] loadComments called - policyId: $policyId, refresh: $refresh');
-    
+    _currentPolicyId = policyId;
+    print(
+        '[CommentCubit] loadComments called - policyId: $policyId, refresh: $refresh');
+
     if (refresh) {
       _currentPage = 1;
       _allComments = [];
@@ -68,14 +71,16 @@ class CommentCubit extends Cubit<CommentState> {
         page: _currentPage,
       );
 
-      print('[CommentCubit] Received ${page.comments.length} comments from API');
+      print(
+          '[CommentCubit] Received ${page.comments.length} comments from API');
       print('[CommentCubit] Total comments: ${page.total}, Page: ${page.page}');
-      
+
       if (page.comments.isNotEmpty) {
         final firstComment = page.comments.first;
         print('[CommentCubit] First comment sample:');
         print('  - ID: ${firstComment.id}');
-        print('  - Text: ${firstComment.text.substring(0, firstComment.text.length > 50 ? 50 : firstComment.text.length)}');
+        print(
+            '  - Text: ${firstComment.text.substring(0, firstComment.text.length > 50 ? 50 : firstComment.text.length)}');
         print('  - User ID: ${firstComment.userId}');
         print('  - User Email: ${firstComment.userEmail}');
         print('  - Visibility: ${firstComment.visibility}');
@@ -95,7 +100,8 @@ class CommentCubit extends Cubit<CommentState> {
       _total = page.total;
       _currentPage = page.page;
 
-      print('[CommentCubit] State updated - ${_allComments.length} comments in state');
+      print(
+          '[CommentCubit] State updated - ${_allComments.length} comments in state');
 
       emit(
         CommentLoaded(
@@ -106,7 +112,7 @@ class CommentCubit extends Cubit<CommentState> {
           translatedComments: Map.unmodifiable(_translatedComments),
         ),
       );
-      
+
       print('[CommentCubit] CommentLoaded state emitted');
     } catch (e) {
       print('[CommentCubit] ERROR loading comments: $e');
@@ -256,7 +262,7 @@ class CommentCubit extends Cubit<CommentState> {
     print('  - policyId: $policyId');
     print('  - text length: ${text.length}');
     print('  - parentCommentId: $parentCommentId');
-    
+
     emit(
       CommentPosting(
         comments: _currentLoadedState().comments,
@@ -292,7 +298,17 @@ class CommentCubit extends Cubit<CommentState> {
         }
       }
 
-      emit(CommentPosted(message));
+      await loadComments(policyId: policyId, refresh: true);
+      emit(
+        CommentPosted(
+          message: message,
+          comments: _currentLoadedState().comments,
+          total: _total,
+          page: _currentPage,
+          hasMore: _allComments.length < _total,
+          translatedComments: Map.unmodifiable(_translatedComments),
+        ),
+      );
       print('[CommentCubit] CommentPosted state emitted');
     } catch (e) {
       print('[CommentCubit] ERROR posting comment: $e');
@@ -319,7 +335,16 @@ class CommentCubit extends Cubit<CommentState> {
         commentId: commentId,
         reason: reason,
       );
-      emit(CommentReported(message));
+      emit(
+        CommentReported(
+          message: message,
+          comments: _currentLoadedState().comments,
+          total: _total,
+          page: _currentPage,
+          hasMore: _allComments.length < _total,
+          translatedComments: Map.unmodifiable(_translatedComments),
+        ),
+      );
     } catch (e) {
       emit(CommentError(e.toString()));
     }
@@ -343,7 +368,19 @@ class CommentCubit extends Cubit<CommentState> {
         commentId: commentId,
         text: text,
       );
-      emit(CommentEdited(message));
+      if (_currentPolicyId != null) {
+        await loadComments(policyId: _currentPolicyId!, refresh: true);
+      }
+      emit(
+        CommentEdited(
+          message: message,
+          comments: _currentLoadedState().comments,
+          total: _total,
+          page: _currentPage,
+          hasMore: _allComments.length < _total,
+          translatedComments: Map.unmodifiable(_translatedComments),
+        ),
+      );
     } catch (e) {
       emit(CommentError(e.toString()));
     }

@@ -26,7 +26,7 @@ const plannerRequestSchema = new mongoose.Schema({
   proofFile: { type: String, default: null },
   status: {
     type: String,
-    enum: ["pending", "approved", "rejected"],
+    enum: ["pending", "approved", "rejected", "cancelled"],
     default: "pending",
   },
   reviewedBy: {

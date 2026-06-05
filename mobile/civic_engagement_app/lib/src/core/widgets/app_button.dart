@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../layout/responsive_layout.dart';
+
 class AppButton extends StatelessWidget {
   const AppButton({
     required this.label,
@@ -17,11 +19,16 @@ class AppButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    
+    final height = ResponsiveLayout.controlHeight(context);
+    final radius = ResponsiveLayout.isCompact(context) ? 20.0 : 24.0;
+    final iconSize = ResponsiveLayout.isCompact(context) ? 18.0 : 20.0;
+    final fontSize = ResponsiveLayout.isCompact(context) ? 15.0 : 16.0;
+    final loaderSize = ResponsiveLayout.isCompact(context) ? 20.0 : 24.0;
+
     final child = loading
-        ? const SizedBox(
-            width: 24,
-            height: 24,
+        ? SizedBox(
+            width: loaderSize,
+            height: loaderSize,
             child: CircularProgressIndicator(
               strokeWidth: 2.5,
               color: Colors.white,
@@ -32,17 +39,17 @@ class AppButton extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (icon != null) ...[
-                Icon(icon, size: 20, color: Colors.white),
-                const SizedBox(width: 10),
+                Icon(icon, size: iconSize, color: Colors.white),
+                SizedBox(width: ResponsiveLayout.spacing(context, 10)),
               ],
               Flexible(
                 child: Text(
                   label,
                   textAlign: TextAlign.center,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
-                    fontSize: 16,
+                    fontSize: fontSize,
                     letterSpacing: 0.3,
                   ),
                 ),
@@ -52,7 +59,7 @@ class AppButton extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      height: 58,
+      height: height,
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
@@ -62,7 +69,7 @@ class AppButton extends StatelessWidget {
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
-        borderRadius: BorderRadius.circular(24),
+        borderRadius: BorderRadius.circular(radius),
         boxShadow: [
           if (!loading && onPressed != null)
             BoxShadow(
@@ -76,7 +83,7 @@ class AppButton extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: loading ? null : onPressed,
-          borderRadius: BorderRadius.circular(24),
+          borderRadius: BorderRadius.circular(radius),
           splashColor: Colors.white.withValues(alpha: 0.2),
           highlightColor: Colors.white.withValues(alpha: 0.1),
           child: Center(child: child),

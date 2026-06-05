@@ -10,7 +10,6 @@ import '../../../../core/widgets/app_button.dart';
 import '../../../../core/widgets/app_card.dart';
 import '../../../../core/widgets/error_view.dart';
 import '../../../../core/services/translation_service.dart';
-import '../../../../core/settings/app_settings_scope.dart';
 import '../../domain/entities/policy.dart';
 import '../../domain/entities/vote_value.dart';
 import '../../domain/repositories/citizen_repository.dart';
@@ -71,7 +70,7 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
         return DefaultTabController(
           length: 2,
           child: Scaffold(
-            backgroundColor: AppTheme.background,
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
             body: failed
                 ? ErrorView(
                     message: state.message ?? 'Policy could not be loaded.',
@@ -86,7 +85,7 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                         SliverToBoxAdapter(
                           child: Container(
                             decoration: BoxDecoration(
-                              color: Colors.white,
+                              color: AppTheme.surfaceFor(context),
                               boxShadow: [
                                 BoxShadow(
                                   color: Colors.black.withValues(alpha: 0.06),
@@ -126,10 +125,10 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                                           child: Text(
                                             AppLocalizations.of(context)
                                                 .t('policy_details'),
-                                            style: const TextStyle(
+                                            style: TextStyle(
                                               fontSize: 28,
                                               fontWeight: FontWeight.w900,
-                                              color: AppTheme.text,
+                                              color: AppTheme.textFor(context),
                                               letterSpacing: 0,
                                             ),
                                           ),
@@ -144,7 +143,9 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                                     child: Container(
                                       padding: const EdgeInsets.all(4),
                                       decoration: BoxDecoration(
-                                        color: AppTheme.background,
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .surfaceContainerHighest,
                                         borderRadius: BorderRadius.circular(18),
                                       ),
                                       child: TabBar(
@@ -158,7 +159,7 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                                         dividerColor: Colors.transparent,
                                         labelColor: AppTheme.primary,
                                         unselectedLabelColor:
-                                            AppTheme.mutedText,
+                                            AppTheme.mutedTextFor(context),
                                         labelStyle: const TextStyle(
                                           fontWeight: FontWeight.w800,
                                           fontSize: 14,
@@ -240,7 +241,7 @@ class _PolicyDetailPageState extends State<PolicyDetailPage> {
                                     widget.policyId,
                                   ),
                           color: AppTheme.primary,
-                          backgroundColor: Colors.white,
+                          backgroundColor: AppTheme.surfaceFor(context),
                           child: ListView(
                             padding: const EdgeInsets.fromLTRB(20, 16, 20, 100),
                             children: [
@@ -319,58 +320,6 @@ class _DetailHeaderState extends State<_DetailHeader> {
     }
   }
 
-  Future<void> _showLanguageSelector() async {
-    final l10n = AppLocalizations.of(context);
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                l10n.t('select_language'),
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 16),
-              ...AppLocalizations.supportedLocales.map((locale) {
-                final langCode = locale.languageCode;
-                final isSelected = _targetLanguage == langCode;
-                return ListTile(
-                  leading: Icon(
-                    isSelected
-                        ? Icons.check_circle_rounded
-                        : Icons.translate_rounded,
-                    color: isSelected ? AppTheme.primary : null,
-                  ),
-                  title: Text(
-                    AppLocalizations.languageName(langCode),
-                    style: TextStyle(
-                      fontWeight:
-                          isSelected ? FontWeight.w800 : FontWeight.w600,
-                      color: isSelected ? AppTheme.primary : null,
-                    ),
-                  ),
-                  onTap: () => Navigator.of(context).pop(langCode),
-                );
-              }),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (selected != null && selected != 'en') {
-      await _translate(selected);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final displayTitle = _showTranslation && _translatedTitle != null
@@ -405,7 +354,7 @@ class _DetailHeaderState extends State<_DetailHeader> {
                   decoration: BoxDecoration(
                     color: _translatedTitle != null
                         ? AppTheme.primary.withValues(alpha: 0.1)
-                        : Colors.grey.shade100,
+                        : AppTheme.subtleFillFor(context),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: _loading
@@ -419,7 +368,7 @@ class _DetailHeaderState extends State<_DetailHeader> {
                           size: 20,
                           color: _translatedTitle != null
                               ? AppTheme.primary
-                              : Colors.grey.shade600,
+                              : AppTheme.mutedTextFor(context),
                         ),
                 ),
                 tooltip: AppLocalizations.of(context).t('translate'),
@@ -458,10 +407,10 @@ class _DetailHeaderState extends State<_DetailHeader> {
                       enabled: false,
                       child: Text(
                         AppLocalizations.of(context).t('select_language'),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 12,
-                          color: AppTheme.mutedText,
+                          color: AppTheme.mutedTextFor(context),
                         ),
                       ),
                     ),
@@ -537,13 +486,13 @@ class _DetailHeaderState extends State<_DetailHeader> {
                   label:
                       '${widget.policy.averageRating!.toStringAsFixed(1)} avg',
                   iconColor: Colors.amber.shade600,
-                  backgroundColor: Colors.amber.shade50,
-                  textColor: Colors.amber.shade900,
+                  backgroundColor: Colors.amber.withValues(
+                    alpha: AppTheme.isDark(context) ? 0.18 : 0.12,
+                  ),
+                  textColor: AppTheme.isDark(context)
+                      ? Colors.amber.shade200
+                      : Colors.amber.shade900,
                 ),
-              _InfoChip(
-                icon: Icons.how_to_vote_rounded,
-                label: '${widget.policy.totalVotes} votes',
-              ),
               if (widget.policy.topics != null &&
                   widget.policy.topics!.isNotEmpty)
                 ...widget.policy.topics!.take(2).map(
@@ -663,22 +612,7 @@ class _PolicyInfoCardState extends State<_PolicyInfoCard> {
             : widget.policy.description;
 
     return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(24),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 20,
-            offset: const Offset(0, 8),
-          ),
-          BoxShadow(
-            color: AppTheme.primary.withValues(alpha: 0.03),
-            blurRadius: 40,
-            offset: const Offset(0, 16),
-          ),
-        ],
-      ),
+      decoration: AppTheme.elevatedCardDecoration(context, borderRadius: 24),
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: Column(
@@ -708,7 +642,9 @@ class _PolicyInfoCardState extends State<_PolicyInfoCard> {
                       color: (_translatedTitle != null ||
                               _translatedDescription != null)
                           ? AppTheme.primary.withValues(alpha: 0.1)
-                          : Colors.grey.shade100,
+                          : Theme.of(context)
+                              .colorScheme
+                              .surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: (_loadingTitle || _loadingDescription)
@@ -723,7 +659,7 @@ class _PolicyInfoCardState extends State<_PolicyInfoCard> {
                             color: (_translatedTitle != null ||
                                     _translatedDescription != null)
                                 ? AppTheme.primary
-                                : Colors.grey.shade600,
+                                : AppTheme.mutedTextFor(context),
                           ),
                   ),
                   tooltip: l10n.t('translate'),
@@ -763,10 +699,10 @@ class _PolicyInfoCardState extends State<_PolicyInfoCard> {
                         enabled: false,
                         child: Text(
                           l10n.t('select_language'),
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontWeight: FontWeight.w800,
                             fontSize: 12,
-                            color: AppTheme.mutedText,
+                            color: AppTheme.mutedTextFor(context),
                           ),
                         ),
                       ),
@@ -848,13 +784,13 @@ class _PolicyInfoCardState extends State<_PolicyInfoCard> {
                     label:
                         '${widget.policy.averageRating!.toStringAsFixed(1)} avg',
                     iconColor: Colors.amber.shade600,
-                    backgroundColor: Colors.amber.shade50,
-                    textColor: Colors.amber.shade900,
+                    backgroundColor: Colors.amber.withValues(
+                      alpha: AppTheme.isDark(context) ? 0.18 : 0.12,
+                    ),
+                    textColor: AppTheme.isDark(context)
+                        ? Colors.amber.shade200
+                        : Colors.amber.shade900,
                   ),
-                _InfoChip(
-                  icon: Icons.how_to_vote_rounded,
-                  label: '${widget.policy.totalVotes} votes',
-                ),
                 if (widget.policy.topics != null &&
                     widget.policy.topics!.isNotEmpty)
                   ...widget.policy.topics!.take(2).map(
@@ -881,10 +817,10 @@ class _PolicyInfoCardState extends State<_PolicyInfoCard> {
             const SizedBox(height: 16),
             Text(
               displayDescription,
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 15,
                 height: 1.6,
-                color: AppTheme.text,
+                color: AppTheme.textFor(context),
               ),
             ),
           ],
@@ -942,58 +878,6 @@ class _DescriptionCardState extends State<_DescriptionCard> {
     }
   }
 
-  Future<void> _showLanguageSelector() async {
-    final l10n = AppLocalizations.of(context);
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                l10n.t('select_language'),
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 16),
-              ...AppLocalizations.supportedLocales.map((locale) {
-                final langCode = locale.languageCode;
-                final isSelected = _targetLanguage == langCode;
-                return ListTile(
-                  leading: Icon(
-                    isSelected
-                        ? Icons.check_circle_rounded
-                        : Icons.translate_rounded,
-                    color: isSelected ? AppTheme.primary : null,
-                  ),
-                  title: Text(
-                    AppLocalizations.languageName(langCode),
-                    style: TextStyle(
-                      fontWeight:
-                          isSelected ? FontWeight.w800 : FontWeight.w600,
-                      color: isSelected ? AppTheme.primary : null,
-                    ),
-                  ),
-                  onTap: () => Navigator.of(context).pop(langCode),
-                );
-              }),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (selected != null && selected != 'en') {
-      await _translate(selected);
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     final l10n = AppLocalizations.of(context);
@@ -1027,7 +911,7 @@ class _DescriptionCardState extends State<_DescriptionCard> {
                   decoration: BoxDecoration(
                     color: _translatedDescription != null
                         ? AppTheme.primary.withValues(alpha: 0.1)
-                        : Colors.grey.shade100,
+                        : AppTheme.subtleFillFor(context),
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: _loading
@@ -1041,7 +925,7 @@ class _DescriptionCardState extends State<_DescriptionCard> {
                           size: 18,
                           color: _translatedDescription != null
                               ? AppTheme.primary
-                              : Colors.grey.shade600,
+                              : AppTheme.mutedTextFor(context),
                         ),
                 ),
                 tooltip: AppLocalizations.of(context).t('translate'),
@@ -1080,10 +964,10 @@ class _DescriptionCardState extends State<_DescriptionCard> {
                       enabled: false,
                       child: Text(
                         AppLocalizations.of(context).t('select_language'),
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontWeight: FontWeight.w800,
                           fontSize: 12,
-                          color: AppTheme.mutedText,
+                          color: AppTheme.mutedTextFor(context),
                         ),
                       ),
                     ),
@@ -1338,7 +1222,7 @@ class _VotingCardState extends State<_VotingCard> {
                                 ? Colors.orange.shade700
                                 : policy.canVote
                                     ? AppTheme.primary
-                                    : AppTheme.mutedText,
+                                    : AppTheme.mutedTextFor(context),
                         size: 24,
                       ),
                       const SizedBox(width: 12),
@@ -1366,7 +1250,7 @@ class _VotingCardState extends State<_VotingCard> {
                             ? l10n.t('vote.checking_history_message')
                             : message,
                     style: TextStyle(
-                      color: AppTheme.text.withValues(alpha: 0.7),
+                      color: AppTheme.textFor(context).withValues(alpha: 0.7),
                       height: 1.5,
                       fontSize: 14,
                     ),
@@ -1382,26 +1266,24 @@ class _VotingCardState extends State<_VotingCard> {
                     const SizedBox(height: 18),
                     _buildVoteWidget(),
                   ],
-                  const SizedBox(height: 24),
-                  AppButton(
-                    label: alreadyVoted
-                        ? l10n.t('vote.already_voted')
-                        : checkingHistory
-                            ? l10n.t('vote.checking_history')
-                            : l10n.t('vote.submit'),
-                    icon: alreadyVoted
-                        ? Icons.check_circle_outline_rounded
-                        : checkingHistory
-                            ? Icons.manage_search_rounded
-                            : Icons.send_rounded,
-                    loading: isLoading || checkingHistory,
-                    onPressed: canVote && _canSubmit && !isLoading
-                        ? () => context.read<VoteCubit>().submitVote(
-                              policyId: policy.id,
-                              value: _voteValue,
-                            )
-                        : null,
-                  ),
+                  if (!alreadyVoted) ...[
+                    const SizedBox(height: 24),
+                    AppButton(
+                      label: checkingHistory
+                          ? l10n.t('vote.checking_history')
+                          : l10n.t('vote.submit'),
+                      icon: checkingHistory
+                          ? Icons.manage_search_rounded
+                          : Icons.send_rounded,
+                      loading: isLoading || checkingHistory,
+                      onPressed: canVote && _canSubmit && !isLoading
+                          ? () => context.read<VoteCubit>().submitVote(
+                                policyId: policy.id,
+                                value: _voteValue,
+                              )
+                          : null,
+                    ),
+                  ],
                 ],
               ),
             );
@@ -1514,14 +1396,14 @@ class _DetailRow extends StatelessWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(icon, size: 20, color: AppTheme.mutedText),
+        Icon(icon, size: 20, color: AppTheme.mutedTextFor(context)),
         const SizedBox(width: 12),
         SizedBox(
           width: 80,
           child: Text(
             label,
-            style: const TextStyle(
-              color: AppTheme.mutedText,
+            style: TextStyle(
+              color: AppTheme.mutedTextFor(context),
               fontWeight: FontWeight.w600,
               fontSize: 14,
             ),
@@ -1530,8 +1412,8 @@ class _DetailRow extends StatelessWidget {
         Expanded(
           child: Text(
             value,
-            style: const TextStyle(
-              color: AppTheme.text,
+            style: TextStyle(
+              color: AppTheme.textFor(context),
               fontWeight: FontWeight.w700,
               fontSize: 14,
             ),
@@ -1550,24 +1432,58 @@ class _CommentsTab extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return BlocProvider(
-      create: (_) => CommentCubit(serviceLocator<CitizenRepository>()),
+      create: (_) => CommentCubit(serviceLocator<CitizenRepository>())
+        ..loadComments(
+          policyId: policy.id,
+          refresh: true,
+        ),
       child: Builder(
         builder: (context) => Column(
           children: [
-            PostCommentWidget(
-              policyId: policy.id,
-              onCommentPosted: () {
-                print('[PolicyDetailPage] onCommentPosted callback triggered');
-                print(
-                    '[PolicyDetailPage] Reloading comments for policy: ${policy.id}');
-                context.read<CommentCubit>().loadComments(
-                      policyId: policy.id,
-                      refresh: true,
-                    );
-              },
-            ),
+            if (policy.canVote)
+              PostCommentWidget(
+                policyId: policy.id,
+              )
+            else
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(20, 16, 20, 8),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(
+                    color: AppTheme.borderFor(context).withValues(alpha: 0.8),
+                  ),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Icon(
+                      Icons.lock_outline_rounded,
+                      color: AppTheme.mutedTextFor(context),
+                      size: 18,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Comments are closed for this policy. You can still read the discussion.',
+                        style: TextStyle(
+                          color: AppTheme.mutedTextFor(context),
+                          fontSize: 13,
+                          height: 1.4,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
-              child: CommentListWidget(policyId: policy.id),
+              child: CommentListWidget(
+                policyId: policy.id,
+                canComment: policy.canVote,
+              ),
             ),
           ],
         ),

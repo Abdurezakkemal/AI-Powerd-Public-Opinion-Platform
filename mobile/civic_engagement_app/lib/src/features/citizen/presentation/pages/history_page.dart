@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/layout/responsive_layout.dart';
 import '../../../../core/state/request_status.dart';
 import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -22,8 +23,12 @@ class HistoryPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final pagePadding = ResponsiveLayout.pagePadding(context);
+    final maxWidth = ResponsiveLayout.contentMaxWidth(context);
+    final headerButtonSize = ResponsiveLayout.circularButtonSize(context);
+
     return Scaffold(
-      backgroundColor: AppTheme.background,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: BlocBuilder<HistoryCubit, HistoryState>(
         builder: (context, state) {
           if (state.status == RequestStatus.loading && state.history.isEmpty) {
@@ -49,14 +54,14 @@ class HistoryPage extends StatelessWidget {
           return RefreshIndicator(
             onRefresh: () => context.read<HistoryCubit>().loadHistory(),
             color: AppTheme.primary,
-            backgroundColor: Colors.white,
+            backgroundColor: AppTheme.surfaceFor(context),
             child: CustomScrollView(
               slivers: [
                 // Custom Elevated Header
                 SliverToBoxAdapter(
                   child: Container(
                     decoration: BoxDecoration(
-                      color: Colors.white,
+                      color: AppTheme.surfaceFor(context),
                       boxShadow: [
                         BoxShadow(
                           color: Colors.black.withValues(alpha: 0.06),
@@ -68,23 +73,29 @@ class HistoryPage extends StatelessWidget {
                     child: SafeArea(
                       bottom: false,
                       child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                        padding: EdgeInsets.fromLTRB(
+                          pagePadding,
+                          8,
+                          pagePadding,
+                          12,
+                        ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
                               AppLocalizations.of(context).t('history'),
-                              style: const TextStyle(
-                                fontSize: 28,
+                              style: TextStyle(
+                                fontSize:
+                                    ResponsiveLayout.headerTitleSize(context),
                                 fontWeight: FontWeight.w900,
-                                color: AppTheme.text,
+                                color: AppTheme.textFor(context),
                                 letterSpacing: 0,
                               ),
                             ),
                             const SizedBox(width: 12),
                             Container(
-                              width: 44,
-                              height: 44,
+                              width: headerButtonSize,
+                              height: headerButtonSize,
                               decoration: BoxDecoration(
                                 color: AppTheme.primary.withValues(alpha: 0.1),
                                 shape: BoxShape.circle,
@@ -107,13 +118,27 @@ class HistoryPage extends StatelessWidget {
                 ),
                 // Content
                 SliverPadding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
-                  sliver: SliverList.builder(
-                    itemCount: state.history.length,
-                    itemBuilder: (context, index) {
-                      final item = state.history[index];
-                      return _HistoryCard(item: item);
-                    },
+                  padding: EdgeInsets.fromLTRB(
+                    pagePadding,
+                    16,
+                    pagePadding,
+                    100,
+                  ),
+                  sliver: SliverToBoxAdapter(
+                    child: Center(
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: maxWidth),
+                        child: ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: state.history.length,
+                          itemBuilder: (context, index) {
+                            final item = state.history[index];
+                            return _HistoryCard(item: item);
+                          },
+                        ),
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -198,7 +223,7 @@ class _HistoryCard extends StatelessWidget {
               const Spacer(),
               Text(
                 DateFormatters.compact(item.createdAt),
-                style: const TextStyle(color: AppTheme.mutedText),
+                style: TextStyle(color: AppTheme.mutedTextFor(context)),
               ),
             ],
           ),
@@ -299,7 +324,10 @@ class _CommentBubble extends StatelessWidget {
       width: double.infinity,
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFF7F9FB),
+        color: Theme.of(context)
+            .colorScheme
+            .surfaceContainerHighest
+            .withValues(alpha: AppTheme.isDark(context) ? 0.45 : 0.7),
         borderRadius: BorderRadius.circular(12),
       ),
       child: TranslatableText(

@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_bloc/flutter_bloc.dart';
 
 import '../../../../core/error/api_exception.dart';
@@ -17,7 +19,13 @@ class PlannerRequestCubit extends Cubit<PlannerRequestState> {
     String? email,
     String? phone,
     String? region,
-    String? proofFileBase64,
+    String? ageRange,
+    String? gender,
+    String? occupation,
+    String? education,
+    String? preferredLanguage,
+    List<String>? languagesSpoken,
+    Uint8List? proofFileBytes,
     String? proofFileName,
     String? proofFileMimeType,
   }) async {
@@ -31,7 +39,13 @@ class PlannerRequestCubit extends Cubit<PlannerRequestState> {
         email: email,
         phone: phone,
         region: region,
-        proofFileBase64: proofFileBase64,
+        ageRange: ageRange,
+        gender: gender,
+        occupation: occupation,
+        education: education,
+        preferredLanguage: preferredLanguage,
+        languagesSpoken: languagesSpoken,
+        proofFileBytes: proofFileBytes,
         proofFileName: proofFileName,
         proofFileMimeType: proofFileMimeType,
       );

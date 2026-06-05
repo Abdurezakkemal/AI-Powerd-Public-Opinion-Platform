@@ -45,6 +45,27 @@ router.post(
   plannerController.requestPlanner,
 );
 
+// Get current user's planner request status
+router.get(
+  "/my-request",
+  auth(["citizen"]),
+  plannerController.getMyPlannerRequest,
+);
+
+// Get planner request history
+router.get(
+  "/my-request/history",
+  auth(["citizen"]),
+  plannerController.getMyPlannerRequestHistory,
+);
+
+// Cancel pending request
+router.delete(
+  "/my-request",
+  auth(["citizen"]),
+  plannerController.cancelMyPlannerRequest,
+);
+
 router.post(
   "/appeals",
   limiters.plannerRequest,

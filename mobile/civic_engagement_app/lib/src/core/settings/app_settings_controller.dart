@@ -27,6 +27,7 @@ class AppSettingsController extends ChangeNotifier {
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
+    mode = mode == ThemeMode.dark ? ThemeMode.dark : ThemeMode.light;
     if (_themeMode == mode) return;
     _themeMode = mode;
     await _preferences.setString(_themeKey, mode.name);
@@ -40,7 +41,8 @@ class AppSettingsController extends ChangeNotifier {
       case 'light':
         return ThemeMode.light;
       default:
-        return ThemeMode.system;
+        // Default to light theme
+        return ThemeMode.light;
     }
   }
 }

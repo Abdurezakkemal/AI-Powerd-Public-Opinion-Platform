@@ -38,6 +38,18 @@ class CivicApp extends StatelessWidget {
             darkTheme: AppTheme.dark(),
             themeMode: settings.themeMode,
             locale: settings.locale,
+            builder: (context, child) {
+              final mediaQuery = MediaQuery.of(context);
+              return MediaQuery(
+                data: mediaQuery.copyWith(
+                  textScaler: mediaQuery.textScaler.clamp(
+                    minScaleFactor: 0.95,
+                    maxScaleFactor: 1.15,
+                  ),
+                ),
+                child: child ?? const SizedBox.shrink(),
+              );
+            },
             supportedLocales: AppLocalizations.supportedLocales,
             localizationsDelegates: const [
               AppLocalizations.delegate,
@@ -71,8 +83,6 @@ class CivicApp extends StatelessWidget {
                       ),
                       BlocProvider(
                         create: (_) {
-                          print(
-                              '[CivicApp] Creating NotificationsCubit and loading notifications');
                           return serviceLocator<NotificationsCubit>()
                             ..loadNotifications();
                         },

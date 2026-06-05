@@ -1,5 +1,9 @@
 import 'dart:convert';
 
+import 'dart:typed_data';
+
+import 'package:http_parser/http_parser.dart';
+
 import '../../../../core/error/api_exception.dart';
 import '../../../../core/network/api_client.dart';
 import '../../../../core/services/json_export_saver.dart';
@@ -231,7 +235,7 @@ class CitizenRepositoryImpl implements CitizenRepository {
     print('  - policyId: $policyId');
     print('  - text length: ${text.length}');
     print('  - parentCommentId: $parentCommentId');
-    
+
     final response = await _apiClient.post(
       '/comments',
       body: {
@@ -240,7 +244,7 @@ class CitizenRepositoryImpl implements CitizenRepository {
         if (parentCommentId != null) 'parentCommentId': parentCommentId,
       },
     );
-    
+
     print('[CitizenRepository] postComment response: ${response.message}');
     print('[CitizenRepository] postComment response data: ${response.data}');
     return response.message;
@@ -291,7 +295,7 @@ class CitizenRepositoryImpl implements CitizenRepository {
     print('[CitizenRepository] getPolicyComments called');
     print('  - policyId: $policyId');
     print('  - page: $page, limit: $limit');
-    
+
     // UPDATED: Use public endpoint instead of analytics endpoint
     final response = await _apiClient.get(
       '/comments/policy/$policyId',
@@ -300,41 +304,44 @@ class CitizenRepositoryImpl implements CitizenRepository {
         'limit': limit,
       },
     );
-    
+
     print('[CitizenRepository] API response received');
     print('  - message: ${response.message}');
     print('  - data type: ${response.data.runtimeType}');
-    
+
     final data = response.data as Map<String, dynamic>;
     final rawComments = data['comments'];
     final pagination = _pagination(data);
-    
+
     print('[CitizenRepository] Raw comments type: ${rawComments.runtimeType}');
-    print('[CitizenRepository] Raw comments length: ${rawComments is List ? rawComments.length : 'N/A'}');
-    
+    print(
+        '[CitizenRepository] Raw comments length: ${rawComments is List ? rawComments.length : 'N/A'}');
+
     if (rawComments is List && rawComments.isNotEmpty) {
-      print('[CitizenRepository] First raw comment keys: ${(rawComments[0] as Map).keys.toList()}');
+      print(
+          '[CitizenRepository] First raw comment keys: ${(rawComments[0] as Map).keys.toList()}');
     }
-    
+
     final comments = rawComments is List
         ? rawComments
             .whereType<Map<String, dynamic>>()
             .map(CommentModel.fromJson)
             .toList()
         : <CommentModel>[];
-    
+
     print('[CitizenRepository] Parsed ${comments.length} comments');
     if (comments.isNotEmpty) {
       final first = comments.first;
       print('[CitizenRepository] First parsed comment:');
       print('  - ID: ${first.id}');
-      print('  - Text: ${first.text.substring(0, first.text.length > 30 ? 30 : first.text.length)}...');
+      print(
+          '  - Text: ${first.text.substring(0, first.text.length > 30 ? 30 : first.text.length)}...');
       print('  - User ID: ${first.userId}');
       print('  - User Email: ${first.userEmail}');
       print('  - Visibility: ${first.visibility}');
       print('  - Parent ID: ${first.parentCommentId}');
     }
-    
+
     return CommentPage(
       comments: comments,
       total: _toInt(pagination['total'], fallback: comments.length),
@@ -436,26 +443,29 @@ class CitizenRepositoryImpl implements CitizenRepository {
     print('[CitizenRepository] getNotifications called');
     print('  - page: $page, limit: $limit');
     print('  - unreadOnly: $unreadOnly');
-    
+
     final response = await _apiClient.get(
       '/users/me/notifications',
       query: {'page': page, 'limit': limit, if (unreadOnly) 'unreadOnly': true},
     );
-    
+
     print('[CitizenRepository] Notifications API response received');
     print('  - message: ${response.message}');
     print('  - data type: ${response.data.runtimeType}');
-    
+
     final data = response.data as Map<String, dynamic>;
     final rawNotifications = data['notifications'];
-    
-    print('[CitizenRepository] Raw notifications type: ${rawNotifications.runtimeType}');
-    print('[CitizenRepository] Raw notifications length: ${rawNotifications is List ? rawNotifications.length : 'N/A'}');
-    
+
+    print(
+        '[CitizenRepository] Raw notifications type: ${rawNotifications.runtimeType}');
+    print(
+        '[CitizenRepository] Raw notifications length: ${rawNotifications is List ? rawNotifications.length : 'N/A'}');
+
     if (rawNotifications is List && rawNotifications.isNotEmpty) {
-      print('[CitizenRepository] First raw notification keys: ${(rawNotifications[0] as Map).keys.toList()}');
+      print(
+          '[CitizenRepository] First raw notification keys: ${(rawNotifications[0] as Map).keys.toList()}');
     }
-    
+
     final notifications = rawNotifications is List
         ? rawNotifications
             .whereType<Map<String, dynamic>>()
@@ -502,47 +512,106 @@ class CitizenRepositoryImpl implements CitizenRepository {
     String? email,
     String? phone,
     String? region,
-    String? proofFileBase64,
+    String? ageRange,
+    String? gender,
+    String? occupation,
+    String? education,
+    String? preferredLanguage,
+    List<String>? languagesSpoken,
+    Uint8List? proofFileBytes,
     String? proofFileName,
     String? proofFileMimeType,
   }) async {
-    final body = <String, dynamic>{
-      'reason': reason.trim(),
-    };
+    final fields = <String, String>{'reason': reason.trim()};
     final trimmedOrg = organization?.trim();
     if (trimmedOrg != null && trimmedOrg.isNotEmpty) {
-      body['organization'] = trimmedOrg;
+      fields['organization'] = trimmedOrg;
     }
-    final fields = <String, String?>{
+    final optionalFields = <String, String?>{
       'applicantType': applicantType,
       'fullName': fullName,
       'email': email,
       'phone': phone,
       'region': region,
+      'ageRange': ageRange,
+      'gender': gender,
+      'occupation': occupation,
+      'education': education,
+      'preferredLanguage': preferredLanguage,
     };
-    fields.forEach((key, value) {
+    optionalFields.forEach((key, value) {
       final trimmed = value?.trim();
       if (trimmed != null && trimmed.isNotEmpty) {
-        body[key] = trimmed;
+        fields[key] = trimmed;
       }
     });
-    final trimmedProof = proofFileBase64?.trim();
-    if (trimmedProof != null && trimmedProof.isNotEmpty) {
-      body['proofFile'] = trimmedProof;
-      if (proofFileName != null && proofFileName.trim().isNotEmpty) {
-        body['proofFileName'] = proofFileName.trim();
-      }
-      if (proofFileMimeType != null && proofFileMimeType.trim().isNotEmpty) {
-        body['proofFileMimeType'] = proofFileMimeType.trim();
-      }
+    if (languagesSpoken != null && languagesSpoken.isNotEmpty) {
+      fields['languagesSpoken'] = languagesSpoken.join(',');
     }
-    final response = await _apiClient.post(
+    final files = <ApiMultipartFile>[];
+    if (proofFileBytes != null && proofFileBytes.isNotEmpty) {
+      files.add(
+        ApiMultipartFile(
+          field: 'proofFile',
+          bytes: proofFileBytes,
+          filename: (proofFileName != null && proofFileName.trim().isNotEmpty)
+              ? proofFileName.trim()
+              : 'proof-file',
+          contentType: _mediaTypeFrom(proofFileMimeType),
+        ),
+      );
+    }
+    final response = await _apiClient.postMultipart(
       '/planners/request',
-      body: body,
+      fields: fields,
+      files: files,
       authenticated: _sessionStore.token != null,
     );
     final data = response.data as Map<String, dynamic>? ?? {};
     return PlannerRequestModel.fromJson(data);
+  }
+
+  MediaType? _mediaTypeFrom(String? mimeType) {
+    final trimmed = mimeType?.trim();
+    if (trimmed == null || trimmed.isEmpty || !trimmed.contains('/')) {
+      return null;
+    }
+
+    final parts = trimmed.split('/');
+    if (parts.length != 2) {
+      return null;
+    }
+
+    return MediaType(parts.first, parts.last);
+  }
+
+  @override
+  Future<PlannerRequest?> getMyPlannerRequest() async {
+    try {
+      final response = await _apiClient.get('/planners/my-request');
+      final data = response.data;
+      if (data == null) return null;
+      return PlannerRequestModel.fromJson(data as Map<String, dynamic>);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  @override
+  Future<List<PlannerRequest>> getMyPlannerRequestHistory() async {
+    final response = await _apiClient.get('/planners/my-request/history');
+    final data = response.data;
+    if (data is! List) return [];
+    return data
+        .whereType<Map<String, dynamic>>()
+        .map(PlannerRequestModel.fromJson)
+        .toList();
+  }
+
+  @override
+  Future<String> cancelMyPlannerRequest() async {
+    final response = await _apiClient.delete('/planners/my-request');
+    return response.message;
   }
 
   @override

@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../di/service_locator.dart';
 import '../localization/app_localizations.dart';
 import '../services/translation_service.dart';
-import '../settings/app_settings_scope.dart';
 import '../theme/app_theme.dart';
 
 /// A reusable policy card widget with integrated translation functionality.
@@ -87,64 +86,11 @@ class _PolicyCardWithTranslationState extends State<PolicyCardWithTranslation> {
       });
     } catch (error) {
       if (!mounted) return;
-      print('[PolicyCardWithTranslation] Translation error: $error');
       setState(() {
         _error = AppLocalizations.of(context).t('translation_failed');
       });
     } finally {
       if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _showLanguageSelector() async {
-    final l10n = AppLocalizations.of(context);
-    final selected = await showModalBottomSheet<String>(
-      context: context,
-      showDragHandle: true,
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                l10n.t('select_language'),
-                style: Theme.of(context)
-                    .textTheme
-                    .titleLarge
-                    ?.copyWith(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 16),
-              ...AppLocalizations.supportedLocales.map((locale) {
-                final langCode = locale.languageCode;
-                final isSelected = _targetLanguage == langCode;
-                return ListTile(
-                  leading: Icon(
-                    isSelected
-                        ? Icons.check_circle_rounded
-                        : Icons.translate_rounded,
-                    color: isSelected ? AppTheme.primary : null,
-                  ),
-                  title: Text(
-                    AppLocalizations.languageName(langCode),
-                    style: TextStyle(
-                      fontWeight:
-                          isSelected ? FontWeight.w800 : FontWeight.w600,
-                      color: isSelected ? AppTheme.primary : null,
-                    ),
-                  ),
-                  onTap: () => Navigator.of(context).pop(langCode),
-                );
-              }),
-            ],
-          ),
-        ),
-      ),
-    );
-
-    if (selected != null && selected != widget.sourceLang) {
-      await _translate(selected);
     }
   }
 
@@ -163,17 +109,7 @@ class _PolicyCardWithTranslationState extends State<PolicyCardWithTranslation> {
       child: Container(
         margin: EdgeInsets.zero,
         padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.04),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
+        decoration: AppTheme.elevatedCardDecoration(context),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -189,6 +125,7 @@ class _PolicyCardWithTranslationState extends State<PolicyCardWithTranslation> {
                           fontSize: 18,
                           height: 1.3,
                           letterSpacing: 0,
+                          color: AppTheme.textFor(context),
                         ),
                   ),
                 ),
@@ -212,11 +149,9 @@ class _PolicyCardWithTranslationState extends State<PolicyCardWithTranslation> {
             Text(
               displayDescription,
               style: TextStyle(
-                color: Theme.of(context)
-                    .textTheme
-                    .bodyMedium
-                    ?.color
-                    ?.withValues(alpha: 0.72),
+                color: AppTheme.textFor(context).withValues(
+                  alpha: AppTheme.isDark(context) ? 0.84 : 0.72,
+                ),
                 height: 1.5,
                 fontSize: 14,
               ),
@@ -270,9 +205,16 @@ class _TranslateButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         decoration: BoxDecoration(
           color: hasTranslation
-              ? AppTheme.primary.withValues(alpha: 0.1)
-              : Colors.grey.shade100,
+              ? AppTheme.primary.withValues(
+                  alpha: AppTheme.isDark(context) ? 0.18 : 0.1,
+                )
+              : AppTheme.subtleFillFor(context),
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: hasTranslation
+                ? AppTheme.primary.withValues(alpha: 0.22)
+                : AppTheme.borderFor(context).withValues(alpha: 0.7),
+          ),
         ),
         child: loading
             ? const SizedBox(
@@ -288,7 +230,7 @@ class _TranslateButton extends StatelessWidget {
                     size: 18,
                     color: hasTranslation
                         ? AppTheme.primary
-                        : Colors.grey.shade700,
+                        : AppTheme.mutedTextFor(context),
                   ),
                   const SizedBox(width: 6),
                   Text(
@@ -298,7 +240,7 @@ class _TranslateButton extends StatelessWidget {
                     style: TextStyle(
                       color: hasTranslation
                           ? AppTheme.primary
-                          : Colors.grey.shade700,
+                          : AppTheme.mutedTextFor(context),
                       fontSize: 12,
                       fontWeight: FontWeight.w800,
                       letterSpacing: 0,
@@ -343,10 +285,10 @@ class _TranslateButton extends StatelessWidget {
             enabled: false,
             child: Text(
               AppLocalizations.of(context).t('select_language'),
-              style: const TextStyle(
+              style: TextStyle(
                 fontWeight: FontWeight.w800,
                 fontSize: 12,
-                color: AppTheme.mutedText,
+                color: AppTheme.mutedTextFor(context),
               ),
             ),
           ),
@@ -387,7 +329,7 @@ class _TranslateButton extends StatelessWidget {
       onSelected: (value) {
         if (value == 'toggle' && onToggle != null) {
           onToggle!();
-        } else if (value != null && value != 'toggle') {
+        } else if (value != 'toggle') {
           // Directly translate to the selected language
           onLanguageSelected(value);
         }

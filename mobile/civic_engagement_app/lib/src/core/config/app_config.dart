@@ -3,7 +3,7 @@ class AppConfig {
 
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://10.42.0.199:5002/api',
+    defaultValue: 'https://citizenvoice-backend.onrender.com/api',
   );
 
   static const apiFallbackBaseUrl = String.fromEnvironment(

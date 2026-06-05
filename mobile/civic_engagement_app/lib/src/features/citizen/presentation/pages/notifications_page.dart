@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 
+import '../../../../core/layout/responsive_layout.dart';
 import '../../../../core/state/request_status.dart';
 import '../../../../core/localization/app_localizations.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -13,53 +14,57 @@ import '../../domain/entities/citizen_notification.dart';
 import '../cubit/notifications_cubit.dart';
 import '../widgets/appeal_comment_dialog.dart';
 
-class NotificationsPage extends StatelessWidget {
+class NotificationsPage extends StatefulWidget {
   const NotificationsPage({super.key});
 
   @override
+  State<NotificationsPage> createState() => _NotificationsPageState();
+}
+
+class _NotificationsPageState extends State<NotificationsPage> {
+  @override
+  void initState() {
+    super.initState();
+    Future.microtask(() {
+      if (!mounted) return;
+      final cubit = context.read<NotificationsCubit>();
+      final state = cubit.state;
+      if (state.status == RequestStatus.initial ||
+          (state.status == RequestStatus.failure &&
+              state.notifications.isEmpty)) {
+        cubit.loadNotifications(unreadOnly: state.unreadOnly);
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
-    print('[NotificationsPage] Building page');
+    final pagePadding = ResponsiveLayout.pagePadding(context);
+    final maxWidth = ResponsiveLayout.contentMaxWidth(context);
+    final headerButtonSize = ResponsiveLayout.circularButtonSize(context);
 
     return BlocListener<NotificationsCubit, NotificationsState>(
       listenWhen: (previous, current) {
-        print('[NotificationsPage] State changed:');
-        print('  - Previous status: ${previous.status}');
-        print('  - Current status: ${current.status}');
-        print('  - Previous count: ${previous.notifications.length}');
-        print('  - Current count: ${current.notifications.length}');
         return previous.actionStatus != current.actionStatus &&
             current.message != null;
       },
       listener: (context, state) {
-        print(
-            '[NotificationsPage] Action status changed: ${state.actionStatus}');
-        if (state.message != null) {
-          print('[NotificationsPage] Showing message: ${state.message}');
-        }
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(state.message!)));
       },
       child: Scaffold(
-        backgroundColor: AppTheme.background,
+        backgroundColor: Theme.of(context).scaffoldBackgroundColor,
         body: BlocBuilder<NotificationsCubit, NotificationsState>(
           builder: (context, state) {
-            print('[NotificationsPage] Building body');
-            print('  - Status: ${state.status}');
-            print('  - Notifications count: ${state.notifications.length}');
-            print('  - Total: ${state.total}');
-            print('  - UnreadOnly: ${state.unreadOnly}');
-
             if (state.status == RequestStatus.loading &&
                 state.notifications.isEmpty) {
-              print('[NotificationsPage] Showing loading indicator');
               return const Center(
                   child: CircularProgressIndicator(color: AppTheme.primary));
             }
 
             if (state.status == RequestStatus.failure &&
                 state.notifications.isEmpty) {
-              print('[NotificationsPage] Showing error view: ${state.message}');
               return ErrorView(
                 message: state.message ?? 'Failed to load notifications.',
                 onRetry: () =>
@@ -67,14 +72,13 @@ class NotificationsPage extends StatelessWidget {
               );
             }
 
-            print('[NotificationsPage] Showing notifications list');
             return RefreshIndicator(
               onRefresh: () =>
                   context.read<NotificationsCubit>().loadNotifications(
                         unreadOnly: state.unreadOnly,
                       ),
               color: AppTheme.primary,
-              backgroundColor: Colors.white,
+              backgroundColor: AppTheme.surfaceFor(context),
               child: CustomScrollView(
                 physics: const AlwaysScrollableScrollPhysics(),
                 slivers: [
@@ -82,7 +86,7 @@ class NotificationsPage extends StatelessWidget {
                   SliverToBoxAdapter(
                     child: Container(
                       decoration: BoxDecoration(
-                        color: Colors.white,
+                        color: AppTheme.surfaceFor(context),
                         boxShadow: [
                           BoxShadow(
                             color: Colors.black.withValues(alpha: 0.06),
@@ -94,7 +98,12 @@ class NotificationsPage extends StatelessWidget {
                       child: SafeArea(
                         bottom: false,
                         child: Padding(
-                          padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                          padding: EdgeInsets.fromLTRB(
+                            pagePadding,
+                            8,
+                            pagePadding,
+                            12,
+                          ),
                           child: Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -102,10 +111,12 @@ class NotificationsPage extends StatelessWidget {
                                 child: Text(
                                   AppLocalizations.of(context)
                                       .t('notifications'),
-                                  style: const TextStyle(
-                                    fontSize: 28,
+                                  style: TextStyle(
+                                    fontSize: ResponsiveLayout.headerTitleSize(
+                                      context,
+                                    ),
                                     fontWeight: FontWeight.w900,
-                                    color: AppTheme.text,
+                                    color: AppTheme.textFor(context),
                                     letterSpacing: 0,
                                   ),
                                 ),
@@ -114,8 +125,8 @@ class NotificationsPage extends StatelessWidget {
                               Row(
                                 children: [
                                   Container(
-                                    width: 44,
-                                    height: 44,
+                                    width: headerButtonSize,
+                                    height: headerButtonSize,
                                     decoration: BoxDecoration(
                                       color: AppTheme.primary
                                           .withValues(alpha: 0.1),
@@ -134,8 +145,8 @@ class NotificationsPage extends StatelessWidget {
                                   ),
                                   const SizedBox(width: 8),
                                   Container(
-                                    width: 44,
-                                    height: 44,
+                                    width: headerButtonSize,
+                                    height: headerButtonSize,
                                     decoration: BoxDecoration(
                                       color: AppTheme.primary
                                           .withValues(alpha: 0.1),
@@ -160,7 +171,13 @@ class NotificationsPage extends StatelessWidget {
                       ),
                     ),
                   ),
-                  SliverToBoxAdapter(child: _NotificationFilters(state: state)),
+                  SliverToBoxAdapter(
+                    child: _NotificationFilters(
+                      state: state,
+                      pagePadding: pagePadding,
+                      maxWidth: maxWidth,
+                    ),
+                  ),
                   if (state.notifications.isEmpty)
                     const SliverFillRemaining(
                       child: EmptyState(
@@ -172,25 +189,39 @@ class NotificationsPage extends StatelessWidget {
                     )
                   else
                     SliverPadding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-                      sliver: SliverList.builder(
-                        itemCount: state.notifications.length,
-                        itemBuilder: (context, index) {
-                          final item = state.notifications[index];
-                          return _NotificationCard(
-                            item: item,
-                            onTap: () {
-                              if (!item.read) {
-                                context.read<NotificationsCubit>().markRead(
-                                      item.id,
-                                    );
-                              }
-                            },
-                            onAppeal: item.canAppealComment
-                                ? () => _showAppealDialog(context, item)
-                                : null,
-                          );
-                        },
+                      padding: EdgeInsets.fromLTRB(
+                        pagePadding,
+                        8,
+                        pagePadding,
+                        24,
+                      ),
+                      sliver: SliverToBoxAdapter(
+                        child: Center(
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: maxWidth),
+                            child: ListView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: state.notifications.length,
+                              itemBuilder: (context, index) {
+                                final item = state.notifications[index];
+                                return _NotificationCard(
+                                  item: item,
+                                  onTap: () {
+                                    if (!item.read) {
+                                      context
+                                          .read<NotificationsCubit>()
+                                          .markRead(item.id);
+                                    }
+                                  },
+                                  onAppeal: item.canAppealComment
+                                      ? () => _showAppealDialog(context, item)
+                                      : null,
+                                );
+                              },
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                 ],
@@ -222,31 +253,42 @@ class NotificationsPage extends StatelessWidget {
 }
 
 class _NotificationFilters extends StatelessWidget {
-  const _NotificationFilters({required this.state});
+  const _NotificationFilters({
+    required this.state,
+    required this.pagePadding,
+    required this.maxWidth,
+  });
 
   final NotificationsState state;
+  final double pagePadding;
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.fromLTRB(16, 2, 16, 8),
-      child: Row(
-        children: [
-          _chip(
-            context,
-            label: 'All',
-            selected: !state.unreadOnly,
-            unreadOnly: false,
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(maxWidth: maxWidth),
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: EdgeInsets.fromLTRB(pagePadding, 2, pagePadding, 8),
+          child: Row(
+            children: [
+              _chip(
+                context,
+                label: 'All',
+                selected: !state.unreadOnly,
+                unreadOnly: false,
+              ),
+              const SizedBox(width: 8),
+              _chip(
+                context,
+                label: 'Unread',
+                selected: state.unreadOnly,
+                unreadOnly: true,
+              ),
+            ],
           ),
-          const SizedBox(width: 8),
-          _chip(
-            context,
-            label: 'Unread',
-            selected: state.unreadOnly,
-            unreadOnly: true,
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -266,11 +308,11 @@ class _NotificationFilters extends StatelessWidget {
           ),
       selectedColor: AppTheme.primary.withValues(alpha: 0.14),
       labelStyle: TextStyle(
-        color: selected ? AppTheme.primary : AppTheme.mutedText,
+        color: selected ? AppTheme.primary : AppTheme.mutedTextFor(context),
         fontWeight: FontWeight.w800,
       ),
       side: BorderSide(
-        color: selected ? AppTheme.primary : const Color(0xFFE5EDF3),
+        color: selected ? AppTheme.primary : AppTheme.borderFor(context),
       ),
     );
   }
@@ -299,13 +341,15 @@ class _NotificationCard extends StatelessWidget {
             height: 44,
             decoration: BoxDecoration(
               color: item.read
-                  ? const Color(0xFFF1F5F9)
+                  ? Theme.of(context).colorScheme.surfaceContainerHighest
                   : _colorForItem(item).withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(14),
             ),
             child: Icon(
               _iconForType(item.type, item.read),
-              color: item.read ? AppTheme.mutedText : _colorForItem(item),
+              color: item.read
+                  ? AppTheme.mutedTextFor(context)
+                  : _colorForItem(item),
             ),
           ),
           const SizedBox(width: 12),
@@ -346,8 +390,8 @@ class _NotificationCard extends StatelessWidget {
                 const SizedBox(height: 10),
                 Text(
                   DateFormatters.compact(item.createdAt),
-                  style: const TextStyle(
-                    color: AppTheme.mutedText,
+                  style: TextStyle(
+                    color: AppTheme.mutedTextFor(context),
                     fontWeight: FontWeight.w700,
                     fontSize: 12,
                   ),

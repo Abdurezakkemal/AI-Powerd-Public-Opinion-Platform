@@ -40,6 +40,7 @@ dependencies:
   flutter_bloc: ^8.1.6
   get_it: ^7.7.0
   http: ^1.2.2
+  http_parser: ^4.1.2
   shared_preferences: ^2.3.2
   geolocator: ^13.0.2
   geocoding: ^3.0.0

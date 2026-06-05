@@ -46,7 +46,6 @@ class AppLocalizations {
 
       // Theme
       'theme.title': 'Theme',
-      'theme.system': 'System',
       'theme.light': 'Light',
       'theme.dark': 'Dark',
 
@@ -326,7 +325,6 @@ class AppLocalizations {
       'language.tigrigna': 'ትግርኛ',
       // Theme
       'theme.title': 'ገጽታ',
-      'theme.system': 'ስርዓት',
       'theme.light': 'ብርሃን',
       'theme.dark': 'ጨለማ',
       // Translation
@@ -588,7 +586,6 @@ class AppLocalizations {
       'language.tigrigna': 'Afaan Tigiree',
       // Theme
       'theme.title': 'Bifa',
-      'theme.system': 'Sirna',
       'theme.light': 'Ifa',
       'theme.dark': 'Dukkana',
       // Translation
@@ -861,7 +858,6 @@ class AppLocalizations {
       'language.tigrigna': 'ትግርኛ',
       // Theme
       'theme.title': 'ትርኢት',
-      'theme.system': 'ስርዓት',
       'theme.light': 'ብርሃን',
       'theme.dark': 'ጸልማት',
       // Translation

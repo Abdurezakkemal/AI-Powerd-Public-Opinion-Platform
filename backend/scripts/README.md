@@ -17,6 +17,7 @@ This folder contains scripts to populate the database with test data, create/res
 | `seedPlanner.js`   | Creates 5 planners and logs them in.                                                                                                                                                                                             | 5 planner accounts + `planner_tokens.json`.                                                         |
 | `seedAnalytics.js` | **Full database seeder** – creates 2 planners, 22 citizens (2 per Ethiopian region), 6 policies (including a geographic policy covering all regions), and app votes for all citizens on active policies. Also logs in all users. | Full test dataset + `citizen_tokens.json` and `planner_tokens.json`. Prints policy IDs for testing. |
 | `seedMassiveDataset.js` | **Massive test dataset** – creates 8 planners, 55 citizens, 300 polls (100 all-region + 200 regional), 20 comments per poll, votes across poll statuses, and supporting notifications/subscriptions. | Huge dataset + `massive_seed_tokens.json`. |
+| `seedNotifications.js` | **Notification seeder** – creates diverse test notifications for citizens, planners, and admins covering all notification types (policy, comment, delegation, alerts, messages, planner requests). | ~30 test notifications with varied types and timestamps. |
 | `cleanup.js`       | **Selectively delete data** – citizens, planners, admins, app votes, SMS votes, policies, or all. Supports dry run.                                                                                                              | Deletes specified records.                                                                          |
 
 ---
@@ -166,7 +167,43 @@ npm run seed:massive
 
 ---
 
-### 5. `cleanup.js` – Selective data deletion
+### 6. `seedNotifications.js` – Test notification data
+
+**What it does**
+
+- Clears existing notifications.
+- Creates ~30 diverse test notifications for existing users (citizens, planners, admin).
+- Covers all notification types:
+  - **Policy**: activated, extended, closed
+  - **Comments**: replies, flagged, appeals resolved
+  - **Delegation**: invitations, acceptances, expirations
+  - **Smart alerts**: vote surges, rating drops, emerging topics
+  - **Planner requests**: created, approved
+  - **Messages**: new messages received
+- Mix of read/unread states (70% unread).
+- Realistic timestamps spread over the past 7 days.
+
+**How to run**
+
+```
+cd backend
+node scripts/seedNotifications.js
+```
+
+**Prerequisites**
+
+- Run `seed.js` or similar first to have users and policies in the database.
+- Works with existing data – doesn't wipe anything except notifications.
+
+**When to use**
+
+- Testing notification tab UI and functionality.
+- Verifying notification filtering and marking as read.
+- Testing real-time notification delivery via Socket.IO.
+
+---
+
+### 7. `cleanup.js` – Selective data deletion
 
 **What it does**  
 Deletes specific records from the database based on flags. Useful for resetting parts of your test data without wiping everything.

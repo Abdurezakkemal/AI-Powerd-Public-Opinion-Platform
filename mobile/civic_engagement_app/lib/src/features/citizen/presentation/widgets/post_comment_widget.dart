@@ -87,17 +87,7 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
         return Container(
           margin: const EdgeInsets.fromLTRB(20, 16, 20, 16),
           padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(32),
-            boxShadow: [
-              BoxShadow(
-                color: AppTheme.primary.withValues(alpha: 0.05),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
-              ),
-            ],
-          ),
+          decoration: AppTheme.elevatedCardDecoration(context, borderRadius: 32),
           child: Form(
             key: _formKey,
             child: Column(
@@ -132,7 +122,9 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
                   decoration: InputDecoration(
                     hintText: l10n.t('comment.placeholder'),
                     filled: true,
-                    fillColor: AppTheme.primary.withValues(alpha: 0.03),
+                    fillColor: Theme.of(context)
+                        .inputDecorationTheme
+                        .fillColor,
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(20),
                       borderSide: BorderSide.none,
@@ -165,7 +157,7 @@ class _PostCommentWidgetState extends State<PostCommentWidget> {
                       TextButton(
                         onPressed: () => Navigator.pop(context),
                         style: TextButton.styleFrom(
-                          foregroundColor: AppTheme.mutedText,
+                          foregroundColor: AppTheme.mutedTextFor(context),
                           textStyle:
                               const TextStyle(fontWeight: FontWeight.w600),
                         ),

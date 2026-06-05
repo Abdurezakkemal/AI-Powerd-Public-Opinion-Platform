@@ -28,8 +28,11 @@ class FeedPolicyCard extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
-              color: AppTheme.primary.withValues(alpha: 0.03),
+              color: AppTheme.subtleFillFor(context),
               borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: AppTheme.borderFor(context).withValues(alpha: 0.75),
+              ),
             ),
             child: Wrap(
               spacing: 16,
@@ -60,17 +63,19 @@ class FeedPolicyCard extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: Colors.white,
+                          color: AppTheme.subtleFillFor(context),
                           borderRadius: BorderRadius.circular(12),
                           border: Border.all(
-                              color: AppTheme.border.withValues(alpha: 0.5)),
+                            color: AppTheme.borderFor(context)
+                                .withValues(alpha: 0.75),
+                          ),
                         ),
                         child: Text(
                           region,
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w700,
-                            color: AppTheme.mutedText,
+                            color: AppTheme.textFor(context),
                           ),
                         ),
                       ))
@@ -120,8 +125,8 @@ class _InfoChip extends StatelessWidget {
         const SizedBox(width: 6),
         Text(
           label,
-          style: const TextStyle(
-            color: AppTheme.text,
+          style: TextStyle(
+            color: AppTheme.textFor(context),
             fontWeight: FontWeight.w600,
             fontSize: 13,
           ),

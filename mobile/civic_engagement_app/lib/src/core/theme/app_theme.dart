@@ -15,6 +15,56 @@ class AppTheme {
   static const darkMutedText = Color(0xFF9CAFC4);
   static const darkBorder = Color(0xFF2C3A4A);
 
+  static bool isDark(BuildContext context) =>
+      Theme.of(context).brightness == Brightness.dark;
+
+  static Color backgroundFor(BuildContext context) =>
+      Theme.of(context).scaffoldBackgroundColor;
+
+  static Color surfaceFor(BuildContext context) =>
+      Theme.of(context).cardTheme.color ??
+      Theme.of(context).colorScheme.surface;
+
+  static Color textFor(BuildContext context) =>
+      Theme.of(context).colorScheme.onSurface;
+
+  static Color mutedTextFor(BuildContext context) =>
+      isDark(context) ? darkMutedText : mutedText;
+
+  static Color borderFor(BuildContext context) =>
+      Theme.of(context).dividerTheme.color ??
+      (isDark(context) ? darkBorder : border);
+
+  static Color subtleFillFor(BuildContext context) =>
+      isDark(context) ? const Color(0xFF223142) : const Color(0xFFF0F4F8);
+
+  static BoxDecoration elevatedCardDecoration(
+    BuildContext context, {
+    double borderRadius = 20,
+  }) {
+    final dark = isDark(context);
+    return BoxDecoration(
+      color: surfaceFor(context),
+      borderRadius: BorderRadius.circular(borderRadius),
+      border: Border.all(
+        color: borderFor(context).withValues(alpha: dark ? 0.7 : 0.25),
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: dark ? 0.22 : 0.06),
+          blurRadius: 20,
+          offset: const Offset(0, 8),
+        ),
+        if (!dark)
+          BoxShadow(
+            color: primary.withValues(alpha: 0.03),
+            blurRadius: 40,
+            offset: const Offset(0, 16),
+          ),
+      ],
+    );
+  }
+
   static ThemeData light() {
     final colorScheme = ColorScheme.fromSeed(
       seedColor: primary,
@@ -90,6 +140,12 @@ class AppTheme {
         ),
         hintStyle:
             const TextStyle(color: mutedText, fontWeight: FontWeight.w400),
+        labelStyle:
+            const TextStyle(color: mutedText, fontWeight: FontWeight.w500),
+        floatingLabelStyle:
+            const TextStyle(color: primary, fontWeight: FontWeight.w700),
+        prefixIconColor: mutedText,
+        suffixIconColor: mutedText,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(24),
           borderSide: BorderSide.none,
@@ -168,6 +224,33 @@ class AppTheme {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         elevation: 8,
+      ),
+      dialogTheme: DialogTheme(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? primary.withValues(alpha: 0.12)
+                : Colors.transparent,
+          ),
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected) ? primary : text,
+          ),
+          side: WidgetStateProperty.all(const BorderSide(color: border)),
+        ),
       ),
       dividerTheme: const DividerThemeData(
         color: border,
@@ -254,6 +337,12 @@ class AppTheme {
             const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         hintStyle:
             const TextStyle(color: darkMutedText, fontWeight: FontWeight.w400),
+        labelStyle:
+            const TextStyle(color: darkMutedText, fontWeight: FontWeight.w500),
+        floatingLabelStyle:
+            TextStyle(color: colorScheme.primary, fontWeight: FontWeight.w700),
+        prefixIconColor: darkMutedText,
+        suffixIconColor: darkMutedText,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(24),
           borderSide: BorderSide.none,
@@ -265,6 +354,14 @@ class AppTheme {
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(24),
           borderSide: BorderSide(color: colorScheme.primary, width: 2.0),
+        ),
+        errorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: Colors.redAccent, width: 1.5),
+        ),
+        focusedErrorBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(24),
+          borderSide: const BorderSide(color: Colors.redAccent, width: 2.0),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
@@ -309,6 +406,35 @@ class AppTheme {
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         elevation: 8,
+      ),
+      dialogTheme: DialogTheme(
+        backgroundColor: darkSurface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+      ),
+      bottomSheetTheme: const BottomSheetThemeData(
+        backgroundColor: darkSurface,
+        surfaceTintColor: Colors.transparent,
+      ),
+      popupMenuTheme: PopupMenuThemeData(
+        color: darkSurface,
+        surfaceTintColor: Colors.transparent,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      ),
+      segmentedButtonTheme: SegmentedButtonThemeData(
+        style: ButtonStyle(
+          backgroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? colorScheme.primary.withValues(alpha: 0.14)
+                : Colors.transparent,
+          ),
+          foregroundColor: WidgetStateProperty.resolveWith(
+            (states) => states.contains(WidgetState.selected)
+                ? colorScheme.primary
+                : darkText,
+          ),
+          side: WidgetStateProperty.all(const BorderSide(color: darkBorder)),
+        ),
       ),
       dividerTheme: const DividerThemeData(
         color: darkBorder,

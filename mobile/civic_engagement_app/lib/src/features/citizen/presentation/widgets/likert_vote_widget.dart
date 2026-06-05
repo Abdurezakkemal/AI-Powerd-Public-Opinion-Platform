@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/theme/app_theme.dart';
+
 class LikertVoteWidget extends StatelessWidget {
   const LikertVoteWidget({
     required this.value,
@@ -70,9 +72,11 @@ class _LikertOption extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         decoration: BoxDecoration(
-          color: selected ? _color.withValues(alpha: 0.1) : Colors.grey.shade100,
+          color: selected
+              ? _color.withValues(alpha: 0.1)
+              : Theme.of(context).colorScheme.surfaceContainerHighest,
           border: Border.all(
-            color: selected ? _color : Colors.grey.shade300,
+            color: selected ? _color : AppTheme.borderFor(context),
             width: selected ? 2 : 1,
           ),
           borderRadius: BorderRadius.circular(12),
@@ -104,7 +108,7 @@ class _LikertOption extends StatelessWidget {
                 style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: selected ? _color : Colors.grey.shade800,
+                  color: selected ? _color : AppTheme.textFor(context),
                 ),
               ),
             ),
