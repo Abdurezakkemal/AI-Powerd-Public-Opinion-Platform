@@ -1,0 +1,1 @@
+ C:\\Users\\Mame\ Computer\\Desktop\\Evangadi\\finalProject\\finalproject\\mobile\\civic_engagement_app\\.dart_tool\\flutter_build\\22df0097e695e3bc87ff3db3f5ae4366\\native_assets.json: 
